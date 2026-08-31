@@ -1418,14 +1418,6 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
     }
     const FreqHz range = f_max - f_min;
 
-    pixel_step_hz = range / SWEEP_PIXELS_PER_SLICE;
-    // Guard: a degenerate window (< 240 Hz wide) would make pixel_step_hz 0 and
-    // divide-by-zero in SweepProcessor::process_frame(). Clamp to 1 Hz so the
-    // accumulator always advances.
-    if (pixel_step_hz == 0) {
-        pixel_step_hz = 1;
-    }
-
     // GAPLESS COVERAGE — the ONLY correct sweep pitch for a threat detector.
     // Every 20 MHz slice excludes the 16-bin DC notch (FFT bins 120-135) and
     // the edge bins (0-5, 250-255) from detection. Stepping the center by the
@@ -1450,9 +1442,20 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
     }
     step_hz = range / frames;
 
-    // Edge sanity: frames * HZ_PER_FRAME >= 2.1 * range by construction, so the
-    // composite column accumulator always fills COMPOSITE_SIZE well before the
-    // last slice — no trailing-empty-pixel regression.
+    // Correct pixel_step_hz: accounts for the overlap between adjacent frames.
+    // Each frame contributes HZ_PER_FRAME (~18.59 MHz) of FFT data, but only
+    // step_hz (~8.82 MHz) is new frequency range. The excess accumulates and
+    // would overflow the 240-pixel composite before the sweep completes.
+    // Formula: pixel_step_hz = (frames * HZ_PER_FRAME) / COMPOSITE_SIZE
+    // This maps the total accumulated Hz to exactly 240 pixels.
+    pixel_step_hz = (static_cast<FreqHz>(frames) * HZ_PER_FRAME) / SWEEP_PIXELS_PER_SLICE;
+    // Guard: a degenerate window (< 240 Hz wide) would make pixel_step_hz 0 and
+    // divide-by-zero in SweepProcessor::process_frame(). Clamp to 1 Hz so the
+    // accumulator always advances.
+    if (pixel_step_hz == 0) {
+        pixel_step_hz = 1;
+    }
+
     (void)step;  // user pitch intentionally ignored (gapless auto-derivation)
 
     // First-slice placement:

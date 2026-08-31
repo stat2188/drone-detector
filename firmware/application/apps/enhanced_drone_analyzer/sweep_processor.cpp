@@ -39,14 +39,17 @@ uint16_t SweepProcessor::process_frame(
         return pixel_index;
     }
 
+    // Iterate bins in frequency-ascending order for correct sweep composite:
+    //   bin 0..117   → fft_bin 2..119   (upper sideband, f_center - 9.69 to -0.55 MHz)
+    //   bin 118..237 → fft_bin 134..253 (lower sideband, f_center + 0.625 to +10.39 MHz)
+    //   bin 238..239 skipped (DC spike region)
     for (uint8_t bin = 0; bin < SWEEP_PIXELS_PER_SLICE; ++bin) {
         if (pixel_index >= COMPOSITE_SIZE) break;
+        if (bin >= UPPER_PIXEL_END) continue;
 
-        if (bin >= UPPER_PIXEL_END && bin >= SWEEP_FFT_MAP_CROSSOVER) continue;
-
-        const uint8_t fft_bin = (bin < SWEEP_FFT_MAP_CROSSOVER)
-            ? (SWEEP_FFT_MAP_START + bin)
-            : (bin - UPPER_OFFSET);
+        const uint8_t fft_bin = (bin < 118)
+            ? (bin + 2)   // upper sideband: fft_bin 2..119
+            : (bin + 16); // lower sideband: fft_bin 134..253
 
         const uint8_t power = spectrum.db[fft_bin];
         if (power > pixel_max) pixel_max = power;

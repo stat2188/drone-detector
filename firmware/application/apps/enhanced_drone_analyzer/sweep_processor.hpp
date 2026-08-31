@@ -10,11 +10,12 @@
 namespace drone_analyzer {
 
 /**
- * @brief Maps FFT bins to composite sweep pixels (Looking Glass pattern).
+ * @brief Maps FFT bins to composite sweep pixels (frequency-ascending order).
  * @note Pure function — no UI dependencies, no state, no heap.
- * @note Lower sideband: screen pixels 0..119 map to FFT bins 134..253
- * @note Upper sideband: screen pixels 120..237 map to FFT bins 2..119
- * @note Pixels 238..239 unused (skip DC spike bins 120..121)
+ * @note Iterates bins in frequency-ascending order for correct sweep composite:
+ * @note   bin 0..117   → FFT bins 2..119   (upper sideband, lower frequencies)
+ * @note   bin 118..237 → FFT bins 134..253 (lower sideband, higher frequencies)
+ * @note   bin 238..239 unused (skip DC spike bins)
  * @note M0 baseband handles FFT; M4 only maps bins to pixels.
  */
 class SweepProcessor {
@@ -53,12 +54,15 @@ public:
      * @brief Reorder a single FFT frame into Looking Glass pixel order.
      * @param spectrum    256-bin FFT power values from baseband
      * @param lg_buffer   Output buffer (COMPOSITE_SIZE bytes = 240 pixels)
-     * @note Produces the same 240-pixel Looking Glass mapping as process_frame()
-     *       but WITHOUT the accumulator/persistence logic. This gives a clean
-     *       per-frame view suitable for shape analysis — no DC gap, continuous
-     *       frequency ordering that matches the display.
+     * @note Produces the Looking Glass display mapping:
+     *       Pixels 0..119 = FFT bins 134..253 (lower sideband, above center)
+     *       Pixels 120..237 = FFT bins 2..119 (upper sideband, below center)
+     *       This is the per-frame LG view used for shape analysis — continuous
+     *       frequency ordering that matches the Looking Glass display.
      * @note Pixels 238-239 are zeroed (map to DC spike bins 120-121).
      * @note Stack: ~0 bytes (writes to caller buffer). Flash: <100 bytes.
+     * @note process_frame() uses a DIFFERENT mapping (frequency-ascending) for
+     *       the sweep composite — this function is NOT used for composite data.
      */
     static void reorder_frame(
         const ChannelSpectrum& spectrum,
