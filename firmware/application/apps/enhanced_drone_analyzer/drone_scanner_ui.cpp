@@ -1434,6 +1434,7 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
     // ignored: any other pitch either recreates the notches (step > 8.83 MHz)
     // or wastes dwell for no benefit (step < 8.83 MHz).
     static constexpr FreqHz MAX_STEP_HZ = SWEEP_GAPLESS_STEP_MAX_HZ;
+    // Hz of FFT data per frame: 238 usable bins × 78,125 Hz = 18,593,750 Hz
     static constexpr FreqHz HZ_PER_FRAME = (SWEEP_PIXELS_PER_SLICE - 2) * SWEEP_BIN_SIZE;
 
     uint16_t frames = (range + MAX_STEP_HZ - 1) / MAX_STEP_HZ;
@@ -1446,9 +1447,10 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
     // Each frame contributes HZ_PER_FRAME (~18.59 MHz) of FFT data, but only
     // step_hz (~8.82 MHz) is new frequency range. The excess accumulates and
     // would overflow the 240-pixel composite before the sweep completes.
-    // Formula: pixel_step_hz = (frames * HZ_PER_FRAME) / COMPOSITE_SIZE
+    // Formula: pixel_step_hz = (frames × HZ_PER_FRAME) / COMPOSITE_SIZE
     // This maps the total accumulated Hz to exactly 240 pixels.
-    pixel_step_hz = (static_cast<FreqHz>(frames) * HZ_PER_FRAME) / SWEEP_PIXELS_PER_SLICE;
+    const FreqHz total_accumulated_hz = static_cast<FreqHz>(frames) * HZ_PER_FRAME;
+    pixel_step_hz = total_accumulated_hz / SWEEP_PIXELS_PER_SLICE;
     // Guard: a degenerate window (< 240 Hz wide) would make pixel_step_hz 0 and
     // divide-by-zero in SweepProcessor::process_frame(). Clamp to 1 Hz so the
     // accumulator always advances.
