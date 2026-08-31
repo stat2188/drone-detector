@@ -148,8 +148,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         &field_rssi_dec_cyc_,
         &big_display_,
         &drone_display_,
-        &filter_labels_,
-        &field_filter_,
         &button_median_,
         &button_start_stop_,
         &button_mode_,
@@ -157,13 +155,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         &button_settings_,
         &button_swp_
     });
-
-    // Filter callback (Looking Glass style: OFF/MID/HIGH)
-    field_filter_.on_change = [this](size_t, int32_t v) {
-        min_color_power_ = static_cast<uint8_t>(v);
-        drone_display_.set_spectrum_filter(min_color_power_);
-    };
-    field_filter_.set_by_value(DEFAULT_SPECTRUM_FILTER);
 
     // Sync RSSI decrease cycles from scanner config to UI field
     // NOTE: spectrum shape params NOT synced here to preserve display_margin_=0 default
@@ -1124,7 +1115,7 @@ void DroneScannerUI::exit_sweep_mode(bool suppress_auto_restart) noexcept {
     // Restore normal display filter when returning from sweep mode.
     // Without this, the sweep noise floor threshold would persist in normal mode,
     // causing weak signals to be invisible in non-sweep view.
-    drone_display_.set_spectrum_filter(DEFAULT_SPECTRUM_FILTER);
+    drone_display_.set_spectrum_filter(0);
     // Clean EMA state and hide scan heads so the next sweep entry starts fresh
     // and the non-sweep view does not show leftover markers.
     drone_display_.reset_composite_persistence();

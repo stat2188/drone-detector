@@ -94,20 +94,7 @@ private:
         {{UI_POS_X_RIGHT(9), UI_POS_Y(0)}, "cy", Color::white()},
     };
 
-    ui::Labels filter_labels_{
-        {{UI_POS_X(0), 268}, "FILT:", Color::white()},
-    };
-
-    ui::OptionsField field_filter_{
-        {UI_POS_X(5), 268},
-        4,
-        {
-            {"OFF ", SPECTRUM_FILTER_OFF},
-            {"MID ", SPECTRUM_FILTER_MID},
-            {"HIGH", SPECTRUM_FILTER_HIGH},
-        }};
-
-    ui::Button button_median_{{UI_POS_X(10), 268, UI_POS_WIDTH(3), 16}, "OFF"};
+    ui::Button button_median_{{UI_POS_X(0), 268, UI_POS_WIDTH(3), 16}, "OFF"};
 
     ui::Button button_start_stop_{{UI_POS_X(0), 284, UI_POS_WIDTH(6), 28}, "Start"};
     ui::Button button_mode_{{UI_POS_X(7), 284, UI_POS_WIDTH(5), 28}, "Mode"};
@@ -215,9 +202,6 @@ private:
     void retune_sweep_window(SweepWindow& win, const char* prefix = nullptr) noexcept;
     void update_sweep_pair_display() noexcept;
     [[nodiscard]] uint8_t pair_first(uint8_t idx) const noexcept;
-
-    // Spectrum filter threshold (OFF/MID/HIGH)
-    uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
 
     // Median filter toggle state
     bool median_enabled_{true};

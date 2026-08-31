@@ -757,16 +757,6 @@ constexpr uint8_t SWEEP_NOISE_FLOOR_PERCENTILE = 15;
 constexpr uint16_t WATERFALL_HEIGHT = 24;
 
 // ============================================================================
-// Spectrum Filter Constants (matching Looking Glass)
-// ============================================================================
-
-constexpr uint8_t SPECTRUM_FILTER_OFF = 0;
-constexpr uint8_t SPECTRUM_FILTER_MID = 118;
-constexpr uint8_t SPECTRUM_FILTER_HIGH = 202;
-constexpr uint8_t DEFAULT_SPECTRUM_FILTER = SPECTRUM_FILTER_OFF;
-constexpr uint8_t DEFAULT_SPECTRUM_INTEGRATION = 3;
-
-// ============================================================================
 // Spectrum Shape Filter Constants
 // ============================================================================
 

@@ -211,7 +211,6 @@ public:
     void set_status_bar_visible(bool visible) noexcept { status_bar_visible_ = visible; dirty_flags_ = DIRTY_ALL; set_dirty(); }
 
     void set_spectrum_filter(uint8_t min_power) noexcept { min_color_power_ = min_power; dirty_flags_ |= DIRTY_SPEC; set_dirty(); }
-    void set_spectrum_integration(uint8_t factor) noexcept { spectrum_integration_ = factor; dirty_flags_ |= DIRTY_SPEC; set_dirty(); }
 
     /**
      * @brief Set spectrum shape filter parameters (margin, min_width, max_width)
@@ -480,8 +479,9 @@ private:
     static constexpr uint8_t DIRTY_ALL       = 0x0F;
     uint8_t dirty_flags_{DIRTY_ALL};
 
-    // Spectrum filter threshold (0=OFF, 118=MID, 202=HIGH)
-    uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
+    // Spectrum filter threshold — auto-managed by sweep mode entry/exit.
+    // Normal mode: 0 (show all). Sweep mode: SWEEP_DISPLAY_NOISE_MARGIN (8).
+    uint8_t min_color_power_{0};
 
     // Spectrum shape filter params (from Settings: margin, min_width, max_width)
     // Used only for syncing from config when user changes settings via set_spectrum_shape_params()
@@ -494,12 +494,6 @@ private:
     // When > 0, only shows bins above noise_floor + display_margin
     // Updated independently from scanner config to allow different display vs detection behavior
     uint8_t display_margin_{0};
-
-    // Spectrum integration factor for smoothing
-    uint8_t spectrum_integration_{DEFAULT_SPECTRUM_INTEGRATION};
-
-    // spectrum_sort_buffer_ moved to file-scope static (drone_display.cpp)
-    // Saves 240 bytes of heap per DroneDisplay instance.
 
     // Band sweep composite mode
     bool composite_mode_{false};
