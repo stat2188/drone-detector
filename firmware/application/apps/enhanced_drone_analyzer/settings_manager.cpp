@@ -28,7 +28,7 @@ SettingsStruct::SettingsStruct() noexcept
     , threat_critical_dbm(RSSI_CRITICAL_THREAT_THRESHOLD_DBM)
     , spectrum_visible(true)
     , timeline_visible(true)
-    , dual_column_list(false)
+    , dual_column_list(true)
     , audio_alerts_enabled(true)
     , dwell_enabled(true)
     , confirm_count_enabled(true)

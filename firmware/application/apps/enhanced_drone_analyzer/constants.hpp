@@ -662,16 +662,6 @@ constexpr FreqHz SWEEP_GAPLESS_STEP_MAX_HZ =
     * SWEEP_BIN_SIZE;
 
 /**
- * @brief First-slice center lead above f_min for wide windows (Hz).
- * @note = 120 bins * 78,125 = 9,375,000 Hz. The first slice's negative-side
- *       active band (bins 6..119, reach 120 bins below center) then starts at
- *       exactly f_min, eliminating the leading-edge dead zone (~0.59 MHz) that
- *       a f_min + half-slice placement leaves.
- */
-constexpr FreqHz SWEEP_FIRST_CENTER_LEAD_HZ =
-    static_cast<FreqHz>(FFT_DC_SPIKE_START) * SWEEP_BIN_SIZE;
-
-/**
  * @brief FFT bin where lower sideband mapping starts
  */
 constexpr uint8_t SWEEP_FFT_MAP_START = 134;

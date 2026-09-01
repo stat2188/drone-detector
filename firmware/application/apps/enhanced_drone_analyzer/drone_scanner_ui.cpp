@@ -494,6 +494,10 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         SettingsFileManager::apply_to_config(g_workspace_settings, g_workspace_cfg);
         // Apply volume from settings (not during parsing to avoid side-effects)
         portapack::receiver_model.set_normalized_headphone_volume(g_workspace_settings.volume);
+        // Apply display-only settings that are not part of ScanConfig
+        drone_display_.set_dual_column_mode(g_workspace_settings.dual_column_list);
+        drone_display_.set_spectrum_visible(g_workspace_settings.spectrum_visible);
+        drone_display_.set_timeline_visible(g_workspace_settings.timeline_visible);
     }
 
     const ErrorCode config_err = scanner_ptr_->set_config(g_workspace_cfg);
@@ -1434,26 +1438,20 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
     // ignored: any other pitch either recreates the notches (step > 8.83 MHz)
     // or wastes dwell for no benefit (step < 8.83 MHz).
     static constexpr FreqHz MAX_STEP_HZ = SWEEP_GAPLESS_STEP_MAX_HZ;
-    // Hz of FFT data per frame: 238 usable bins × 78,125 Hz = 18,593,750 Hz
-    static constexpr FreqHz HZ_PER_FRAME = (SWEEP_PIXELS_PER_SLICE - 2) * SWEEP_BIN_SIZE;
-
     uint16_t frames = (range + MAX_STEP_HZ - 1) / MAX_STEP_HZ;
     if (frames == 0) {
         frames = 1;
     }
     step_hz = range / frames;
 
-    // Correct pixel_step_hz: accounts for the overlap between adjacent frames.
-    // Each frame contributes HZ_PER_FRAME (~18.59 MHz) of FFT data, but only
-    // step_hz (~8.82 MHz) is new frequency range. The excess accumulates and
-    // would overflow the 240-pixel composite before the sweep completes.
-    // Formula: pixel_step_hz = (frames × HZ_PER_FRAME) / COMPOSITE_SIZE
-    // This maps the total accumulated Hz to exactly 240 pixels.
-    const FreqHz total_accumulated_hz = static_cast<FreqHz>(frames) * HZ_PER_FRAME;
-    pixel_step_hz = total_accumulated_hz / SWEEP_PIXELS_PER_SLICE;
-    // Guard: a degenerate window (< 240 Hz wide) would make pixel_step_hz 0 and
-    // divide-by-zero in SweepProcessor::process_frame(). Clamp to 1 Hz so the
-    // accumulator always advances.
+    // Linear frequency-to-pixel mapping: each of 240 pixels represents exactly
+    // range/240 Hz. process_frame() discards excess pixels via the
+    // pixel_index >= COMPOSITE_SIZE guard — overflow is harmless.
+    // NOTE: pixel_step_hz must NOT use (frames × HZ_PER_FRAME) / 240 — that
+    // inflates the value by the overlap ratio (~2×), compressing the display
+    // and causing out-of-band power from the first slice to leak into the
+    // first pixels (the artifact observed at the beginning of each window).
+    pixel_step_hz = range / SWEEP_PIXELS_PER_SLICE;
     if (pixel_step_hz == 0) {
         pixel_step_hz = 1;
     }
@@ -1461,15 +1459,15 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
     (void)step;  // user pitch intentionally ignored (gapless auto-derivation)
 
     // First-slice placement:
-    //   - wide windows: lead by one lower-side reach (120 bins = 9.375 MHz) so
-    //     the slice's active negative band starts exactly at f_min — no
-    //     leading-edge dead zone;
+    //   - wide windows: half-slice lead (10 MHz) so the first slice's lower
+    //     edge starts exactly at f_min — no out-of-band bins leak into the
+    //     composite. The gapless step ensures the second slice covers the
+    //     overlap region, so no dead zone exists.
     //   - narrow windows (< one 20 MHz slice): centre the range in the slice
-    //     (Looking Glass SINGLEPASS pattern) — the extra slices produced by
-    //     the gapless pitch cover the central DC notch.
+    //     (Looking Glass SINGLEPASS pattern).
     f_center_ini = (range < SWEEP_SLICE_BW)
         ? (f_min + (range / 2))
-        : (f_min + SWEEP_FIRST_CENTER_LEAD_HZ);
+        : (f_min + (SWEEP_SLICE_BW / 2));
     reset();
 }
 
