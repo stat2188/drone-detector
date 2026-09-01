@@ -50,7 +50,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , field_rssi_dec_cyc_({UI_POS_X(17), UI_POS_Y(3)}, 2, {1, 50}, 1, ' ')
     , check_audio_alerts_({UI_POS_X(1), UI_POS_Y(9)}, 6, "Audio", false)
     , check_spectrum_visible_({UI_POS_X(20), UI_POS_Y(9)}, 5, "SpVis", false)
-    , check_timeline_visible_({UI_POS_X(20), UI_POS_Y(13)}, 5, "TL", false)
+    , check_timeline_visible_({UI_POS_X(20), UI_POS_Y(13)}, 5, "WF", false)
     , check_dual_column_({UI_POS_X(20), UI_POS_Y(3)}, 5, "2Col", false)
     , check_dwell_enabled_({UI_POS_X(1), UI_POS_Y(11)}, 6, "Dwell", false)
     , check_confirm_count_({UI_POS_X(1), UI_POS_Y(13)}, 8, "Confirm", false)

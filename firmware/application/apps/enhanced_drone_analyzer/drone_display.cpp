@@ -111,7 +111,7 @@ DroneDisplay::~DroneDisplay() noexcept {
 
 DroneDisplay::LayoutMetrics DroneDisplay::calculate_layout() const noexcept {
     constexpr uint16_t SPECTRUM_H = 50;
-    constexpr uint16_t TIMELINE_H = 24;
+    constexpr uint16_t TIMELINE_H = 40;
 
     const uint16_t total_h = parent_rect().size().height();
 
@@ -270,19 +270,16 @@ void DroneDisplay::render_waterfall(
     draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
     draw_text(painter, "WF", start_x + 2, start_y + 2, COLOR_TEXT);
 
+    constexpr uint16_t LABEL_H = 10;
     if (waterfall.count() == 0) {
-        draw_text(painter, "Waiting...", start_x + 2, start_y + 12, COLOR_UNKNOWN_THREAT);
+        draw_text(painter, "Waiting...", start_x + 2, start_y + LABEL_H, COLOR_UNKNOWN_THREAT);
         return;
     }
-
-    constexpr uint16_t LABEL_H = 12;
     const uint16_t chart_start_x = start_x + 2;
     const uint16_t chart_start_y = start_y + LABEL_H;
-    const uint16_t chart_h = (height > LABEL_H + 2) ? (height - LABEL_H - 2) : 4;
+    const uint16_t chart_h = (height > LABEL_H + 1) ? (height - LABEL_H - 1) : 4;
     const uint16_t chart_w = (width > 4) ? (width - 4) : width;
-
-    const uint8_t band_w = chart_w / MiniWaterfall::BANDS;
-    if (band_w == 0) return;
+    if (chart_w < MiniWaterfall::BANDS) return;
 
     // Row-oriented rendering: NEWEST at top, oldest at bottom (top-down flow).
     // vis_row 0 (top of chart) = newest row (row_count-1).
@@ -292,8 +289,6 @@ void DroneDisplay::render_waterfall(
 
     for (uint8_t vis_row = 0; vis_row < max_visible; ++vis_row) {
         const uint16_t py = chart_start_y + vis_row;
-        // vis_row 0 (top of chart) = newest row (row_count-1)
-        // vis_row max_visible-1 (bottom) = oldest visible row (row_count-max_visible)
         const uint8_t data_row = static_cast<uint8_t>(
             static_cast<int>(row_count) - 1 - static_cast<int>(vis_row));
 
@@ -302,8 +297,9 @@ void DroneDisplay::render_waterfall(
             if (pixel == 0) continue;
 
             const uint32_t color = MiniWaterfall::PALETTE[pixel];
-            const uint16_t px = chart_start_x + static_cast<uint16_t>(band) * band_w;
-            draw_rectangle(painter, px, py, band_w, 1, color);
+            const uint16_t px_start = chart_start_x + (chart_w * band) / MiniWaterfall::BANDS;
+            const uint16_t px_end = chart_start_x + (chart_w * (band + 1)) / MiniWaterfall::BANDS;
+            draw_rectangle(painter, px_start, py, px_end - px_start, 1, color);
         }
     }
 }
@@ -386,8 +382,9 @@ void DroneDisplay::render_sweep_waterfalls(
             continue;
         }
 
-        const uint8_t band_w = win_w / MiniWaterfall::BANDS;
-        if (band_w == 0) {
+        const uint16_t slot_w = chart_w - static_cast<uint16_t>(slot) * win_w;
+        const uint16_t this_w = (slot_w < win_w) ? slot_w : win_w;
+        if (this_w < MiniWaterfall::BANDS) {
             ++slot;
             continue;
         }
@@ -397,8 +394,6 @@ void DroneDisplay::render_sweep_waterfalls(
 
         for (uint8_t vis_row = 0; vis_row < max_visible; ++vis_row) {
             const uint16_t py = chart_start_y + vis_row;
-            // vis_row 0 (top of chart) = newest row (row_count-1)
-            // vis_row max_visible-1 (bottom) = oldest visible row (row_count-max_visible)
             const uint8_t data_row = static_cast<uint8_t>(
                 static_cast<int>(row_count) - 1 - static_cast<int>(vis_row));
 
@@ -407,8 +402,9 @@ void DroneDisplay::render_sweep_waterfalls(
                 if (pixel == 0) continue;
 
                 const uint32_t color = MiniWaterfall::PALETTE[pixel];
-                const uint16_t px = wx + static_cast<uint16_t>(band) * band_w;
-                draw_rectangle(painter, px, py, band_w, 1, color);
+                const uint16_t px_start = wx + (this_w * band) / MiniWaterfall::BANDS;
+                const uint16_t px_end = wx + (this_w * (band + 1)) / MiniWaterfall::BANDS;
+                draw_rectangle(painter, px_start, py, px_end - px_start, 1, color);
             }
         }
 
@@ -1121,12 +1117,14 @@ void DroneDisplay::render_composite(
         draw_text(painter, "SWEEP", start_x + 2, start_y + 2, COLOR_TEXT);
     }
 
-    const uint16_t bar_count = static_cast<uint16_t>(composite_size);
-
     const uint16_t chart_start_x = start_x + 2;
     const uint16_t chart_start_y = start_y + 12;
     const uint16_t chart_height = height - 14;
     if (chart_height < 4) return;
+
+    const uint16_t chart_w = (width > 4) ? (width - 4) : 0;
+    const uint16_t bar_count = static_cast<uint16_t>(
+        (composite_size <= chart_w) ? composite_size : chart_w);
 
     // Compute display threshold: subtract noise floor + margin from all power values.
     // This eliminates the visible noise baseline while preserving signal peaks.
