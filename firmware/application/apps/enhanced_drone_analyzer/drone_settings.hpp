@@ -94,7 +94,9 @@ private:
     ui::Button button_info_margin_;
     ui::Button button_info_width_;
     ui::Button button_info_sharp_;
-    ui::Button button_info_ratio_;
+
+    // Median filter toggle (replaces button_info_ratio_ from old layout)
+    ui::Checkbox check_median_enabled_;
 
     // Threat threshold controls
     ui::NumberField field_threat_low_;

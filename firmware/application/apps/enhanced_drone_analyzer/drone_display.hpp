@@ -199,6 +199,13 @@ public:
     void reset_waterfall() noexcept;
 
     /**
+     * @brief Reset only sweep waterfalls (preserve realtime waterfall history).
+     * @note Called on sweep mode entry to start fresh sweep data without
+     *       destroying the realtime waterfall accumulated during DB Scan.
+     */
+    void reset_sweep_waterfalls() noexcept;
+
+    /**
      * @brief Set status text
      * @param status_text Status text to display
      */

@@ -148,7 +148,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         &field_rssi_dec_cyc_,
         &big_display_,
         &drone_display_,
-        &button_median_,
         &button_start_stop_,
         &button_mode_,
         &button_load_,
@@ -163,18 +162,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         scanner_ptr_->get_config(g_workspace_cfg);
         field_rssi_dec_cyc_.set_value(static_cast<int32_t>(g_workspace_cfg.rssi_decrease_cycles));
     }
-
-    // Median filter toggle (spike rejection on RSSI samples)
-    // NOTE: SD save is DEFERRED to on_hide() to avoid blocking the UI thread
-    // with a full read-modify-write cycle on every tap (100-500ms SD latency).
-    button_median_.on_select = [this](ui::Button&) {
-        median_enabled_ = !median_enabled_;
-        if (scanner_ptr_ != nullptr) {
-            scanner_ptr_->set_median_filter_enabled(median_enabled_);
-        }
-        button_median_.set_text(median_enabled_ ? "Md+" : "OFF");
-        median_settings_dirty_ = true;
-    };
 
     // Register button callbacks BEFORE any early returns
     // Buttons must always respond, even if init fails
@@ -504,10 +491,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     if (config_err != ErrorCode::SUCCESS) {
         show_error(config_err, ERROR_DURATION_MS);
     }
-
-    // Sync UI median_enabled from loaded config
-    median_enabled_ = g_workspace_cfg.median_enabled;
-    button_median_.set_text(median_enabled_ ? "Md+" : "OFF");
 }
 
 DroneScannerUI::~DroneScannerUI() noexcept {
@@ -656,16 +639,6 @@ void DroneScannerUI::on_hide() {
     }
     if (scanner_thread_ != nullptr) {
         scanner_thread_->stop();
-    }
-
-    // Deferred SD save: persist median filter state when leaving the app.
-    // Avoids blocking the UI thread on every median button tap.
-    if (median_settings_dirty_) {
-        median_settings_dirty_ = false;
-        if (SettingsFileManager::load(g_workspace_settings) == ErrorCode::SUCCESS) {
-            g_workspace_settings.median_enabled = median_enabled_;
-            (void)SettingsFileManager::save(scanner_ptr_, g_workspace_settings);
-        }
     }
 }
 
@@ -847,11 +820,14 @@ void DroneScannerUI::refresh_ui() noexcept {
         }
     }  // if (slow_tick): heavy 10 Hz snapshot ends here
 
-    // Push peak power to realtime waterfall (non-sweep mode only).
+    // Push peak power to realtime waterfall (non-sweep mode only, WF enabled).
     // Sweep mode uses per-window waterfalls fed by on_sweep_spectrum() on
     // pair_complete — pushing realtime rows here would fill an invisible
     // buffer and burn CPU every DisplayFrameSync frame for no benefit.
-    if (!composite_active_) {
+    // When WF is disabled (timeline_visible_==false), skip push entirely:
+    // the render path short-circuits, but the push still runs compression,
+    // ring-buffer writes, and set_dirty() — pure waste.
+    if (!composite_active_ && drone_display_.get_timeline_visible()) {
         drone_display_.push_waterfall_value(scanner_ptr_->get_last_peak_power());
     }
 
@@ -969,7 +945,10 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     drone_display_.set_spectrum_filter(SWEEP_DISPLAY_NOISE_MARGIN);
     // Start with a clean EMA state and hidden scan heads.
     drone_display_.reset_composite_persistence();
-    drone_display_.reset_waterfall();
+    // Reset only sweep waterfalls — preserve realtime waterfall history from DB Scan.
+    // The realtime waterfall persists across mode switches so when the user
+    // returns to DB Scan mode, their sweep history is still visible.
+    drone_display_.reset_sweep_waterfalls();
     drone_display_.set_scan_head(-1, -1);
 
     if (scanner_ptr_ != nullptr) {
@@ -1123,7 +1102,6 @@ void DroneScannerUI::exit_sweep_mode(bool suppress_auto_restart) noexcept {
     // Clean EMA state and hide scan heads so the next sweep entry starts fresh
     // and the non-sweep view does not show leftover markers.
     drone_display_.reset_composite_persistence();
-    drone_display_.reset_waterfall();
     drone_display_.set_scan_head(-1, -1);
     drone_display_.set_active_sweep_windows(0);
 
@@ -1261,7 +1239,10 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     // PER-WINDOW WATERFALL PUSH: Push this window's composite immediately
     // instead of waiting for pair_complete. This gives the user instant
     // visual feedback for each sweep pass (~0.3s per window vs ~0.67s per pair).
-    if (win.enabled) {
+    // When WF is disabled (timeline_visible_==false), skip push: the render
+    // path short-circuits but push still compresses 240 bytes → 12 bytes,
+    // advances the ring buffer, and sets DIRTY_WATERFALL — pure CPU waste.
+    if (win.enabled && drone_display_.get_timeline_visible()) {
         drone_display_.push_sweep_waterfall_window(
             active_sweep_idx_, win.composite,
             win.f_min, win.f_max);

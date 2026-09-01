@@ -624,6 +624,16 @@ void DroneDisplay::reset_waterfall() noexcept {
     set_dirty();
 }
 
+void DroneDisplay::reset_sweep_waterfalls() noexcept {
+    for (auto& wf : sweep_waterfalls_) {
+        wf.reset();
+    }
+    sweep_wf_freq_start_.fill(0);
+    sweep_wf_freq_end_.fill(0);
+    dirty_flags_ |= DIRTY_WATERFALL;
+    set_dirty();
+}
+
 void DroneDisplay::set_status_text(const char* status_text) noexcept {
     if (status_text == nullptr) {
         return;

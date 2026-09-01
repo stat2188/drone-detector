@@ -94,8 +94,6 @@ private:
         {{UI_POS_X_RIGHT(9), UI_POS_Y(0)}, "cy", Color::white()},
     };
 
-    ui::Button button_median_{{UI_POS_X(0), 268, UI_POS_WIDTH(3), 16}, "OFF"};
-
     ui::Button button_start_stop_{{UI_POS_X(0), 284, UI_POS_WIDTH(6), 28}, "Start"};
     ui::Button button_mode_{{UI_POS_X(7), 284, UI_POS_WIDTH(5), 28}, "Mode"};
     ui::Button button_load_{{UI_POS_X(13), 284, UI_POS_WIDTH(4), 28}, "Load"};
@@ -202,10 +200,6 @@ private:
     void retune_sweep_window(SweepWindow& win, const char* prefix = nullptr) noexcept;
     void update_sweep_pair_display() noexcept;
     [[nodiscard]] uint8_t pair_first(uint8_t idx) const noexcept;
-
-    // Median filter toggle state
-    bool median_enabled_{true};
-    bool median_settings_dirty_{false};  // deferred SD save for median toggle
 
     // Latest ChannelStatistics.max_db from baseband (full-bandwidth RSSI)
     int32_t latest_max_db_{RSSI_NOISE_FLOOR_DBM};

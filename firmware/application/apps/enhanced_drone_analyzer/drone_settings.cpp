@@ -81,7 +81,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , button_info_margin_({UI_POS_X(0), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Mrg?")
     , button_info_width_({UI_POS_X(5), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Wid?")
     , button_info_sharp_({UI_POS_X(10), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Shp?")
-    , button_info_ratio_({UI_POS_X(15), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Rat?")
+    , check_median_enabled_({UI_POS_X(15), UI_POS_Y(7)}, 4, "Md+", false)
     , field_threat_low_({UI_POS_X(3), UI_POS_Y(16)}, 3, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
     , field_threat_medium_({UI_POS_X(11), UI_POS_Y(16)}, 3, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
     , field_threat_high_({UI_POS_X(19), UI_POS_Y(16)}, 3, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
@@ -146,7 +146,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &button_info_margin_,
         &button_info_width_,
         &button_info_sharp_,
-        &button_info_ratio_,
+        &check_median_enabled_,
         &field_cfar_mode_,
         &field_cfar_ref_cells_,
         &field_cfar_guard_cells_,
@@ -161,13 +161,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     // Load persisted settings from SD card (overrides config-based defaults)
     // If load fails, settings_ retains constructor defaults
     (void)SettingsFileManager::load(settings_);
-
-    // Median filter is controlled by main UI button (Md+), not settings view.
-    // Restore from scanner config to prevent SD card stale value from overriding
-    // the user's button toggle.
-    if (scanner_ptr_ != nullptr) {
-        settings_.median_enabled = scanner_ptr_->get_median_enabled();
-    }
 
     // Populate UI fields from loaded settings
     apply_settings_to_ui();
@@ -451,13 +444,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             "50 = ljuboj signal.");
     };
 
-    button_info_ratio_.on_select = [this](ui::Button&) {
-        nav_.display_modal("Peak Ratio",
-            "Otnoshenie vysoty k shirine.\n"
-            "Visokij + uzkoj = dron.\n"
-            "Nizkij = pomeha.\n"
-            "0 = FPV (otklychen),\n"
-            "80 = dlya uzkipolnyh.");
+    // Median filter toggle (spike rejection on RSSI samples)
+    check_median_enabled_.on_select = [this](ui::Checkbox&, bool v) {
+        settings_.median_enabled = v;
+        settings_dirty_ = true;
     };
 
     // CFAR callbacks
@@ -581,6 +571,7 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     check_neighbor_margin_.set_value(settings_.neighbor_margin_db > 0);
     field_neighbor_margin_.set_value(static_cast<int32_t>(settings_.neighbor_margin_db));
     check_rssi_variance_.set_value(settings_.rssi_variance_enabled);
+    check_median_enabled_.set_value(settings_.median_enabled);
     check_mahalanobis_.set_value(settings_.mahalanobis_enabled);
     field_mahalanobis_threshold_.set_value(static_cast<int32_t>(settings_.mahalanobis_threshold_x10));
     check_sensitive_mode_.set_value(settings_.sensitive_mode);
@@ -638,7 +629,7 @@ void DroneSettingsView::set_shape_filter_visibility(bool visible) noexcept {
     button_info_margin_.visible(visible);
     button_info_width_.visible(visible);
     button_info_sharp_.visible(visible);
-    button_info_ratio_.visible(visible);
+    check_median_enabled_.visible(visible);
     // CFAR fields are also gated by spectrum detection
     field_cfar_mode_.visible(visible);
     field_cfar_ref_cells_.visible(visible);
