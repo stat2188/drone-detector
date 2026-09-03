@@ -217,6 +217,16 @@ public:
     void set_drone_list_visible(bool visible) noexcept { drone_list_visible_ = visible; dirty_flags_ = DIRTY_ALL; set_dirty(); }
     void set_status_bar_visible(bool visible) noexcept { status_bar_visible_ = visible; dirty_flags_ = DIRTY_ALL; set_dirty(); }
 
+    /**
+     * @brief Compute maximum drone entries that fit on screen given current layout.
+     * @return Max visible entries (0 if no space). Accounts for spectrum/waterfall
+     *         visibility and dual-column mode.
+     * @note Used by refresh_ui() to cap get_tracked_drones() copy count,
+     *       avoiding sort/memcpy/memcmp on entries that can never be rendered.
+     * @note Stack: ~16 bytes. Flash: ~64 bytes.
+     */
+    [[nodiscard]] uint16_t max_visible_drones() const noexcept;
+
     void set_spectrum_filter(uint8_t min_power) noexcept { min_color_power_ = min_power; dirty_flags_ |= DIRTY_SPEC; set_dirty(); }
 
     /**
@@ -478,7 +488,6 @@ private:
     bool status_bar_visible_;
 
     // Section-level dirty flags — each bit controls whether a section repaints.
-    // Prevents clearing+redrawing unchanged sections, eliminating flicker.
     static constexpr uint8_t DIRTY_SPEC      = 1 << 0;
     static constexpr uint8_t DIRTY_WATERFALL = 1 << 1;
     static constexpr uint8_t DIRTY_DRONES    = 1 << 2;

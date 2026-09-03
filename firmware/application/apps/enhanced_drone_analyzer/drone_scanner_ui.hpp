@@ -206,6 +206,7 @@ private:
 
     // Reusable buffers for refresh_ui() (class members instead of static locals)
     DisplayData refresh_display_data_{};
+    TrackedDrone refresh_drones_[MAX_DISPLAYED_DRONES]{};  // BSS, not stack (saves 2,304B stack)
     char refresh_status_buf_[MAX_TEXT_LENGTH]{};
 
     // Per-frame Looking Glass reordered buffer for sweep mode shape analysis.

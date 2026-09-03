@@ -745,19 +745,19 @@ void DroneScannerUI::refresh_ui() noexcept {
     if (slow_tick) {
         // Build display data from tracked drones
         // update_display_data() skips the copy+DIRTY_DRONES when data is unchanged
-        // Stack: sizeof(TrackedDrone)*16 = ~1,984B, called at 10 Hz. Within budget.
+        // Stack: ~0 bytes (refresh_drones_ is BSS, was 2,304B on stack).
         refresh_display_data_.clear();
-        TrackedDrone refresh_drones[MAX_DISPLAYED_DRONES];
 
         {
-            const size_t count = scanner_ptr_->get_tracked_drones(refresh_drones, MAX_DISPLAYED_DRONES);
+            const size_t count = scanner_ptr_->get_tracked_drones(refresh_drones_, MAX_DISPLAYED_DRONES);
             refresh_display_data_.drone_count = count;
+
             for (size_t i = 0; i < count; ++i) {
-                refresh_display_data_.drones[i] = DisplayDroneEntry(refresh_drones[i]);
+                refresh_display_data_.drones[i] = DisplayDroneEntry(refresh_drones_[i]);
             }
 
-            // Sort by threat level descending (CRITICAL first, NONE last)
-            // Simple insertion sort — O(n²) but n ≤ MAX_DISPLAYED_DRONES (small)
+            // Sort by threat level descending (CRITICAL first, NONE last).
+            // Full sort needed — scanner array is detection-ordered, not threat-ordered.
             for (size_t i = 1; i < count; ++i) {
                 const DisplayDroneEntry key = refresh_display_data_.drones[i];
                 size_t j = i;
@@ -766,6 +766,13 @@ void DroneScannerUI::refresh_ui() noexcept {
                     --j;
                 }
                 refresh_display_data_.drones[j] = key;
+            }
+
+            // Cap to visible maximum — entries beyond this are never rendered.
+            // Sort ensures highest-threat entries are at indices [0..capped-1].
+            const uint16_t visible_cap = drone_display_.max_visible_drones();
+            if (visible_cap > 0 && count > visible_cap) {
+                refresh_display_data_.drone_count = visible_cap;
             }
         }
 

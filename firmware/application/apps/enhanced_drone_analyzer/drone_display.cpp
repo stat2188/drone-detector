@@ -139,6 +139,13 @@ DroneDisplay::LayoutMetrics DroneDisplay::calculate_layout() const noexcept {
     return LayoutMetrics{spec_h, tl_h, status_h, drone_h, list_start_y};
 }
 
+uint16_t DroneDisplay::max_visible_drones() const noexcept {
+    const auto layout = calculate_layout();
+    if (layout.drone_h < ENTRY_MIN_H) return 0;
+    const uint16_t max_rows = layout.drone_h / ENTRY_MIN_H;
+    return dual_column_mode_ ? static_cast<uint16_t>(max_rows * 2) : max_rows;
+}
+
 void DroneDisplay::paint(Painter& painter) {
     const auto sr = screen_rect();
     const uint16_t ox = sr.location().x();
