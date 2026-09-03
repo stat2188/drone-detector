@@ -2,14 +2,15 @@
 #include <algorithm>
 
 #include "spectrum_preview_widget.hpp"
+#include "theme.hpp"
 
 namespace drone_analyzer {
 
 // Scaling factor: maps parameter range (0-255) to pixel space.
-// For a 240px-wide widget: max_width_=200 → 200*240/512 ≈ 94px (≈39% width).
+// For a 240px-wide widget: max_width_=200 -> 200*240/512 ~ 94px (~39% width).
 constexpr int PARAM_TO_PX = 512;
 
-// Color gradient segments for amplitude_color(): green→yellow→red across 768 steps.
+// Color gradient segments for amplitude_color(): green->yellow->red across 768 steps.
 constexpr uint32_t COLOR_SEGMENTS = 3u;
 constexpr uint32_t COLOR_SEGMENT_SIZE = 256u;
 
@@ -22,6 +23,10 @@ constexpr int DASH_PERIOD_PX = 5;
 
 // Marker line heights (pixels).
 constexpr int MARKER_HEIGHT = 5;
+
+// Ratio threshold line dash pattern.
+constexpr int RATIO_DASH_PX = 2;
+constexpr int RATIO_DASH_PERIOD_PX = 4;
 
 SpectrumPreviewWidget::SpectrumPreviewWidget(ui::Rect parent_rect) noexcept
     : Widget{parent_rect} {
@@ -47,19 +52,16 @@ void SpectrumPreviewWidget::set_params(
     set_dirty();
 }
 
-// Three-segment color gradient: green (0-33%) → yellow (33-67%) → red (67-100%).
+// Three-segment color gradient: green (0-33%) -> yellow (33-67%) -> red (67-100%).
 // Maps normalized height h/max_h to a heat-map color for the spectrum peak waveform.
 ui::Color SpectrumPreviewWidget::amplitude_color(int32_t h, int32_t max_h) noexcept {
     if (max_h <= 0) return ui::Color::green();
     const uint32_t scaled = static_cast<uint32_t>(h) * (COLOR_SEGMENTS * COLOR_SEGMENT_SIZE) / static_cast<uint32_t>(max_h);
     if (scaled < COLOR_SEGMENT_SIZE) {
-        // Green ramp: (0, 0→255, 0)
         return ui::Color(0, static_cast<uint8_t>(scaled & 0xFFu), 0);
     } else if (scaled < COLOR_SEGMENT_SIZE * 2u) {
-        // Yellow transition: (0→255, 255, 0)
         return ui::Color(static_cast<uint8_t>(scaled - COLOR_SEGMENT_SIZE), 255u, 0);
     } else {
-        // Red ramp: (255, 255→0, 0)
         const uint32_t clamped = std::min<uint32_t>(scaled, COLOR_SEGMENTS * COLOR_SEGMENT_SIZE - 1u);
         const uint32_t g = COLOR_SEGMENT_SIZE - 1u - (clamped - COLOR_SEGMENT_SIZE * 2u);
         return ui::Color(255u, static_cast<uint8_t>(g & 0xFFu), 0);
@@ -75,22 +77,17 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
 
     painter.fill_rectangle(r, ui::Color::black());
 
-    // Layout constants: 2px bottom margin for noise floor line, 4px top margin.
+    // Layout: 2px bottom margin for noise floor, 4px top margin for labels.
     const int floor_y = y0 + h - 2;
     const int peak_h = h - 6;
 
-    // Noise floor line
+    // --- Noise floor line (always visible) ---
     painter.draw_hline({x0, floor_y}, w, ui::Color::darker_grey());
 
-    // Half-width in pixels: maps max_width_ (0-255) to pixel space.
-    // Clamped to [5, w/3] to prevent degenerate shapes.
+    // --- Peak shape: controlled by MaxW (base width), Sharpness, Flatness, Valley, Symmetry ---
+    // MaxW sets the base half-width. Rat does NOT affect the peak shape.
     int half_px = static_cast<int>(max_width_);
     half_px = std::max(5, std::min(w / 3, half_px * w / PARAM_TO_PX));
-
-    // Peak ratio narrows the peak: high ratio = tall + narrow (selective).
-    // Mirrors scanner logic: ratio = peak_margin * 10 / signal_width.
-    half_px = half_px * (255 - static_cast<int>(peak_ratio_)) / 255;
-    half_px = std::max(1, half_px);
 
     // Valley floor height (pixels above baseline). Maps 0-200 to 0-50% of peak_h.
     int valley_px = static_cast<int>(valley_depth_) * peak_h / 400;
@@ -103,16 +100,15 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
     }
 
     // Symmetry offset: shows maximum allowed asymmetry.
-    // symmetry_=100 → centered (0 offset), symmetry_=0 → max offset.
+    // symmetry_=100 -> centered (0 offset), symmetry_=0 -> max offset.
     int sym_off = (100 - static_cast<int>(symmetry_)) * half_px / 400;
     const int center = w / 2 + sym_off;
 
     // Sharpness factor (0-250, matches scanner range).
     const int sharp_factor = std::min(static_cast<int>(sharpness_), 250);
 
-    // Peak ratio height: maps 0-255 linearly across available vertical space.
-    const int height_range = h - 2 - peak_h;
-    const int peak_height = peak_h + (static_cast<int>(peak_ratio_) * height_range / 255);
+    // Peak height: fixed at peak_h (Rat no longer affects width or height).
+    const int peak_height = peak_h;
 
     const int peak_above = peak_height - valley_px;
     const int max_slope = std::max(1, half_px - flat_px);
@@ -126,12 +122,10 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
         if (flat_px > 0 && dx <= flat_px) {
             col_h = peak_height;
         } else if (dx <= half_px) {
-            // Slope region: linear ramp from flat edge down to valley.
             const int slope_dx = dx - flat_px;
             const int drop = slope_dx * sharp_factor * peak_above / (200 * max_slope);
             col_h = peak_height - std::min(drop, peak_above);
         } else {
-            // Beyond half-width: smooth decay to zero over VALLEY_DECAY_PX.
             const int v_dist = dx - half_px;
             if (v_dist < VALLEY_DECAY_PX) {
                 col_h = valley_px * (VALLEY_DECAY_PX - v_dist) / VALLEY_DECAY_PX;
@@ -147,13 +141,8 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
         }
     }
 
-    // Elevated threshold: solid grey line at 25% of peak height.
-    // Scanner uses noise_floor + peak_margin/3; this is a visual approximation.
-    const int elev_px = std::max(2, peak_h / 4);
-    const int elev_y = floor_y - elev_px;
-    painter.draw_hline({x0, elev_y}, w, ui::Color::dark_grey());
-
-    // Margin threshold: orange dashed line. Maps margin 0-255 to 0-peak_h pixels.
+    // --- Margin threshold: orange dashed horizontal line ---
+    // Maps margin 0-255 to 0-peak_h pixels. Labeled "M" at left edge.
     const int margin_px = std::min(peak_h, static_cast<int>(margin_) * peak_h / 255);
     const int margin_y = floor_y - margin_px;
     if (margin_px > 2) {
@@ -162,10 +151,11 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
         }
     }
 
-    // Width markers: red = min_width, grey = max_width.
+    // --- Width markers: red = min_width, grey = max_width ---
+    // These markers show the ABSOLUTE width boundaries. MaxW markers do NOT
+    // respond to Rat — they only move when MaxW changes.
     const int min_px = static_cast<int>(min_width_) * w / PARAM_TO_PX;
-    const int base_max = static_cast<int>(max_width_) * w / PARAM_TO_PX;
-    const int max_px = std::max(5, std::min(w / 3, base_max));
+    const int max_px = std::max(5, std::min(w / 3, static_cast<int>(max_width_) * w / PARAM_TO_PX));
 
     for (int side = -1; side <= 1; side += 2) {
         const int ml = center + side * min_px;
@@ -174,11 +164,11 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
         }
         const int mr = center + side * max_px;
         if (mr >= 0 && mr < w) {
-            painter.draw_vline({x0 + mr, elev_y - 2}, MARKER_HEIGHT, ui::Color::grey());
+            painter.draw_vline({x0 + mr, y0 + 1}, h - 3, ui::Color::grey());
         }
     }
 
-    // Valley indicators: small filled bars at signal edge + 1 pixel.
+    // --- Valley indicators: small filled bars at signal edge ---
     // Red if valley_depth > 0 (filter active), green if disabled.
     for (int side = -1; side <= 1; side += 2) {
         const int vx = center + side * (half_px + 1);
@@ -187,6 +177,58 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
             const ui::Color vc = (valley_depth_ == 0) ? ui::Color::green() : ui::Color::red();
             painter.fill_rectangle({x0 + vx - 1, floor_y - vh, 3, vh}, vc);
         }
+    }
+
+    // --- Ratio threshold: cyan diagonal line from bottom-left to peak ---
+    // Shows the height/width ratio boundary. Higher Rat = steeper line = harder to pass.
+    // ratio = peak_margin * 10 / signal_width. Line slope = peak_ratio / 10.
+    if (peak_ratio_ > 0) {
+        const int ratio_slope = static_cast<int>(peak_ratio_) * peak_h / (255 * 10);
+        // Draw from left edge toward center, stopping at the peak.
+        for (int x = x0; x < x0 + center && x < x0 + w; x += RATIO_DASH_PERIOD_PX) {
+            const int dist_from_center = center - (x - x0);
+            const int line_y = floor_y - (dist_from_center * ratio_slope / std::max(1, half_px));
+            if (line_y >= y0 && line_y <= floor_y) {
+                painter.draw_hline({x, line_y}, RATIO_DASH_PX, ui::Color::cyan());
+            }
+        }
+        // Mirror on right side.
+        for (int x = x0 + w - 1; x > x0 + center && x >= x0; x -= RATIO_DASH_PERIOD_PX) {
+            const int dist_from_center = x - (x0 + center);
+            const int line_y = floor_y - (dist_from_center * ratio_slope / std::max(1, half_px));
+            if (line_y >= y0 && line_y <= floor_y) {
+                painter.draw_hline({x - RATIO_DASH_PX + 1, line_y}, RATIO_DASH_PX, ui::Color::cyan());
+            }
+        }
+    }
+
+    // --- Inline parameter labels ---
+    // Each label is drawn at the visual element it describes.
+    // Font: 8x16 default font, positioned to avoid overlap.
+    const auto& font = ui::Theme::getInstance()->fg_light->font;
+
+    // "M" near margin dashed line (orange) — identifies the margin threshold.
+    if (margin_px > 4) {
+        painter.draw_string({x0 + 1, margin_y - 14}, font,
+                            ui::Color::orange(), ui::Color::black(), "M");
+    }
+
+    // "mn" near left red marker — identifies minimum width boundary.
+    if (min_px > 8 && min_px < w - 24) {
+        painter.draw_string({x0 + center - min_px - 9, y0 + 1}, font,
+                            ui::Color::red(), ui::Color::black(), "mn");
+    }
+
+    // "mx" near left grey marker — identifies maximum width boundary.
+    if (max_px > 16 && max_px < w - 24) {
+        painter.draw_string({x0 + center - max_px - 9, y0 + 1}, font,
+                            ui::Color::grey(), ui::Color::black(), "mx");
+    }
+
+    // "R" at top-right when peak_ratio > 0 — identifies ratio threshold line.
+    if (peak_ratio_ > 0) {
+        painter.draw_string({x0 + w - 9, y0 + 1}, font,
+                            ui::Color::cyan(), ui::Color::black(), "R");
     }
 }
 

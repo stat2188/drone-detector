@@ -78,9 +78,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(13), 20}, "DEFAULT")
     , button_about_({UI_POS_X(13), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(2), 20}, "!")
     , button_save_({UI_POS_X(15), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(14), 20}, "SAVE")
-    , button_info_margin_({UI_POS_X(0), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Mrg?")
-    , button_info_width_({UI_POS_X(5), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Wid?")
-    , button_info_sharp_({UI_POS_X(10), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Shp?")
     , check_median_enabled_({UI_POS_X(15), UI_POS_Y(7)}, 4, "Md+", false)
     , field_threat_low_({UI_POS_X(3), UI_POS_Y(16)}, 3, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
     , field_threat_medium_({UI_POS_X(11), UI_POS_Y(16)}, 3, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
@@ -98,7 +95,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , field_cfar_ref_cells_({UI_POS_X(14), UI_POS_Y(0)}, 2, {4, 64}, 4, ' ')
     , field_cfar_guard_cells_({UI_POS_X(20), UI_POS_Y(0)}, 1, {0, 8}, 1, ' ')
     , field_cfar_threshold_({UI_POS_X(25), UI_POS_Y(0)}, 3, {10, 100}, 5, ' ')
-    , button_info_cfar_({UI_POS_X(29), UI_POS_Y(0), UI_POS_WIDTH(3), 16}, "CF?")
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , display_ptr_(display)
@@ -143,15 +139,11 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &button_defaults_,
         &button_about_,
         &button_save_,
-        &button_info_margin_,
-        &button_info_width_,
-        &button_info_sharp_,
         &check_median_enabled_,
         &field_cfar_mode_,
         &field_cfar_ref_cells_,
         &field_cfar_guard_cells_,
         &field_cfar_threshold_,
-        &button_info_cfar_,
         &field_threat_low_,
         &field_threat_medium_,
         &field_threat_high_,
@@ -414,36 +406,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             "TM PowerHamster2188");
     };
 
-    // Info buttons for spectrum filter settings
-    button_info_margin_.on_select = [this](ui::Button&) {
-        nav_.display_modal("Margin",
-            "Porog shuma signala.\n"
-            "Skolko dB piki dolzhny\n"
-            "byt vyshe fona.\n"
-            "Bolshe = menshe lozhnyh.\n"
-            "20 = FPV po umolchaniyu.");
-    };
-
-    button_info_width_.on_select = [this](ui::Button&) {
-        nav_.display_modal("Width",
-            "Min: otbrasyvaet uzskie\n"
-            "  ( игly )\n"
-            " 3 = 234kHz (po umolch.)\n"
-            "Max: otbrasyvaet shirokie\n"
-            "  ( ploskie pomehi )\n"
-            "200 = FPV (~15MHz),\n"
-            "255 = prinyat vse.");
-    };
-
-    button_info_sharp_.on_select = [this](ui::Button&) {
-        nav_.display_modal("Sharpness",
-            "Ostota pika signala.\n"
-            "Video link drona = V-forma.\n"
-            "Bolshe = strogij filtr.\n"
-            "80-150 dlya FPV video.\n"
-            "50 = ljuboj signal.");
-    };
-
     // Median filter toggle (spike rejection on RSSI samples)
     check_median_enabled_.on_select = [this](ui::Checkbox&, bool v) {
         settings_.median_enabled = v;
@@ -515,15 +477,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         settings_dirty_ = true;
     };
 
-    button_info_cfar_.on_select = [this](ui::Button&) {
-        nav_.display_modal("CFAR",
-            "Adaptivnyj porog CFAR.\n"
-            "CA = srednee shuma.\n"
-            "GO = max iz okon.\n"
-            "SO = min iz okon.\n"
-            "HYBRID = smes.\n"
-            "OFF = fiksirovannyj.");
-    };
 }
 
 DroneSettingsView::~DroneSettingsView() noexcept {
@@ -626,16 +579,12 @@ void DroneSettingsView::set_shape_filter_visibility(bool visible) noexcept {
     field_spectrum_valley_depth_.visible(visible);
     field_spectrum_flatness_.visible(visible);
     field_spectrum_symmetry_.visible(visible);
-    button_info_margin_.visible(visible);
-    button_info_width_.visible(visible);
-    button_info_sharp_.visible(visible);
     check_median_enabled_.visible(visible);
     // CFAR fields are also gated by spectrum detection
     field_cfar_mode_.visible(visible);
     field_cfar_ref_cells_.visible(visible);
     field_cfar_guard_cells_.visible(visible);
     field_cfar_threshold_.visible(visible);
-    button_info_cfar_.visible(visible);
 }
 
 // ============================================================================

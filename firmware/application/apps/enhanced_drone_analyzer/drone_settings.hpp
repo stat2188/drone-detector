@@ -90,12 +90,7 @@ private:
     ui::Button button_about_;
     ui::Button button_save_;
 
-    // Compact info buttons for spectrum filter settings
-    ui::Button button_info_margin_;
-    ui::Button button_info_width_;
-    ui::Button button_info_sharp_;
-
-    // Median filter toggle (replaces button_info_ratio_ from old layout)
+    // Median filter toggle
     ui::Checkbox check_median_enabled_;
 
     // Threat threshold controls
@@ -109,7 +104,6 @@ private:
     ui::NumberField field_cfar_ref_cells_;
     ui::NumberField field_cfar_guard_cells_;
     ui::NumberField field_cfar_threshold_;
-    ui::Button button_info_cfar_;
 
     NavigationView& nav_;
     DroneScanner* scanner_ptr_;
