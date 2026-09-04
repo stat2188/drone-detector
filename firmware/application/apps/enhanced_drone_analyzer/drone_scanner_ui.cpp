@@ -1224,11 +1224,8 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     //   1. line_full:    composite[0..239] has been painted by the accumulator;
     //   2. freq_covered: the slice centered at f_center physically reached f_max
     //      (f_center + half-slice >= f_max).
-    // Terminating on EITHER event (the previous `!pixel_done && !freq_done`)
-    // silently dropped the top of the window: for a 100-500 MHz pass the line
-    // saturated at step 22 (center 475.2 MHz) while the RF tail ~485-500 MHz
-    // required the 23rd slice at 492.6 MHz. That slice was never tuned, so a
-    // drone transmitting in that tail was never detected — a blind band.
+    // Both are needed: line_full alone would skip the RF tail (blind band),
+    // freq_covered alone would leave the composite partially empty.
     const bool line_full = (win.pixel_index >= COMPOSITE_SIZE);
     const bool freq_covered = (win.f_center + (SWEEP_SLICE_BW / 2)) >= win.f_max;
     if (!(line_full && freq_covered)) {
@@ -1483,23 +1480,17 @@ bool DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) 
     // stale, so it MUST NOT be written into the composite AND it must NOT
     // advance bins_hz_acc either.
     //
-    // bins_hz_acc is the DISPLAY-FAITHFUL frequency counter: each PROCESSED
-    // (fresh) frame adds exactly the Hz of the 238 usable FFT bins it consumes
-    // (238 * SWEEP_BIN_SIZE = 18,593,750 Hz), and pixel_step_hz maps that onto
-    // composite columns. If discarded frames also bank "silent" Hz (the
-    // behavior introduced in commit 4ae47015), the accumulator runs AHEAD of
-    // the receiver: pixel_index reaches COMPOSITE_SIZE after only ~5 of the
-    // ~23 steps of a 100-500 MHz window, so the pass is aborted and forever
-    // re-scans only the first ~90 MHz of the window (the user-visible
-    // "fragments" ending at 110 / 127.391 / 144.783 MHz).
-    //
-    // Dropping stale frames without touching bins_hz_acc is the exact
-    // equivalent of Looking Glass, which drains the channel FIFO after a 5 ms
-    // wall-clock settle instead of bookkeeping per-frame credits.
+    // ACCUMULATION: each bin contributes effective_bin_size = step_hz / 238
+    // (not SWEEP_BIN_SIZE = 78,125 Hz). This ensures each slice adds exactly
+    // step_hz of unique frequency coverage to the accumulator, preventing the
+    // ~2x inflation caused by overlapping slices (step_hz < SWEEP_SLICE_BW).
+    // The composite then fills at the correct rate: after range / step_hz
+    // slices the accumulator reaches range Hz = 240 × pixel_step_hz.
     if (settle_frames_remaining_ > 0) {
         --settle_frames_remaining_;
         return false;
     }
+    const FreqHz effective_bin_size = step_hz / 238;
     SweepProcessor::process_frame(
         spectrum,
         composite,
@@ -1510,7 +1501,8 @@ bool DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) 
         f_center,
         exception_radius_hz,
         exceptions,
-        EXCEPTIONS_PER_WINDOW
+        EXCEPTIONS_PER_WINDOW,
+        effective_bin_size
     );
     return true;
 }

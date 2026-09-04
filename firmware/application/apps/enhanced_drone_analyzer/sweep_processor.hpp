@@ -35,6 +35,12 @@ public:
      * @param exception_radius_hz Exclusion radius around exception frequencies
      * @param exceptions     Exception frequency array
      * @param num_exceptions Number of valid exception entries
+     * @param effective_bin_size Hz contributed per FFT bin to the accumulator.
+     *        Must equal step_hz / 238 so that each slice contributes exactly
+     *        step_hz of unique frequency coverage. Without this correction the
+     *        overlapping slices (step_hz < SWEEP_SLICE_BW) inflate the
+     *        accumulator ~2x, causing the composite to fill after only ~50%
+     *        of the configured range — the "half-render" bug.
      * @return Updated pixel_index
      */
     static uint16_t process_frame(
@@ -47,7 +53,8 @@ public:
         FreqHz f_center,
         FreqHz exception_radius_hz,
         const FreqHz* exceptions,
-        uint8_t num_exceptions
+        uint8_t num_exceptions,
+        FreqHz effective_bin_size
     ) noexcept;
 
     /**

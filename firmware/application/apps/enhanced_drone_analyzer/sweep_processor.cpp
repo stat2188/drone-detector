@@ -33,16 +33,23 @@ uint16_t SweepProcessor::process_frame(
     FreqHz f_center,
     FreqHz exception_radius_hz,
     const FreqHz* exceptions,
-    uint8_t num_exceptions
+    uint8_t num_exceptions,
+    FreqHz effective_bin_size
 ) noexcept {
-    if (pixel_step_hz == 0) {
+    if (pixel_step_hz == 0 || effective_bin_size == 0) {
         return pixel_index;
     }
 
     // Iterate bins in frequency-ascending order for correct sweep composite:
     //   bin 0..117   → fft_bin 2..119   (upper sideband, f_center - 9.69 to -0.55 MHz)
-    //   bin 118..237 → fft_bin 134..253 (lower sideband, f_center + 0.625 to +10.39 MHz)
-    //   bin 238..239 skipped (DC spike region)
+    //   bin 118..119 → fft_bin 134..135 (DC spike — SKIPPED, no real signal energy)
+    //   bin 120..237 → fft_bin 136..253 (lower sideband, f_center + 0.78 to +10.39 MHz)
+    //   bin 238..239 skipped (end of slice)
+    //
+    // ACCUMULATION: each bin contributes effective_bin_size (= step_hz / 238)
+    // instead of SWEEP_BIN_SIZE. This ensures each slice adds exactly step_hz
+    // of unique frequency coverage to the accumulator, preventing the ~2x
+    // inflation caused by overlapping slices (step_hz < SWEEP_SLICE_BW).
     for (uint8_t bin = 0; bin < SWEEP_PIXELS_PER_SLICE; ++bin) {
         if (pixel_index >= COMPOSITE_SIZE) break;
         if (bin >= UPPER_PIXEL_END) continue;
@@ -51,10 +58,21 @@ uint16_t SweepProcessor::process_frame(
             ? (bin + 2)   // upper sideband: fft_bin 2..119
             : (bin + 16); // lower sideband: fft_bin 134..253
 
+        // Skip DC spike bins (120-135) — contain DC leakage, not real signal.
+        if (fft_bin >= FFT_DC_SPIKE_START && fft_bin < FFT_DC_SPIKE_END) {
+            bins_hz_acc += effective_bin_size;
+            while (bins_hz_acc >= pixel_step_hz && pixel_index < COMPOSITE_SIZE) {
+                ++pixel_index;
+                pixel_max = 0;
+                bins_hz_acc -= pixel_step_hz;
+            }
+            continue;
+        }
+
         const uint8_t power = spectrum.db[fft_bin];
         if (power > pixel_max) pixel_max = power;
 
-        bins_hz_acc += SWEEP_BIN_SIZE;
+        bins_hz_acc += effective_bin_size;
 
         while (bins_hz_acc >= pixel_step_hz && pixel_index < COMPOSITE_SIZE) {
             const FreqHz pixel_freq = DroneScanner::fft_bin_to_freq(f_center, fft_bin);

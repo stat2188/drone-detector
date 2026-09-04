@@ -1118,6 +1118,8 @@ public:
         //   Avoids negative cast: (bin-256) would overflow uint64_t.
         // Upper sideband (bin < 120):  freq = f_center - 126*SWEEP_BIN_SIZE + bin*SWEEP_BIN_SIZE
         //   Avoids negative cast: (bin-126) would overflow uint64_t.
+        // DC spike (120-135): no valid RF frequency — return 0.
+        if (bin >= FFT_DC_SPIKE_START && bin < FFT_DC_SPIKE_END) return 0;
         if (bin >= FFT_DC_SPIKE_END) {
             const FreqHz offset = 120 * SWEEP_BIN_SIZE;
             const FreqHz freq = static_cast<FreqHz>(bin) * SWEEP_BIN_SIZE;
