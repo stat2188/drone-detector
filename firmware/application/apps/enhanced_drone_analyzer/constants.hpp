@@ -711,8 +711,13 @@ constexpr uint16_t SWEEP_PERSISTENCE_DECAY_Q8 = 224;
  *       discards STALE_FIFO_FRAMES (frames already queued on the old frequency).
  * @note Total discard per step: SWEEP_SETTLE_FRAMES + STALE_FIFO_FRAMES.
  *       Each discarded frame adds one frame period of dwell per sweep step.
- *       1 frame is enough at 60fps; raise it only if real hardware shows
- *       blended frames on the first pixels of each step.
+ *       IMPORTANT: STALE_FIFO_FRAMES lives in retune_sweep_window()
+ *       (drone_scanner_ui.cpp) and MUST stay = 3: the DisplayFrameSync handler
+ *       drains only ONE frame per ~60 Hz tick while the M0 produces ~154 fps,
+ *       so the 4-slot spectrum FIFO is permanently full and ALL 4 queued
+ *       frames are stale at every retune. Do NOT lower it below the FIFO
+ *       depth — stale frames leak into the composite as false spikes/dips at
+ *       window starts (see the history block in retune_sweep_window()).
  */
 constexpr uint8_t SWEEP_SETTLE_FRAMES = 1;
 

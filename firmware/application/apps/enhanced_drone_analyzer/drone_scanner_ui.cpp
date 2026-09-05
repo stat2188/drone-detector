@@ -1562,28 +1562,44 @@ void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) n
     last_tuned_freq_ = win.f_center;
 
     // Frame-based settling replaces the old 5ms wall-clock sleep + streaming
-    // restart. Streaming is continuous, so frames already queued in the 4-slot
-    // channel FIFO (and the frame overlapping the retune instant) belong to the
+    // restart. Streaming is continuous, so frames already queued in the channel
+    // FIFO (and the frame overlapping the retune instant) belong to the
     // PREVIOUS frequency. process_bins() discards SWEEP_SETTLE_FRAMES +
     // STALE_FIFO_FRAMES frames after every retune, guaranteeing each analyzed
     // frame was captured after the MAX2837/RFFC5072 finished locking (~200us,
     // far below one FFT frame period). This is strictly stronger than sleeping:
     // the guarantee is pinned to captured frames, not to wall time, and the
     // UI event loop no longer blocks for 5ms on every sweep step.
-    // The channel FIFO is 4 slots deep and is drained every DisplayFrameSync
-    // tick. After a retune, frames captured at the old frequency may still be
-    // queued; process_bins() discards SWEEP_SETTLE_FRAMES(=1) + STALE_FIFO_FRAMES
-    // SERVED frames after every retune. Because the counter decrements once per
-    // frame actually consumed from the FIFO (not per wall-clock), STALE=1 leaves
-    // 2 discarded frames after each retune — enough to empty the stale tail
-    // given the ~200us MAX2837/RFFC5072 lock time is a tiny fraction of one FFT
-    // frame period (~6.5ms at 20MHz/trigger63). This is the validated
-    // pre-regression setting (was bumped to 3 together with the phantom-credit
-    // bug in 4ae47015, quadrupling dwell per step for no correctness gain).
-    // Raise it only if a blended frame is ever observed on the first pixels of
-    // a step — higher values only slow the sweep, never change RF coverage.
-    // STALE_FIFO_FRAMES = 1, 3-BROKE SWEEP
-    static constexpr uint8_t STALE_FIFO_FRAMES = 1;
+    //
+    // WHY STALE_FIFO_FRAMES MUST EQUAL THE FULL FIFO DEPTH MINUS ONE (=3):
+    // The DisplayFrameSync handler drains exactly ONE frame per tick (~60 Hz)
+    // while the M0 produces ~154 fps (20 MHz / trigger 63 ≈ 6.5 ms per FFT).
+    // FIFO::in() DROPS frames when full (common/fifo.hpp), so the 4-slot FIFO
+    // (ChannelSpectrumConfigMessage::fifo_k = 2) is permanently FULL: the
+    // oldest served frame is always ~2-4 frame periods old. Consequently, at
+    // the instant of a retune ALL 4 queued frames were captured at the OLD
+    // frequency — settle must cover all 4, not 2.
+    //
+    // HISTORY (do not flip this value again without reading this):
+    //  - 4ae47015: STALE=3, but settle frames also banked phantom Hz credit
+    //    into bins_hz_acc → accumulator ran ahead → sweep aborted after ~5
+    //    slices. The CREDIT was the bug, not STALE=3.
+    //  - fd4da6b: fixed the phantom credit (correct) but also dropped STALE
+    //    to 1 based on the wrong assumption that the FIFO drains between
+    //    retunes. Result: 2 of 4 stale frames leak into the composite after
+    //    every retune — previous band's RF remapped onto the new window =
+    //    false spike / dip at the start of each window line (frozen by the
+    //    EMA max-hold persistence for the whole pass). This is the
+    //    "SWEEP рисуется неправильно" regression.
+    //  - 8dc0ed7a: set STALE=3 (correct) but RE-ADDED the phantom credit line
+    //    in the same commit → "3-BROKE SWEEP" observation. Confounding: the
+    //    credit broke it, STALE=3 was innocent.
+    //  - bf018832/aa01fc92: reverted both again.
+    // CORRECT COMBINATION (this commit): STALE=3 AND no Hz credit during
+    // settle. Cost: 4 discarded frames (~26 ms) per slice step — dwell only;
+    // composite mapping is unaffected because discarded frames advance
+    // neither bins_hz_acc nor pixel_index.
+    static constexpr uint8_t STALE_FIFO_FRAMES = 3;
     win.settle_frames_remaining_ =
         static_cast<uint8_t>(SWEEP_SETTLE_FRAMES + STALE_FIFO_FRAMES);
     (void)prefix;
