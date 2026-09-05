@@ -1524,14 +1524,8 @@ bool DroneScannerUI::SweepWindow::is_exception(FreqHz hz) const noexcept {
 
 bool DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) noexcept {
     // Discard frames captured before/while the PLL settled: their power data is
-    // stale, so it MUST NOT be written into the composite.
-    //
-    // IMPORTANT: Even though the power data is stale, we must still advance
-    // bins_hz_acc by the full Hz of this frame (SWEEP_PIXELS_PER_SLICE * SWEEP_BIN_SIZE).
-    // Without this, the Hz accumulator has a gap at each retune boundary, causing
-    // the pixel-to-frequency mapping to drift and creating the visible "dip" at
-    // window transitions. The dead pixel fix (b9920814) removed this advancement,
-    // which was originally added in 4ae47015 to fix exactly this bug.
+    // stale, so it MUST NOT be written into the composite AND it must NOT
+    // advance bins_hz_acc either.
     //
     // ACCUMULATION: each of 236 signal-carrying bins contributes effective_bin_size
     // = step_hz / 236 (not SWEEP_BIN_SIZE = 78,125 Hz). DC spike bins are skipped
@@ -1542,7 +1536,6 @@ bool DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) 
     // slices the accumulator reaches range Hz = 240 × pixel_step_hz.
     if (settle_frames_remaining_ > 0) {
         --settle_frames_remaining_;
-        bins_hz_acc += static_cast<FreqHz>(SWEEP_PIXELS_PER_SLICE) * SWEEP_BIN_SIZE;
         return false;
     }
     const FreqHz effective_bin_size = step_hz / 236;
@@ -1577,13 +1570,19 @@ void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) n
     // far below one FFT frame period). This is strictly stronger than sleeping:
     // the guarantee is pinned to captured frames, not to wall time, and the
     // UI event loop no longer blocks for 5ms on every sweep step.
-    // The channel FIFO is 4 slots deep. After a retune, up to 3 frames
-    // captured at the old frequency may still be queued (the 4th is the one
-    // that triggered this callback). Setting STALE_FIFO_FRAMES=3 ensures we
-    // discard ALL stale frames, not just one. This matches Looking Glass's
-    // approach of draining the FIFO before processing (it stops streaming,
-    // sleeps 5ms, then restarts). We can't stop/restart streaming here
-    // without injecting M0 control messages and causing stutter.
+    // The channel FIFO is 4 slots deep and is drained every DisplayFrameSync
+    // tick. After a retune, frames captured at the old frequency may still be
+    // queued; process_bins() discards SWEEP_SETTLE_FRAMES(=1) + STALE_FIFO_FRAMES
+    // SERVED frames after every retune. Because the counter decrements once per
+    // frame actually consumed from the FIFO (not per wall-clock), STALE=1 leaves
+    // 2 discarded frames after each retune — enough to empty the stale tail
+    // given the ~200us MAX2837/RFFC5072 lock time is a tiny fraction of one FFT
+    // frame period (~6.5ms at 20MHz/trigger63). This is the validated
+    // pre-regression setting (was bumped to 3 together with the phantom-credit
+    // bug in 4ae47015, quadrupling dwell per step for no correctness gain).
+    // Raise it only if a blended frame is ever observed on the first pixels of
+    // a step — higher values only slow the sweep, never change RF coverage.
+    // STALE_FIFO_FRAMES = 1, 3-BROKE SWEEP
     static constexpr uint8_t STALE_FIFO_FRAMES = 1;
     win.settle_frames_remaining_ =
         static_cast<uint8_t>(SWEEP_SETTLE_FRAMES + STALE_FIFO_FRAMES);
