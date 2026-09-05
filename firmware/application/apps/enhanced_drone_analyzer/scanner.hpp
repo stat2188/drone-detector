@@ -1339,13 +1339,21 @@ private:
     ) noexcept;
     
     /**
-     * @brief Internal: Find drone by frequency
-     * @param frequency Frequency to find
-     * @return ErrorResult containing index or error
-     * @pre Mutex must be held (LockOrder::DATA_MUTEX)
+     * @brief Internal: Find the tracked drone nearest to a detection frequency
+     * @param frequency Frequency to match (Hz)
+     * @param radius_hz Maximum allowed |difference| (Hz). Exact matches
+     *                  (difference == 0) always win; among in-radius
+     *                  candidates the smallest difference wins; ties resolve
+     *                  to the oldest entry (lowest index).
+     * @return ErrorResult containing the index of the best match, or failure
+     *         when no tracked drone lies within radius_hz
+     * @pre Caller must hold DATA_MUTEX, or have exclusive access to the
+     *      tracker (sweep mode: scanner thread stopped, UI thread idle)
+     * @note Stack: ~32 bytes. Flash: ~120 bytes. O(n), n <= MAX_TRACKED_DRONES.
      */
-    [[nodiscard]] ErrorResult<size_t> find_drone_by_frequency_internal(
-        FreqHz frequency
+    [[nodiscard]] ErrorResult<size_t> find_nearest_drone_internal(
+        FreqHz frequency,
+        FreqHz radius_hz
     ) const noexcept;
     
     /**

@@ -868,14 +868,15 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
                 }
             }
 
-            ErrorResult<size_t> existing = find_drone_by_frequency_internal(frequency);
+            ErrorResult<size_t> existing = find_nearest_drone_internal(
+                frequency, DRONE_FREQ_MATCH_RADIUS_HZ);
             if (!existing.has_value() && pending_count_ < config_.confirm_count) {
                 should_update = false;  // waiting for more confirmations
             }
         }
 
         // Reuse the index returned by update_tracked_drone_internal (via out_index)
-        // instead of a second find_drone_by_frequency_internal() O(n) search.
+        // instead of a second find_nearest_drone_internal() O(n) search.
         // out_index is set on every SUCCESS path (existing drone, new drone, and
         // the RSSI-variance rejection early return) at scanner.cpp:1037/1072.
         // When should_update is false (confirm count still accumulating), no drone
@@ -1007,12 +1008,27 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
     size_t* out_index
 ) noexcept {
     if (out_index != nullptr) *out_index = SIZE_MAX;
-    ErrorResult<size_t> index_result = find_drone_by_frequency_internal(frequency);
-    
+    ErrorResult<size_t> index_result = find_nearest_drone_internal(
+        frequency, DRONE_FREQ_MATCH_RADIUS_HZ);
+
     if (index_result.has_value()) {
         // Existing drone — update and alert on threat increase
         size_t index = index_result.value();
         if (out_index != nullptr) *out_index = index;
+
+        // Frequency-drift absorption: a detection landing inside the match
+        // radius updates the NEAREST existing tracker instead of spawning a
+        // duplicate entry. Re-center the tracking key on the latest
+        // observation so slow RF drift (FHSS wander, TX/RX offset, 78 kHz
+        // FFT-bin quantization, overlapping sweep windows) can never walk
+        // outside the radius, and refresh the display frequency.
+        // NOTE: in normal (DB scan) mode `frequency` IS the tune center, so
+        // the re-centering below is a no-op there — the key stays pinned to
+        // the database channel; only sweep-mode bin measurements drift it.
+        if (tracked_drones_[index].frequency != frequency) {
+            tracked_drones_[index].frequency = frequency;
+        }
+        tracked_drones_[index].set_measured_frequency(frequency);
         
         // RSSI variance rejection: noise has chaotic fluctuations
         // Real drones have stable signal (variance < 25), noise > 100
@@ -1061,16 +1077,32 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
     return ErrorCode::SUCCESS;
 }
 
-ErrorResult<size_t> DroneScanner::find_drone_by_frequency_internal(
-    FreqHz frequency
+ErrorResult<size_t> DroneScanner::find_nearest_drone_internal(
+    FreqHz frequency,
+    FreqHz radius_hz
 ) const noexcept {
+    // Stack: ~32 bytes. FreqHz is uint64_t — unsigned difference is computed
+    // by branch, never by signed cast, so no underflow is possible.
+    ErrorResult<size_t> best_match = ErrorResult<size_t>::failure(ErrorCode::INVALID_PARAMETER);
+    FreqHz best_diff = 0;
+
     for (size_t i = 0; i < tracked_count_; ++i) {
-        if (tracked_drones_[i].frequency == frequency) {
-            return ErrorResult<size_t>::success(i);
+        const FreqHz entry_freq = tracked_drones_[i].frequency;
+        const FreqHz diff = (frequency > entry_freq) ? (frequency - entry_freq)
+                                                     : (entry_freq - frequency);
+        if (diff > radius_hz) {
+            continue;  // Outside match radius — not the same emitter
+        }
+        if (!best_match.has_value() || (diff < best_diff)) {
+            best_match = ErrorResult<size_t>::success(i);
+            best_diff = diff;
+            if (diff == 0) {
+                break;  // Exact match — cannot improve, stop scanning
+            }
         }
     }
-    
-    return ErrorResult<size_t>::failure(ErrorCode::INVALID_PARAMETER);
+
+    return best_match;
 }
 
 ErrorCode DroneScanner::get_current_drone_type(char* buffer, size_t buffer_size) const noexcept {
@@ -1943,12 +1975,14 @@ void DroneScanner::apply_sweep_tracking(
     if (config_.mahalanobis_enabled) {
         size_t drone_idx = 0;
         bool drone_found = false;
-        for (uint8_t i = 0; i < tracked_count_; ++i) {
-            if (tracked_drones_[i].frequency == peak_freq) {
-                drone_idx = i;
-                drone_found = true;
-                break;
-            }
+        // Nearest-match lookup (same policy as update_tracked_drone_internal):
+        // bin-quantized peak frequencies drift by 1-3 bins between sweep
+        // cycles, so exact equality never accumulated per-drone statistics.
+        const ErrorResult<size_t> match = find_nearest_drone_internal(
+            peak_freq, DRONE_FREQ_MATCH_RADIUS_HZ);
+        if (match.has_value()) {
+            drone_idx = match.value();
+            drone_found = true;
         }
 
         if (drone_found) {
@@ -1993,7 +2027,7 @@ void DroneScanner::apply_sweep_tracking(
         size_t drone_idx = SIZE_MAX;
         (void)update_tracked_drone_internal(peak_freq, peak_rssi, chTimeNow(), &drone_idx);
 
-        // Use returned index — avoids redundant find_drone_by_frequency_internal() O(n) search
+        // Use returned index — avoids redundant find_nearest_drone_internal() O(n) search
         if (drone_idx < tracked_count_) {
             tracked_drones_[drone_idx].update_cycle_peak(peak_rssi);
             tracked_drones_[drone_idx].mark_seen(chTimeNow(), peak_rssi);

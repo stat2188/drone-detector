@@ -69,6 +69,23 @@ constexpr size_t MAX_TRACKED_DRONES = 16;
 constexpr size_t MAX_DISPLAYED_DRONES = 16;
 
 /**
+ * @brief Frequency match radius for drone tracking (Hz)
+ * @note A detection landing within this distance of an existing tracked drone
+ *       UPDATES that entry (nearest match) instead of spawning a duplicate.
+ *       Without it, FFT-bin quantization (78,125 Hz/bin), bin hops between
+ *       sweep cycles, overlapping sweep windows, and real RF drift fragment
+ *       one physical emitter into 2-4 tracker entries: trends break and the
+ *       16-slot tracker fills with duplicates, crowding out genuine drones.
+ * @note Default 1 MHz: every known duplication mechanism is <= ~400 kHz
+ *       (3-bin hop), while real drone link channel spacing is >= 5 MHz
+ *       (5.8 GHz FPV band), so distinct emitters are never merged.
+ * @note Exact matches (difference == 0) always take priority over in-radius
+ *       matches — two tracked database channels never collapse into one entry
+ *       while both are being detected at their own centers.
+ */
+constexpr FreqHz DRONE_FREQ_MATCH_RADIUS_HZ = 1'000'000ULL;
+
+/**
  * @brief Spectrum buffer size (bytes)
  * @note Must match ChannelSpectrum::db.size() (256 bins)
  */

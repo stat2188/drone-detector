@@ -800,8 +800,10 @@ void DroneScannerUI::refresh_ui() noexcept {
                     drone_display_.set_status_text(refresh_status_buf_);
                     break;
                 case ScannerState::TRACKING:
+                    // Show TOTAL tracked count, not the display-capped count —
+                    // more drones can be tracked than fit on screen rows.
                     snprintf(refresh_status_buf_, sizeof(refresh_status_buf_), "Track %lu (%lu)",
-                             (unsigned long)refresh_display_data_.drone_count, (unsigned long)db_entry_count_);
+                             (unsigned long)scanner_ptr_->get_tracked_count(), (unsigned long)db_entry_count_);
                     drone_display_.set_status_text(refresh_status_buf_);
                     break;
                 case ScannerState::PAUSED:
