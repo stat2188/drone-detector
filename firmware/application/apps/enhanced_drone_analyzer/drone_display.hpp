@@ -458,8 +458,8 @@ private:
     std::array<uint8_t, SPECTRUM_BUFFER_SIZE> spectrum_buffer_;
 
     // Per-window sweep waterfalls (one independent history per sweep window).
-    // Each MiniWaterfall stores 60 rows × 30 bytes = 1,800 bytes.
-    // Total: 4 × 1,800 = 7,200 bytes BSS.
+    // Each MiniWaterfall stores 24 rows × 30 bytes = 720 bytes.
+    // Total: 4 × 720 = 2,880 bytes BSS.
     static constexpr uint8_t NUM_SWEEP_WATERFALLS = MAX_SWEEP_WINDOWS;
     std::array<MiniWaterfall, NUM_SWEEP_WATERFALLS> sweep_waterfalls_{};
 
