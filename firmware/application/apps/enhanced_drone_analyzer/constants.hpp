@@ -738,13 +738,15 @@ constexpr uint8_t SWEEP_NOISE_FLOOR_PERCENTILE = 15;
 // ============================================================================
 
 /**
- * @brief Height/width of the mini waterfall display in bands.
- * @note 24 bands (each = 10 composite bins) × 24 rows of history.
- *       Row-oriented: each sweep pass produces one row (24 frequency bands).
+ * @brief Horizontal resolution of the mini waterfall display in frequency bands.
+ * @note 60 bands (each = 4 composite bins) × 12 rows of history.
+ *       Row-oriented: each sweep pass produces one row (60 frequency bands).
  *       Rows scroll top-to-bottom (oldest at top, newest at bottom).
- *       SRAM: 24 rows × 12 bytes/row = 288 bytes.
+ *       SRAM: 12 rows × 30 bytes/row = 360 bytes per MiniWaterfall instance.
+ *       Each band maps to 4 screen pixels (240 / 60 = 4), giving 4px-wide
+ *       vertical stripes — 2.5× finer than the previous 24-band (10px) layout.
  */
-constexpr uint16_t WATERFALL_HEIGHT = 24;
+constexpr uint16_t WATERFALL_HEIGHT = 60;
 
 // ============================================================================
 // Spectrum Shape Filter Constants

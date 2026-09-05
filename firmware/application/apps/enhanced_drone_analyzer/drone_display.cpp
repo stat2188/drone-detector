@@ -286,7 +286,7 @@ void DroneDisplay::render_waterfall(
     const uint16_t chart_start_y = start_y + LABEL_H;
     const uint16_t chart_h = (height > LABEL_H + 1) ? (height - LABEL_H - 1) : 4;
     const uint16_t chart_w = (width > 4) ? (width - 4) : width;
-    if (chart_w < MiniWaterfall::BANDS) return;
+    if (chart_w < 4) return;
 
     // Row-oriented rendering: NEWEST at top, oldest at bottom (top-down flow).
     // vis_row 0 (top of chart) = newest row (row_count-1).
@@ -391,7 +391,7 @@ void DroneDisplay::render_sweep_waterfalls(
 
         const uint16_t slot_w = chart_w - static_cast<uint16_t>(slot) * win_w;
         const uint16_t this_w = (slot_w < win_w) ? slot_w : win_w;
-        if (this_w < MiniWaterfall::BANDS) {
+        if (this_w < 4) {
             ++slot;
             continue;
         }

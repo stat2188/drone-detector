@@ -12,7 +12,7 @@ namespace drone_analyzer {
 /**
  * @brief Compact row-oriented scrolling waterfall (time-ordered ring buffer).
  *
- * Each sweep pass produces one ROW of 24 frequency bands (compressed from 240 bins).
+ * Each sweep pass produces one ROW of 60 frequency bands (compressed from 240 bins).
  * Rows are stored time-ordered: row 0 = oldest, row count()-1 = newest (ring buffer).
  * The renderer places the newest row at the TOP (top-down flow) by reading rows
  * in reverse order — see DroneDisplay::render_waterfall()/render_sweep_waterfalls().
@@ -25,15 +25,15 @@ namespace drone_analyzer {
  * @note No floating-point -- pure integer arithmetic.
  * @note Thread-safety: single-producer (UI thread), no concurrent access needed.
  *
- * SRAM: MAX_ROWS * ROW_SIZE = 24 * 12 = 288 bytes
+ * SRAM: MAX_ROWS * ROW_SIZE = 12 * 30 = 360 bytes
  * Stack: ~12 bytes per push_row(), ~8 bytes per get_pixel()
  * Flash: ~400 bytes (all methods inline)
  */
 class MiniWaterfall {
 public:
     static constexpr uint8_t BANDS = WATERFALL_HEIGHT;
-    static constexpr uint8_t MAX_ROWS = WATERFALL_HEIGHT;
-    static constexpr uint8_t BAND_SIZE = 10;
+    static constexpr uint8_t MAX_ROWS = 12;
+    static constexpr uint8_t BAND_SIZE = 4;
     static constexpr uint8_t ROW_SIZE = BANDS / 2;
     static constexpr size_t PALETTE_SIZE = 16;
 
@@ -61,7 +61,7 @@ public:
     /**
      * @brief Compress and push one 240-byte composite as a new waterfall row.
      * @param composite_240 Pointer to 240-byte composite spectrum data.
-     * @note Compression: 240 bins -> 24 bands of 10 -> peak per band -> 4-bit quantize.
+     * @note Compression: 240 bins -> 60 bands of 4 -> peak per band -> 4-bit quantize.
      *       New row appears at the bottom; oldest row scrolls off the top.
      *       Stack: ~0 bytes (no locals beyond loop vars).
      */
@@ -94,7 +94,7 @@ public:
     /**
      * @brief Push a single peak power value as a uniform waterfall row.
      * @param peak_power Maximum FFT bin power (0-255) for this frame.
-     * @note For non-sweep mode: all 24 bands get the same quantized value.
+     * @note For non-sweep mode: all 60 bands get the same quantized value.
      *       Stack: ~0 bytes.
      */
     void push_single_value(uint8_t peak_power) noexcept {
