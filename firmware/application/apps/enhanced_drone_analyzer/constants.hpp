@@ -761,15 +761,25 @@ constexpr uint8_t SWEEP_NOISE_FLOOR_PERCENTILE = 15;
 
 /**
  * @brief Horizontal resolution of the mini waterfall display in frequency bands.
- * @note 60 bands (each = 4 composite bins) × up to 24 rows of history.
+ * @note 60 bands (each = 4 composite bins) × WATERFALL_MAX_ROWS rows of history.
  *       Row-oriented: each sweep pass produces one row (60 frequency bands).
  *       Rows scroll top-to-bottom (oldest at top, newest at bottom).
- *       SRAM: 24 rows × 30 bytes/row = 720 bytes per MiniWaterfall instance.
+ *       SRAM: WATERFALL_MAX_ROWS × 30 bytes/row = 630 bytes per MiniWaterfall
+ *       instance; 5 instances (4 sweep windows + 1 realtime) = 3,150 bytes BSS.
  *       Each band maps to 4 screen pixels (240 / 60 = 4), giving 4px-wide
  *       vertical stripes — 2.5× finer than the previous 24-band (10px) layout.
  *       Renderer shows min(chart_h, count) rows — fills available height.
  */
 constexpr uint16_t WATERFALL_HEIGHT = 60;
+
+/**
+ * @brief Vertical depth (history rows) of each MiniWaterfall.
+ * @note Sized to exactly fill the timeline section with zero dead pixels:
+ *       TIMELINE_H(40) − WF_HEADER_H(18) − 1 bottom gap = 21 rows.
+ *       Values above 21 only waste SRAM (renderer clips at chart_h);
+ *       values below 21 leave permanently blank rows under the waterfall.
+ */
+constexpr uint8_t WATERFALL_MAX_ROWS = 21;
 
 // ============================================================================
 // Spectrum Shape Filter Constants

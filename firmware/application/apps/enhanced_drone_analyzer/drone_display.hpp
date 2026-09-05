@@ -60,7 +60,7 @@ public:
      * @param start_x Starting X coordinate
      * @param start_y Starting Y coordinate
      * @param width Display width
-     * @param height Display height (should be >= MAX_ROWS + 12 for label; renderer shows min(chart_h, count) rows)
+     * @param height Display height (should be >= WATERFALL_MAX_ROWS + WF_HEADER_H + 1 = 40; renderer shows min(chart_h, count) rows)
      * @note Direction: NEWEST row at top, older rows scroll downward (top-down flow).
      */
     void render_waterfall(
@@ -470,8 +470,8 @@ private:
     std::array<uint8_t, SPECTRUM_BUFFER_SIZE> spectrum_buffer_;
 
     // Per-window sweep waterfalls (one independent history per sweep window).
-    // Each MiniWaterfall stores 24 rows × 30 bytes = 720 bytes.
-    // Total: 4 × 720 = 2,880 bytes BSS.
+    // Each MiniWaterfall stores 21 rows × 30 bytes = 630 bytes.
+    // Total: 4 × 630 = 2,520 bytes BSS (+630 bytes for realtime_waterfall_).
     static constexpr uint8_t NUM_SWEEP_WATERFALLS = MAX_SWEEP_WINDOWS;
     std::array<MiniWaterfall, NUM_SWEEP_WATERFALLS> sweep_waterfalls_{};
 

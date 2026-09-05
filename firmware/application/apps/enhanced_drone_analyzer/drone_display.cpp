@@ -10,7 +10,14 @@ namespace drone_analyzer {
 // ============================================================================
 // Waterfall rendering constants
 // ============================================================================
-constexpr uint16_t WF_LABEL_H = 10;              // header row height for "WF" label
+// Section header height for waterfall/spectrum titles.
+// draw_text() renders with the theme's fixed_8x16 font: a 16 px glyph box
+// (with opaque background) even though visible ink is only ~10 px. The header
+// MUST cover the full box, otherwise the title erases/overlaps the data rows
+// below it ("2400M lying on top of the waterfall" defect).
+// 18 px = 1 px top border + 16 px font box + 1 px gap. Titles are drawn at
+// start_y + 1 so they sit as high as possible without touching the border.
+constexpr uint16_t WF_HEADER_H = 18;
 
 // ============================================================================
 // Drone list layout constants (single source for render, draw, and hit-test)
@@ -177,6 +184,9 @@ DroneDisplay::~DroneDisplay() noexcept {
 
 DroneDisplay::LayoutMetrics DroneDisplay::calculate_layout() const noexcept {
     constexpr uint16_t SPECTRUM_H = 50;
+    // Timeline (waterfall) section: must equal WF_HEADER_H + WATERFALL_MAX_ROWS
+    // + 1 = 18 + 21 + 1 = 40 so the waterfall fills the section with zero dead
+    // pixels (see render_sweep_waterfalls()/MiniWaterfall::MAX_ROWS).
     constexpr uint16_t TIMELINE_H = 40;
 
     const uint16_t total_h = parent_rect().size().height();
@@ -297,13 +307,13 @@ void DroneDisplay::render_spectrum(
     uint16_t width,
     uint16_t height
 ) noexcept {
-    if (spectrum_data == nullptr || spectrum_size == 0 || height < 4) {
+    if (spectrum_data == nullptr || spectrum_size == 0 || height < WF_HEADER_H + 6) {
         return;
     }
 
     draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
     draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
-    draw_text(painter, "SPECTRUM +/-1MHz", start_x + 2, start_y + 2, COLOR_TEXT);
+    draw_text(painter, "SPECTRUM +/-1MHz", start_x + 2, start_y + 1, COLOR_TEXT);
 
     constexpr uint16_t MIN_BAR_WIDTH = 2;
     const uint16_t usable_width = width - 4;
@@ -312,8 +322,8 @@ void DroneDisplay::render_spectrum(
     if (bar_width < MIN_BAR_WIDTH) bar_width = MIN_BAR_WIDTH;
 
     const uint16_t chart_start_x = start_x + 2;
-    const uint16_t chart_start_y = start_y + 12;
-    const uint16_t chart_height = height - 14;
+    const uint16_t chart_start_y = start_y + WF_HEADER_H;
+    const uint16_t chart_height = height - WF_HEADER_H - 2;
     if (chart_height < 4) return;
 
     // Noise floor and margin filtering are pre-computed in set_spectrum_data()
@@ -352,15 +362,17 @@ void DroneDisplay::render_waterfall(
     // Background + label
     draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
     draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
-    draw_text(painter, "WF", start_x + 2, start_y + 2, COLOR_TEXT);
+    // Title drawn at +1: the fixed_8x16 glyph box (16 px, opaque background)
+    // then fits entirely inside WF_HEADER_H and never touches the data rows.
+    draw_text(painter, "WF", start_x + 2, start_y + 1, COLOR_TEXT);
 
     if (waterfall.count() == 0) {
-        draw_text(painter, "Waiting...", start_x + 2, start_y + WF_LABEL_H, COLOR_UNKNOWN_THREAT);
+        draw_text(painter, "Waiting...", start_x + 2, start_y + 1, COLOR_UNKNOWN_THREAT);
         return;
     }
     const uint16_t chart_start_x = start_x + 2;
-    const uint16_t chart_start_y = start_y + WF_LABEL_H;
-    const uint16_t chart_h = (height > WF_LABEL_H + 1) ? (height - WF_LABEL_H - 1) : 4;
+    const uint16_t chart_start_y = start_y + WF_HEADER_H;
+    const uint16_t chart_h = (height > WF_HEADER_H + 1) ? (height - WF_HEADER_H - 1) : 4;
     const uint16_t chart_w = (width > 4) ? (width - 4) : width;
     if (chart_w < 4) return;
 
@@ -388,8 +400,8 @@ void DroneDisplay::render_sweep_waterfalls(
 ) noexcept {
     if (width < 10 || height < 4 || active_waterfall_mask_ == 0) return;
 
-    const uint16_t chart_start_y = start_y + WF_LABEL_H;
-    const uint16_t chart_h = (height > WF_LABEL_H + 1) ? (height - WF_LABEL_H - 1) : 4;
+    const uint16_t chart_start_y = start_y + WF_HEADER_H;
+    const uint16_t chart_h = (height > WF_HEADER_H + 1) ? (height - WF_HEADER_H - 1) : 4;
     const uint16_t chart_start_x = start_x + 2;
     const uint16_t chart_w = (width > 4) ? (width - 4) : width;
 
@@ -399,7 +411,7 @@ void DroneDisplay::render_sweep_waterfalls(
     if (win_w < 2) return;
 
     // Header: always clear + redraw (cheap, 1 row of text)
-    draw_rectangle(painter, start_x, start_y, width, WF_LABEL_H, COLOR_BACKGROUND);
+    draw_rectangle(painter, start_x, start_y, width, WF_HEADER_H, COLOR_BACKGROUND);
     draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
 
     bool any_label = false;
@@ -407,7 +419,7 @@ void DroneDisplay::render_sweep_waterfalls(
         if (sweep_wf_freq_start_[j] > 0) { any_label = true; break; }
     }
     if (!any_label) {
-        draw_text(painter, "Waiting...", chart_start_x, start_y + 2, COLOR_UNKNOWN_THREAT);
+        draw_text(painter, "Waiting...", chart_start_x, start_y + 1, COLOR_UNKNOWN_THREAT);
     }
     uint8_t hdr_slot = 0;
     for (uint8_t j = 0; j < NUM_SWEEP_WATERFALLS; ++j) {
@@ -421,7 +433,7 @@ void DroneDisplay::render_sweep_waterfalls(
             write_uint(dst, rem, mhz);
             write_str(dst, rem, "M");
             *dst = '\0';
-            draw_text(painter, label, jx + 1, start_y + 2, COLOR_TEXT);
+            draw_text(painter, label, jx + 1, start_y + 1, COLOR_TEXT);
         }
         ++hdr_slot;
     }
@@ -1171,7 +1183,7 @@ void DroneDisplay::render_composite_full_band(
     FreqHz title_start,
     FreqHz title_end
 ) noexcept {
-    if (composite_data == nullptr || composite_size == 0 || height < 4 || band.shadow == nullptr) {
+    if (composite_data == nullptr || composite_size == 0 || height < WF_HEADER_H + 6 || band.shadow == nullptr) {
         return;
     }
 
@@ -1190,14 +1202,14 @@ void DroneDisplay::render_composite_full_band(
         write_uint(dst, rem, mhz_hi);
         write_str(dst, rem, "M");
         *dst = '\0';
-        draw_text(painter, title_buf, start_x + 2, start_y + 2, COLOR_TEXT);
+        draw_text(painter, title_buf, start_x + 2, start_y + 1, COLOR_TEXT);
     } else {
-        draw_text(painter, "SWEEP", start_x + 2, start_y + 2, COLOR_TEXT);
+        draw_text(painter, "SWEEP", start_x + 2, start_y + 1, COLOR_TEXT);
     }
 
     const uint16_t chart_start_x = start_x + 2;
-    const uint16_t chart_start_y = start_y + 12;
-    const uint16_t chart_height = height - 14;
+    const uint16_t chart_start_y = start_y + WF_HEADER_H;
+    const uint16_t chart_height = height - WF_HEADER_H - 2;
     if (chart_height < 4) return;
 
     const uint16_t chart_w = (width > 4) ? (width - 4) : 0;
@@ -1282,13 +1294,13 @@ void DroneDisplay::render_composite_partial_band(
     FreqHz title_start,
     FreqHz title_end
 ) noexcept {
-    if (composite_data == nullptr || composite_size == 0 || height < 4 || band.shadow == nullptr) {
+    if (composite_data == nullptr || composite_size == 0 || height < WF_HEADER_H + 6 || band.shadow == nullptr) {
         return;
     }
 
     const uint16_t chart_start_x = start_x + 2;
-    const uint16_t chart_start_y = start_y + 12;
-    const uint16_t chart_height = height - 14;
+    const uint16_t chart_start_y = start_y + WF_HEADER_H;
+    const uint16_t chart_height = height - WF_HEADER_H - 2;
     if (chart_height < 4) return;
 
     const uint16_t chart_w = (width > 4) ? (width - 4) : 0;
@@ -1425,7 +1437,7 @@ void DroneDisplay::render_multi_zone(
     uint16_t width,
     uint16_t height
 ) noexcept {
-    if (multi_zone_count_ == 0 || height < 20) return;
+    if (multi_zone_count_ == 0 || height < WF_HEADER_H + 6) return;
 
     // Divide height into equal zones with 1px separator
     const uint16_t zone_h = height / multi_zone_count_;
@@ -1455,13 +1467,17 @@ void DroneDisplay::render_multi_zone(
             write_uint(dst, rem, mhz_hi);
             write_str(dst, rem, "M");
             *dst = '\0';
-            draw_text(painter, title, start_x + 2, zone_y + 2, COLOR_TEXT);
+            draw_text(painter, title, start_x + 2, zone_y + 1, COLOR_TEXT);
 
             // Bar chart + white envelope via shared method (DRY).
             // Stack: ~6 bytes (EnvelopeState).
             constexpr uint16_t bar_width = 1;
-            const uint16_t chart_y = zone_y + 12;
-            const uint16_t chart_h = zone_h - 14;
+            // Guard BEFORE subtraction: zone_h - (WF_HEADER_H + 2) must not
+            // underflow uint16_t (previously produced chart_h = 65534 for
+            // 3-4 zones and drew garbage bars).
+            if (zone_h < WF_HEADER_H + 6) continue;
+            const uint16_t chart_y = zone_y + WF_HEADER_H;
+            const uint16_t chart_h = zone_h - WF_HEADER_H - 2;
             if (chart_h < 4) continue;
 
             const uint16_t envelope_y0 = static_cast<uint16_t>(chart_y + chart_h);
