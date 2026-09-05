@@ -101,7 +101,7 @@ static void render_waterfall_row_rle(
     uint16_t y,
     uint16_t total_width
 ) noexcept {
-    if (total_width < MiniWaterfall::BANDS) return;
+    if (total_width < 4) return;
 
     // Precompute band boundary X positions: band_x[i] = x_start + (total_width * i) / BANDS
     // Eliminates 60 integer divisions per row (replaced by table lookup).

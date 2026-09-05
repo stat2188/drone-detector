@@ -739,12 +739,13 @@ constexpr uint8_t SWEEP_NOISE_FLOOR_PERCENTILE = 15;
 
 /**
  * @brief Horizontal resolution of the mini waterfall display in frequency bands.
- * @note 60 bands (each = 4 composite bins) × 12 rows of history.
+ * @note 60 bands (each = 4 composite bins) × up to 60 rows of history.
  *       Row-oriented: each sweep pass produces one row (60 frequency bands).
  *       Rows scroll top-to-bottom (oldest at top, newest at bottom).
- *       SRAM: 12 rows × 30 bytes/row = 360 bytes per MiniWaterfall instance.
+ *       SRAM: 60 rows × 30 bytes/row = 1,800 bytes per MiniWaterfall instance.
  *       Each band maps to 4 screen pixels (240 / 60 = 4), giving 4px-wide
  *       vertical stripes — 2.5× finer than the previous 24-band (10px) layout.
+ *       Renderer shows min(chart_h, count) rows — fills available height.
  */
 constexpr uint16_t WATERFALL_HEIGHT = 60;
 

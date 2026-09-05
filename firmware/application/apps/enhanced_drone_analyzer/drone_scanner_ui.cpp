@@ -1480,17 +1480,18 @@ bool DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) 
     // stale, so it MUST NOT be written into the composite AND it must NOT
     // advance bins_hz_acc either.
     //
-    // ACCUMULATION: each bin contributes effective_bin_size = step_hz / 238
-    // (not SWEEP_BIN_SIZE = 78,125 Hz). This ensures each slice adds exactly
-    // step_hz of unique frequency coverage to the accumulator, preventing the
-    // ~2x inflation caused by overlapping slices (step_hz < SWEEP_SLICE_BW).
+    // ACCUMULATION: each of 236 signal-carrying bins contributes effective_bin_size
+    // = step_hz / 236 (not SWEEP_BIN_SIZE = 78,125 Hz). DC spike bins are skipped
+    // entirely — no Hz, no power. This ensures each slice adds exactly step_hz
+    // of unique frequency coverage to the accumulator, preventing the ~2x
+    // inflation caused by overlapping slices (step_hz < SWEEP_SLICE_BW).
     // The composite then fills at the correct rate: after range / step_hz
     // slices the accumulator reaches range Hz = 240 × pixel_step_hz.
     if (settle_frames_remaining_ > 0) {
         --settle_frames_remaining_;
         return false;
     }
-    const FreqHz effective_bin_size = step_hz / 238;
+    const FreqHz effective_bin_size = step_hz / 236;
     SweepProcessor::process_frame(
         spectrum,
         composite,

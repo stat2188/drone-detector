@@ -42,14 +42,15 @@ uint16_t SweepProcessor::process_frame(
 
     // Iterate bins in frequency-ascending order for correct sweep composite:
     //   bin 0..117   → fft_bin 2..119   (upper sideband, f_center - 9.69 to -0.55 MHz)
-    //   bin 118..119 → fft_bin 134..135 (DC spike — SKIPPED, no real signal energy)
+    //   bin 118..119 → fft_bin 134..135 (DC spike — SKIPPED, no Hz, no power)
     //   bin 120..237 → fft_bin 136..253 (lower sideband, f_center + 0.78 to +10.39 MHz)
     //   bin 238..239 skipped (end of slice)
     //
-    // ACCUMULATION: each bin contributes effective_bin_size (= step_hz / 238)
-    // instead of SWEEP_BIN_SIZE. This ensures each slice adds exactly step_hz
-    // of unique frequency coverage to the accumulator, preventing the ~2x
-    // inflation caused by overlapping slices (step_hz < SWEEP_SLICE_BW).
+    // ACCUMULATION: each of the 236 signal-carrying bins contributes
+    // effective_bin_size (= step_hz / 236). DC spike bins (118-119) are
+    // skipped entirely — they contribute neither Hz nor power. This prevents
+    // the "dead pixel" artifact where a pixel boundary cross during DC spike
+    // processing wrote pixel_max = 0 into the composite.
     for (uint8_t bin = 0; bin < SWEEP_PIXELS_PER_SLICE; ++bin) {
         if (pixel_index >= COMPOSITE_SIZE) break;
         if (bin >= UPPER_PIXEL_END) continue;
@@ -59,13 +60,9 @@ uint16_t SweepProcessor::process_frame(
             : (bin + 16); // lower sideband: fft_bin 134..253
 
         // Skip DC spike bins (120-135) — contain DC leakage, not real signal.
+        // Do NOT advance bins_hz_acc here: advancing without power creates
+        // "dead pixels" in the composite when a pixel boundary is crossed.
         if (fft_bin >= FFT_DC_SPIKE_START && fft_bin < FFT_DC_SPIKE_END) {
-            bins_hz_acc += effective_bin_size;
-            while (bins_hz_acc >= pixel_step_hz && pixel_index < COMPOSITE_SIZE) {
-                ++pixel_index;
-                pixel_max = 0;
-                bins_hz_acc -= pixel_step_hz;
-            }
             continue;
         }
 

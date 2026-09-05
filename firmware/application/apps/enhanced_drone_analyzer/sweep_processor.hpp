@@ -14,8 +14,9 @@ namespace drone_analyzer {
  * @note Pure function — no UI dependencies, no state, no heap.
  * @note Iterates bins in frequency-ascending order for correct sweep composite:
  * @note   bin 0..117   → FFT bins 2..119   (upper sideband, lower frequencies)
- * @note   bin 118..237 → FFT bins 134..253 (lower sideband, higher frequencies)
- * @note   bin 238..239 unused (skip DC spike bins)
+ * @note   bin 118..119 → FFT bins 134..135 (DC spike — skipped entirely, no Hz)
+ * @note   bin 120..237 → FFT bins 136..253 (lower sideband, higher frequencies)
+ * @note   bin 238..239 unused (end of slice)
  * @note M0 baseband handles FFT; M4 only maps bins to pixels.
  */
 class SweepProcessor {
@@ -36,11 +37,9 @@ public:
      * @param exceptions     Exception frequency array
      * @param num_exceptions Number of valid exception entries
      * @param effective_bin_size Hz contributed per FFT bin to the accumulator.
-     *        Must equal step_hz / 238 so that each slice contributes exactly
-     *        step_hz of unique frequency coverage. Without this correction the
-     *        overlapping slices (step_hz < SWEEP_SLICE_BW) inflate the
-     *        accumulator ~2x, causing the composite to fill after only ~50%
-     *        of the configured range — the "half-render" bug.
+     *        Must equal step_hz / 236 (236 = 240 total bins - 2 end skip - 2 DC spike)
+     *        so that each slice contributes exactly step_hz of unique frequency coverage.
+     *        DC spike bins are skipped entirely (no Hz, no power) to prevent dead pixels.
      * @return Updated pixel_index
      */
     static uint16_t process_frame(

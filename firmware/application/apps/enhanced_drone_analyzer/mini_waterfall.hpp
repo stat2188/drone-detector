@@ -25,14 +25,14 @@ namespace drone_analyzer {
  * @note No floating-point -- pure integer arithmetic.
  * @note Thread-safety: single-producer (UI thread), no concurrent access needed.
  *
- * SRAM: MAX_ROWS * ROW_SIZE = 12 * 30 = 360 bytes
+ * SRAM: MAX_ROWS * ROW_SIZE = 60 * 30 = 1,800 bytes
  * Stack: ~12 bytes per push_row(), ~8 bytes per get_pixel()
  * Flash: ~400 bytes (all methods inline)
  */
 class MiniWaterfall {
 public:
     static constexpr uint8_t BANDS = WATERFALL_HEIGHT;
-    static constexpr uint8_t MAX_ROWS = 12;
+    static constexpr uint8_t MAX_ROWS = 60;
     static constexpr uint8_t BAND_SIZE = 4;
     static constexpr uint8_t ROW_SIZE = BANDS / 2;
     static constexpr size_t PALETTE_SIZE = 16;
