@@ -302,11 +302,18 @@ public:
      * @param lower Pixel index 0..COMPOSITE_SIZE-1, or -1 to hide on lower band.
      * @note Draws a 1-px white vertical marker so the user sees where the sweep
      *       currently is, independent of pixel-value filtering.
+     * @note MARKER-ONLY update: sets DIRTY_SPEC_MARKER (2 column redraws),
+     *       NOT a full spectrum repaint. Early-returns when position is
+     *       unchanged — the common case between hops in dual-sweep mode.
+     * @note Stack: 0 B. Cost per call: ~4 comparisons.
      */
     void set_scan_head(int16_t upper, int16_t lower) noexcept {
+        if (scan_head_position_[0] == upper && scan_head_position_[1] == lower) {
+            return;  // No-op: avoids a pointless dirty cycle per hop
+        }
         scan_head_position_[0] = upper;
         scan_head_position_[1] = lower;
-        dirty_flags_ |= DIRTY_SPEC;
+        dirty_flags_ |= DIRTY_SPEC_MARKER;
         set_dirty();
     }
 
@@ -503,6 +510,14 @@ private:
     static constexpr uint8_t DIRTY_DRONES    = 1 << 2;
     static constexpr uint8_t DIRTY_STATUS    = 1 << 3;
     static constexpr uint8_t DIRTY_ALL       = 0x0F;
+    // Incremental spectrum sub-flags (sweep composite only).
+    // DIRTY_SPEC        — full spectrum repaint (mode/layout/title change).
+    // DIRTY_SPEC_DATA   — composite data changed → per-column diff redraw.
+    // DIRTY_SPEC_MARKER — scan head moved → 2 column writes only.
+    static constexpr uint8_t DIRTY_SPEC_DATA   = 1 << 4;
+    static constexpr uint8_t DIRTY_SPEC_MARKER = 1 << 5;
+    static constexpr uint8_t DIRTY_SPEC_ANY =
+        DIRTY_SPEC | DIRTY_SPEC_DATA | DIRTY_SPEC_MARKER;
     uint8_t dirty_flags_{DIRTY_ALL};
 
     // Spectrum filter threshold — auto-managed by sweep mode entry/exit.
@@ -579,6 +594,56 @@ private:
         uint16_t bar_height,
         uint32_t color,
         EnvelopeState& state
+    ) noexcept;
+
+    /**
+     * @brief Per-band incremental render state (sweep composite).
+     * @note shadow points into file-scope s_dd (BSS) — NOT owned, never freed.
+     * @note last_* fields snapshot every screen-visible input; any mismatch
+     *       forces a full band repaint (correctness over speed).
+     * @note SRAM: ~16 B per instance. Stack: 0 B (member).
+     */
+    struct BandRenderCtx {
+        uint8_t* shadow{nullptr};      // [COMPOSITE_SIZE] rendered values on screen
+        int16_t marker_on_screen{-1};  // marker column currently visible
+        bool shadow_valid{false};      // false until first full render
+        uint8_t last_noise_floor{0};
+        uint8_t last_threshold{0};
+        uint16_t last_x{0};
+        uint16_t last_y{0};
+        uint16_t last_w{0};
+        uint16_t last_h{0};
+    };
+    BandRenderCtx band1_;  // upper band (single mode renders here too)
+    BandRenderCtx band2_;  // lower band (dual-sweep only)
+
+    /**
+     * @brief Full composite render of one band (clear + title + all columns).
+     * @note Rebuilds band.shadow to match the screen exactly.
+     * @note Stack: ~48 B (title buffer + envelope state). Flash: ~400 B.
+     */
+    void render_composite_full_band(
+        Painter& painter, BandRenderCtx& band,
+        const uint8_t* composite_data, size_t composite_size,
+        uint16_t start_x, uint16_t start_y, uint16_t width, uint16_t height,
+        int16_t scan_head, uint8_t noise_floor,
+        FreqHz title_start, FreqHz title_end
+    ) noexcept;
+
+    /**
+     * @brief Incremental composite render of one band: redraw ONLY columns
+     *        whose rendered value changed since last paint (+ marker diff).
+     * @note Envelope state advances over ALL columns (mirrors full render
+     *       exactly — vertical connectors are column-local, so per-column
+     *       redraw is pixel-identical to a full repaint).
+     * @note Stack: ~40 B. Flash: ~500 B. Typical cost: 10-60 column writes.
+     */
+    void render_composite_partial_band(
+        Painter& painter, BandRenderCtx& band,
+        const uint8_t* composite_data, size_t composite_size,
+        uint16_t start_x, uint16_t start_y, uint16_t width, uint16_t height,
+        int16_t scan_head, uint8_t noise_floor, bool data_changed,
+        FreqHz title_start, FreqHz title_end
     ) noexcept;
 
     void render_composite(
