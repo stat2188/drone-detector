@@ -480,6 +480,11 @@ private:
     // Bit i = sweep window i active; 0 = non-sweep (realtime) waterfall mode.
     uint8_t active_waterfall_mask_{0};
 
+    // Per-window dirty bitmask for incremental waterfall rendering.
+    // Bit i = window i has new data and needs repaint. Cleared after paint().
+    // Saves ~75% of RLE row renders when only 1 of 4 windows completes a pass.
+    uint8_t dirty_waterfall_windows_{0xFF};  // init all dirty for first paint
+
     // Status text buffer
     char status_text_[MAX_TEXT_LENGTH];
 

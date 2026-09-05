@@ -368,13 +368,6 @@ void DroneDisplay::render_sweep_waterfalls(
 ) noexcept {
     if (width < 10 || height < 4 || active_waterfall_mask_ == 0) return;
 
-    // Always full repaint: clear background + header.
-    // 12-row waterfall with RLE is fast (~5-15 SPI calls per row per window).
-    // Incremental rendering is incompatible with newest-at-top layout because
-    // every new row shifts ALL visual positions by +1 Y pixel.
-    draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
-    draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
-
     const uint16_t chart_start_y = start_y + WF_LABEL_H;
     const uint16_t chart_h = (height > WF_LABEL_H + 1) ? (height - WF_LABEL_H - 1) : 4;
     const uint16_t chart_start_x = start_x + 2;
@@ -385,61 +378,72 @@ void DroneDisplay::render_sweep_waterfalls(
     const uint16_t win_w = chart_w / active_count;
     if (win_w < 2) return;
 
-    // Header row: per-window frequency labels.
+    // Header: always clear + redraw (cheap, 1 row of text)
+    draw_rectangle(painter, start_x, start_y, width, WF_LABEL_H, COLOR_BACKGROUND);
+    draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
+
     bool any_label = false;
-    for (uint8_t i = 0; i < NUM_SWEEP_WATERFALLS; ++i) {
-        if (sweep_wf_freq_start_[i] > 0) {
-            any_label = true;
-            break;
-        }
+    for (uint8_t j = 0; j < NUM_SWEEP_WATERFALLS; ++j) {
+        if (sweep_wf_freq_start_[j] > 0) { any_label = true; break; }
     }
     if (!any_label) {
         draw_text(painter, "Waiting...", chart_start_x, start_y + 2, COLOR_UNKNOWN_THREAT);
     }
-
-    // Separator + labels (one pass over active windows)
-    uint8_t slot = 0;
-    for (uint8_t i = 0; i < NUM_SWEEP_WATERFALLS; ++i) {
-        if ((active_waterfall_mask_ & (1u << i)) == 0) continue;
-        const uint16_t wx = chart_start_x + static_cast<uint16_t>(slot) * win_w;
-        if (slot > 0) {
-            draw_rectangle(painter, wx - 1, chart_start_y, 1, chart_h, COLOR_UNKNOWN_THREAT);
-        }
-        if (sweep_wf_freq_start_[i] > 0) {
+    uint8_t hdr_slot = 0;
+    for (uint8_t j = 0; j < NUM_SWEEP_WATERFALLS; ++j) {
+        if ((active_waterfall_mask_ & (1u << j)) == 0) continue;
+        const uint16_t jx = chart_start_x + static_cast<uint16_t>(hdr_slot) * win_w;
+        if (sweep_wf_freq_start_[j] > 0) {
             char label[12];
-            const uint32_t mhz = static_cast<uint32_t>(sweep_wf_freq_start_[i] / 1000000ULL);
+            const uint32_t mhz = static_cast<uint32_t>(sweep_wf_freq_start_[j] / 1000000ULL);
             char* dst = label;
             size_t rem = sizeof(label);
             write_uint(dst, rem, mhz);
             write_str(dst, rem, "M");
             *dst = '\0';
-            draw_text(painter, label, wx + 1, start_y + 2, COLOR_TEXT);
+            draw_text(painter, label, jx + 1, start_y + 2, COLOR_TEXT);
         }
-        ++slot;
+        ++hdr_slot;
     }
 
-    // Data rows: one independent waterfall per active window.
-    // NEWEST at top (vis_row 0), oldest below (top-down time flow).
-    // Each row rendered via RLE (merges adjacent same-color bands).
-    slot = 0;
+    // Data rows: clear + redraw ONLY dirty windows' columns.
+    // Clean windows keep their previous pixels on screen — no SPI cost.
+    // Saves ~75% of RLE row renders when 1 of 4 windows completes a pass.
+    uint8_t slot = 0;
     for (uint8_t i = 0; i < NUM_SWEEP_WATERFALLS; ++i) {
         if ((active_waterfall_mask_ & (1u << i)) == 0) continue;
+
         const uint16_t wx = chart_start_x + static_cast<uint16_t>(slot) * win_w;
-        if (sweep_waterfalls_[i].count() == 0) { ++slot; continue; }
         const uint16_t slot_w = chart_w - static_cast<uint16_t>(slot) * win_w;
         const uint16_t this_w = (slot_w < win_w) ? slot_w : win_w;
-        if (this_w < 4) { ++slot; continue; }
 
-        const uint8_t row_count = sweep_waterfalls_[i].count();
-        const uint8_t max_visible = (chart_h < row_count) ? static_cast<uint8_t>(chart_h) : row_count;
-        for (uint8_t vis_row = 0; vis_row < max_visible; ++vis_row) {
-            const uint16_t py = chart_start_y + vis_row;
-            const uint8_t data_row = static_cast<uint8_t>(
-                static_cast<int>(row_count) - 1 - static_cast<int>(vis_row));
-            render_waterfall_row_rle(painter, sweep_waterfalls_[i], data_row, wx, py, this_w);
+        if (dirty_waterfall_windows_ & (1u << i)) {
+            // Clear this window's column (separator + data area)
+            const uint16_t clear_x = (slot > 0) ? wx - 1 : wx;
+            const uint16_t clear_w = (slot > 0) ? this_w + 1 : this_w;
+            draw_rectangle(painter, clear_x, chart_start_y, clear_w, chart_h, COLOR_BACKGROUND);
+
+            // Separator (re-draw after clear)
+            if (slot > 0) {
+                draw_rectangle(painter, wx - 1, chart_start_y, 1, chart_h, COLOR_UNKNOWN_THREAT);
+            }
+
+            // Render all data rows for this window
+            if (this_w >= 4 && sweep_waterfalls_[i].count() > 0) {
+                const uint8_t row_count = sweep_waterfalls_[i].count();
+                const uint8_t max_visible = (chart_h < row_count) ? static_cast<uint8_t>(chart_h) : row_count;
+                for (uint8_t vis_row = 0; vis_row < max_visible; ++vis_row) {
+                    const uint16_t py = chart_start_y + vis_row;
+                    const uint8_t data_row = static_cast<uint8_t>(
+                        static_cast<int>(row_count) - 1 - static_cast<int>(vis_row));
+                    render_waterfall_row_rle(painter, sweep_waterfalls_[i], data_row, wx, py, this_w);
+                }
+            }
         }
         ++slot;
     }
+
+    dirty_waterfall_windows_ = 0;
 }
 
 void DroneDisplay::render_drone_list(
@@ -635,12 +639,17 @@ void DroneDisplay::push_sweep_waterfall_window(
     sweep_waterfalls_[window_index].push_row(composite_240);
     sweep_wf_freq_start_[window_index] = freq_start;
     sweep_wf_freq_end_[window_index] = freq_end;
+    dirty_waterfall_windows_ |= (1u << window_index);
     dirty_flags_ |= DIRTY_WATERFALL;
     set_dirty();
 }
 
 void DroneDisplay::set_active_sweep_windows(uint8_t enabled_mask) noexcept {
-    active_waterfall_mask_ = enabled_mask & static_cast<uint8_t>((1u << NUM_SWEEP_WATERFALLS) - 1u);
+    const uint8_t new_mask = enabled_mask & static_cast<uint8_t>((1u << NUM_SWEEP_WATERFALLS) - 1u);
+    if (new_mask != active_waterfall_mask_) {
+        active_waterfall_mask_ = new_mask;
+        dirty_waterfall_windows_ = new_mask;  // Mark newly-active windows dirty
+    }
 }
 
 void DroneDisplay::reset_waterfall() noexcept {
@@ -650,6 +659,7 @@ void DroneDisplay::reset_waterfall() noexcept {
     sweep_wf_freq_start_.fill(0);
     sweep_wf_freq_end_.fill(0);
     realtime_waterfall_.reset();
+    dirty_waterfall_windows_ = active_waterfall_mask_;  // All active windows need clear
     dirty_flags_ |= DIRTY_WATERFALL;
     set_dirty();
 }
@@ -660,6 +670,7 @@ void DroneDisplay::reset_sweep_waterfalls() noexcept {
     }
     sweep_wf_freq_start_.fill(0);
     sweep_wf_freq_end_.fill(0);
+    dirty_waterfall_windows_ = active_waterfall_mask_;  // All active windows need clear
     dirty_flags_ |= DIRTY_WATERFALL;
     set_dirty();
 }
