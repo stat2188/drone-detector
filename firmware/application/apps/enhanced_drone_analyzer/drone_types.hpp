@@ -477,11 +477,17 @@ struct TrackedDrone {
      *       threat level is deliberately NOT re-evaluated from chaotic samples.
      */
     void observe_rssi(RssiValue observed_rssi, SystemTime timestamp) noexcept {
-        const size_t write_idx = history_index_ % RSSI_HISTORY_SIZE;
+        // Array-size derivation instead of RSSI_HISTORY_SIZE / TIMESTAMP_HISTORY_SIZE:
+        // this header must not include constants.hpp (constants.hpp includes THIS
+        // header — circular). constants.hpp static_asserts both sizes == 6 and
+        // that they match rssi_history_[6] / timestamp_history_[6] declared below.
+        constexpr size_t rssi_history_len = sizeof(rssi_history_) / sizeof(rssi_history_[0]);
+        constexpr size_t timestamp_history_len = sizeof(timestamp_history_) / sizeof(timestamp_history_[0]);
+        const size_t write_idx = history_index_ % rssi_history_len;
         rssi_history_[write_idx] = static_cast<int16_t>(observed_rssi);
-        timestamp_history_[write_idx % TIMESTAMP_HISTORY_SIZE] = timestamp;
+        timestamp_history_[write_idx % timestamp_history_len] = timestamp;
         history_index_++;
-        if (update_count < RSSI_HISTORY_SIZE) {
+        if (update_count < rssi_history_len) {
             update_count++;
         }
         last_seen = timestamp;
