@@ -253,7 +253,12 @@ public:
     }
 
     // Dual-sweep support
-    void set_dual_sweep_mode(bool enabled) noexcept { dual_sweep_mode_ = enabled; dirty_flags_ = DIRTY_ALL; set_dirty(); }
+    void set_dual_sweep_mode(bool enabled) noexcept {
+        if (enabled == dual_sweep_mode_) return;
+        dual_sweep_mode_ = enabled;
+        dirty_flags_ |= DIRTY_SPEC;
+        set_dirty();
+    }
     void set_sweep2_data(const uint8_t* data, size_t size) noexcept;
     void set_sweep2_range(FreqHz start, FreqHz end) noexcept {
         sweep2_freq_start_ = start;

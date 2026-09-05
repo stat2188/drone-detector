@@ -670,6 +670,14 @@ bool DroneScannerUI::on_touch(const ui::TouchEvent event) {
 }
 
 void DroneScannerUI::bigdisplay_update(BigDisplayColor color) noexcept {
+    const FreqHz freq = get_current_frequency_safe();
+
+    // Skip big_display_.set() when both frequency and color are unchanged.
+    // At 60 Hz this saves ~58 text-rendering calls/sec when frequency is stable.
+    if (freq == bigdisplay_last_freq_ && color == bigdisplay_last_color_) return;
+    bigdisplay_last_freq_ = freq;
+    bigdisplay_last_color_ = color;
+
     switch (color) {
         case BigDisplayColor::GREY:
             big_display_.set_style(Theme::getInstance()->fg_medium);
@@ -685,9 +693,7 @@ void DroneScannerUI::bigdisplay_update(BigDisplayColor color) noexcept {
             break;
     }
     
-    // BigFrequency::set() only accepts rf::Frequency (numeric), not strings
-    // When frequency is 0 (uninitialized), display 0 Hz which formats as "0.000"
-    big_display_.set(get_current_frequency_safe());
+    big_display_.set(freq);
 }
 
 void DroneScannerUI::refresh_ui() noexcept {
@@ -828,14 +834,16 @@ void DroneScannerUI::refresh_ui() noexcept {
     }  // if (slow_tick): heavy 10 Hz snapshot ends here
 
     // Push peak power to realtime waterfall (non-sweep mode only, WF enabled).
+    // Throttled to ~10 Hz: at 60 Hz DisplayFrameSync, push every 6th frame.
+    // Waterfall visually updates at most 10 Hz — user cannot perceive faster.
     // Sweep mode uses per-window waterfalls fed by on_sweep_spectrum() on
     // pair_complete — pushing realtime rows here would fill an invisible
     // buffer and burn CPU every DisplayFrameSync frame for no benefit.
-    // When WF is disabled (timeline_visible_==false), skip push entirely:
-    // the render path short-circuits, but the push still runs compression,
-    // ring-buffer writes, and set_dirty() — pure waste.
     if (!composite_active_ && drone_display_.get_timeline_visible()) {
-        drone_display_.push_waterfall_value(scanner_ptr_->get_last_peak_power());
+        if (++wf_push_counter_ >= WF_PUSH_INTERVAL) {
+            wf_push_counter_ = 0;
+            drone_display_.push_waterfall_value(scanner_ptr_->get_last_peak_power());
+        }
     }
 
     // Update big frequency display
@@ -929,9 +937,9 @@ void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexce
         // Auto gain control: analyze spectrum and adjust RF frontend
         apply_agc(spectrum.db.data());
 
-        // Feed spectrum to DroneDisplay for visualization only when scanning
+        // Feed spectrum to DroneDisplay for visualization only when scanning.
+        // set_spectrum_data() already calls set_dirty() — no need for redundant call.
         drone_display_.set_spectrum_data(spectrum.db.data(), spectrum.db.size());
-        drone_display_.set_dirty();
     }
 }
 
@@ -1022,6 +1030,14 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     // Initialize pair tracking (pairs: 0=[w0,w1], 2=[w2,w3])
     current_pair_ = pair_first(active_sweep_idx_);
 
+    // Reset cached display state so first update_sweep_pair_display() call
+    // always sets dirty flags (avoids stale cache preventing initial repaint).
+    last_sweep_range_start_ = 0;
+    last_sweep_range_end_ = 0;
+    last_sweep2_range_start_ = 0;
+    last_sweep2_range_end_ = 0;
+    last_dual_sweep_mode_ = false;
+
     // Save DB index BEFORE stopping scanner, then derive frequency from DB entry.
     // This ensures last_db_frequency_ == entries[last_db_index_].frequency,
     // so get_next_frequency() finds the exact resume point after sweep.
@@ -1102,6 +1118,12 @@ void DroneScannerUI::exit_sweep_mode(bool suppress_auto_restart) noexcept {
     sweep_[3].enabled = false;
     drone_display_.set_composite_mode(false);
     drone_display_.set_dual_sweep_mode(false);
+    // Reset cached display state so next sweep entry starts fresh.
+    last_sweep_range_start_ = 0;
+    last_sweep_range_end_ = 0;
+    last_sweep2_range_start_ = 0;
+    last_sweep2_range_end_ = 0;
+    last_dual_sweep_mode_ = false;
     // Restore normal display filter when returning from sweep mode.
     // Without this, the sweep noise floor threshold would persist in normal mode,
     // causing weak signals to be invisible in non-sweep view.
@@ -1360,21 +1382,46 @@ void DroneScannerUI::update_sweep_pair_display() noexcept {
 
     if (w1 < MAX_SWEEP_WINDOWS && sweep_[w0].enabled && sweep_[w1].enabled) {
         // Dual mode: upper = w0, lower = w1
-        drone_display_.set_sweep_range(sweep_[w0].f_min, sweep_[w0].f_max);
+        if (sweep_[w0].f_min != last_sweep_range_start_ || sweep_[w0].f_max != last_sweep_range_end_) {
+            drone_display_.set_sweep_range(sweep_[w0].f_min, sweep_[w0].f_max);
+            last_sweep_range_start_ = sweep_[w0].f_min;
+            last_sweep_range_end_ = sweep_[w0].f_max;
+        }
         drone_display_.set_composite_data(sweep_[w0].composite, COMPOSITE_SIZE);
-        drone_display_.set_dual_sweep_mode(true);
-        drone_display_.set_sweep2_range(sweep_[w1].f_min, sweep_[w1].f_max);
+        if (!last_dual_sweep_mode_) {
+            drone_display_.set_dual_sweep_mode(true);
+            last_dual_sweep_mode_ = true;
+        }
+        if (sweep_[w1].f_min != last_sweep2_range_start_ || sweep_[w1].f_max != last_sweep2_range_end_) {
+            drone_display_.set_sweep2_range(sweep_[w1].f_min, sweep_[w1].f_max);
+            last_sweep2_range_start_ = sweep_[w1].f_min;
+            last_sweep2_range_end_ = sweep_[w1].f_max;
+        }
         drone_display_.set_sweep2_data(sweep_[w1].composite, COMPOSITE_SIZE);
     } else if (sweep_[w0].enabled) {
         // Single mode: only w0
-        drone_display_.set_sweep_range(sweep_[w0].f_min, sweep_[w0].f_max);
+        if (sweep_[w0].f_min != last_sweep_range_start_ || sweep_[w0].f_max != last_sweep_range_end_) {
+            drone_display_.set_sweep_range(sweep_[w0].f_min, sweep_[w0].f_max);
+            last_sweep_range_start_ = sweep_[w0].f_min;
+            last_sweep_range_end_ = sweep_[w0].f_max;
+        }
         drone_display_.set_composite_data(sweep_[w0].composite, COMPOSITE_SIZE);
-        drone_display_.set_dual_sweep_mode(false);
+        if (last_dual_sweep_mode_) {
+            drone_display_.set_dual_sweep_mode(false);
+            last_dual_sweep_mode_ = false;
+        }
     } else if (w1 < MAX_SWEEP_WINDOWS && sweep_[w1].enabled) {
         // Only w1 enabled (non-contiguous): show w1 as single
-        drone_display_.set_sweep_range(sweep_[w1].f_min, sweep_[w1].f_max);
+        if (sweep_[w1].f_min != last_sweep_range_start_ || sweep_[w1].f_max != last_sweep_range_end_) {
+            drone_display_.set_sweep_range(sweep_[w1].f_min, sweep_[w1].f_max);
+            last_sweep_range_start_ = sweep_[w1].f_min;
+            last_sweep_range_end_ = sweep_[w1].f_max;
+        }
         drone_display_.set_composite_data(sweep_[w1].composite, COMPOSITE_SIZE);
-        drone_display_.set_dual_sweep_mode(false);
+        if (last_dual_sweep_mode_) {
+            drone_display_.set_dual_sweep_mode(false);
+            last_dual_sweep_mode_ = false;
+        }
     }
 
     // Push real-time scan-head positions for both bands. The display draws a

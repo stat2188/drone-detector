@@ -109,6 +109,17 @@ private:
     char displayed_drone_type_[MAX_DRONE_TYPE_DISPLAY + 1]{};
     uint32_t drone_type_display_timer_{0};
 
+    // Throttle waterfall push to ~10 Hz (every 6th DisplayFrameSync at 60 Hz).
+    // At 60 Hz, push_waterfall_value() adds a row and calls set_dirty() every frame.
+    // Waterfall visually updates at most 10 Hz — user cannot perceive faster.
+    // Saves ~300 set_dirty() calls/sec and the associated ring-buffer + compress work.
+    static constexpr uint8_t WF_PUSH_INTERVAL = 6;
+    uint8_t wf_push_counter_{0};
+
+    // Cache for bigdisplay_update() — skip big_display_.set() when frequency unchanged.
+    FreqHz bigdisplay_last_freq_{0};
+    BigDisplayColor bigdisplay_last_color_{BigDisplayColor::GREY};
+
     bool scanning_{false};
     ScanningMode scanning_mode_{DEFAULT_SCANNING_MODE};
 
@@ -193,6 +204,16 @@ private:
     AtomicFlag button_debounce_guard_;     // Debounces button_mode_/start_stop rapid taps
     FreqHz last_db_frequency_{0};         // Last DB frequency before sweep
     size_t last_db_index_{0};             // Last DB index before sweep (for exact restore)
+
+    // Cached display state for dirty-checking in update_sweep_pair_display().
+    // Avoids calling set_dual_sweep_mode(), set_sweep_range(), set_sweep2_range()
+    // every frame when values haven't changed — each call forced DIRTY_ALL/DIRTY_SPEC
+    // and triggered full composite+waterfall+drone list repaints at 60 Hz.
+    FreqHz last_sweep_range_start_{0};
+    FreqHz last_sweep_range_end_{0};
+    FreqHz last_sweep2_range_start_{0};
+    FreqHz last_sweep2_range_end_{0};
+    bool last_dual_sweep_mode_{false};
 
     void enter_sweep_mode() noexcept;
     void exit_sweep_mode(bool suppress_auto_restart = false) noexcept;
