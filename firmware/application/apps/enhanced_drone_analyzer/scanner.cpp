@@ -1189,6 +1189,30 @@ size_t DroneScanner::get_tracked_drones(
     size_t copy_count = tracked_count_ < max_count ? tracked_count_ : max_count;
     
     for (size_t i = 0; i < copy_count; ++i) {
+        // BUGFIX (trend flicker / '-' reset): advance the trend hysteresis on
+        // the PERSISTENT tracked_drones_[i] object BEFORE copying.
+        //
+        // get_movement_trend() is const but mutates mutable hysteresis state
+        // (cached_trend_ / trend_hold_count_). It is only ever invoked from
+        // DisplayDroneEntry's constructor, which historically ran on a COPY
+        // (refresh_drones_[i] here). The copy is discarded after painting, so
+        // the hysteresis never accumulated across ticks: cached_trend_ on the
+        // persistent object stayed UNKNOWN forever.
+        //
+        // Consequence in sweep mode: finalize_sweep_cycle() resets
+        // last_cycle_peak_rssi_ to the sentinel at every pair boundary, so raw
+        // trend is UNKNOWN until the drone is re-detected in the next pass.
+        // The hysteresis branch "raw UNKNOWN + cached real → hold last real
+        // trend" was designed to cover exactly this gap, but it never fired —
+        // every evaluation started from a fresh copy with cached UNKNOWN — and
+        // ALL trends collapsed to '-' (UNKNOWN) after the second sweep window
+        // completed its pass (pair boundary = finalize).
+        //
+        // Evaluating on the original makes cached_trend_ persist, so during the
+        // sentinel gap the UI holds the last real trend ('<' / '>' / '~').
+        // Stack: ~8 bytes. Runs under DATA_MUTEX (UI thread; scanner thread is
+        // stopped in sweep mode and locks the same mutex in normal mode).
+        (void)tracked_drones_[i].get_movement_trend();
         drones[i] = tracked_drones_[i];
     }
     

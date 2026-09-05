@@ -284,6 +284,16 @@ struct TrackedDrone {
     // A new raw trend must agree for TREND_HYSTERESIS_COUNT consecutive
     // evaluations before the displayed trend changes.
     // Mutable: modified by const get_movement_trend() for hysteresis state.
+    //
+    // @invariant These fields are ONLY meaningful on the PERSISTENT
+    //            TrackedDrone objects owned by DroneScanner::tracked_drones_.
+    //            get_tracked_drones() evaluates the hysteresis on the
+    //            originals before copying, so copies carry the resolved
+    //            state and DisplayDroneEntry sees a stable trend across the
+    //            sentinel gap after finalize_sweep_cycle(). Do NOT evaluate
+    //            get_movement_trend() on throwaway copies as the sole
+    //            hysteresis carrier — the state would be discarded and every
+    //            UNKNOWN gap would display '-' (UNKNOWN).
     // ========================================================================
     mutable MovementTrend cached_trend_{MovementTrend::UNKNOWN};
     mutable uint8_t trend_hold_count_{0};
