@@ -1228,6 +1228,14 @@ constexpr int32_t MOVEMENT_TREND_THRESHOLD_APPROACHING_DB = 3;
 constexpr int32_t MOVEMENT_TREND_THRESHOLD_RECEEDING_DB = -3;
 
 /**
+ * @brief Threshold for sweep-mode trend detection (dB)
+ * @note Tighter than normal-mode (2 dB vs 3 dB) because sweep cycle-peak
+ *       comparisons across different frequencies have less dynamic range
+ *       than split-buffer RSSI averaging within a single frequency.
+ */
+constexpr int32_t SWEEP_TREND_THRESHOLD_DB = 2;
+
+/**
  * @brief Minimum history samples for trend calculation
  * @note Need at least 3 samples for reliable trend
  * @note Must be <= RSSI_HISTORY_SIZE

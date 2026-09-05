@@ -361,13 +361,15 @@ MovementTrend TrackedDrone::get_movement_trend() const noexcept {
     if (sweep_mode_active_) {
         if (last_cycle_peak_rssi_ != SWEEP_CYCLE_PEAK_INVALID_DBM) {
             if (has_prev_cycle_peak_) {
-                // Normal case: compare this cycle's peak against previous cycle's peak
-                constexpr int32_t THRESHOLD = MOVEMENT_TREND_THRESHOLD_APPROACHING_DB;
+                // Sweep mode uses a tighter threshold (2 dB) than normal mode
+                // (3 dB) because cycle-peak comparisons across frequencies have
+                // less dynamic range than split-buffer averaging.
+                constexpr int32_t SWEEP_THRESHOLD = SWEEP_TREND_THRESHOLD_DB;
                 const int32_t diff = static_cast<int32_t>(last_cycle_peak_rssi_)
                                    - static_cast<int32_t>(prev_cycle_peak_rssi_);
-                if (diff > THRESHOLD) {
+                if (diff > SWEEP_THRESHOLD) {
                     raw_trend = MovementTrend::APPROACHING;
-                } else if (diff < -THRESHOLD) {
+                } else if (diff < -SWEEP_THRESHOLD) {
                     raw_trend = MovementTrend::RECEDING;
                 } else {
                     raw_trend = MovementTrend::STATIC;
@@ -437,13 +439,26 @@ MovementTrend TrackedDrone::get_movement_trend() const noexcept {
     // Prevents icon flicker from single-sample noise. When no new data is
     // available (sweep gap between passes), hold the last known trend instead
     // of flipping to '-' every few hundred milliseconds.
+    //
+    // UNKNOWN is treated as "no data" rather than a trend disagreement.
+    // It never increments the hold counter and never resets it. This
+    // prevents the counter from being corrupted when raw_trend alternates
+    // between UNKNOWN (drone not detected this pass) and a real trend.
+    //
+    // Transition from UNKNOWN to a real trend is accepted immediately —
+    // the first evaluation with enough data should snap to a real value
+    // rather than requiring TREND_HYSTERESIS_COUNT agreeing frames.
     if (raw_trend == cached_trend_) {
         trend_hold_count_ = 0;  // same direction — reset hold counter
     } else if (raw_trend == MovementTrend::UNKNOWN) {
         if (cached_trend_ != MovementTrend::UNKNOWN) {
-            // No new data this evaluation — keep showing the last known trend.
+            // No new data — hold the last known real trend.
             return cached_trend_;
         }
+        // Both UNKNOWN — no data yet, fall through to assign UNKNOWN.
+    } else if (cached_trend_ == MovementTrend::UNKNOWN) {
+        // First real trend after UNKNOWN — accept immediately.
+        trend_hold_count_ = 0;
     } else if (trend_hold_count_ < TREND_HYSTERESIS_COUNT) {
         trend_hold_count_++;
         if (trend_hold_count_ < TREND_HYSTERESIS_COUNT) {
