@@ -776,12 +776,13 @@ constexpr uint16_t WATERFALL_HEIGHT = 60;
 // ============================================================================
 
 /**
- * @brief Default peak margin above noise floor (5-200)
- * @note 15 ≈ 5 dB above noise (sensitive)
- * @note 55 ≈ 20 dB above noise (strict)
- * @note FPV-OPTIMIZED: 25 ≈ 8 dB — rejects Wi-Fi 5.8 GHz flat noise
- *       while still catching weak analog FM video peaks
- * @note Previous default was 20; raised by 5 to cut Wi-Fi false positives
+ * @brief Default peak margin above noise floor (5-200; spectrum.db units, 5 units = 1 dB)
+ * @note 5 ≈ 1 dB above noise — permissive by design: CFAR (OS mode) and the
+ *       post-filters (neighbor margin, RSSI variance, Mahalanobis) perform the
+ *       false-positive rejection; this gate only strips sub-CFAR stragglers
+ * @note 15 ≈ 3 dB (mild), 25 ≈ 5 dB (strict-ish), 55 ≈ 11 dB (very strict)
+ * @note FIX: the doc previously claimed "FPV-OPTIMIZED: 25 ≈ 8 dB" while the
+ *       value was 5 — comment and value now agree
  */
 constexpr uint8_t DEFAULT_SPECTRUM_MARGIN = 5;
 
@@ -799,16 +800,15 @@ constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 2;
 /**
  * @brief Default maximum signal width in bins (1-255)
  * @note Signals wider than this are rejected as flat-topped U/I noise
- * @note 200 = FPV video: accommodates ~15 MHz (~192 bins at 78 kHz/bin)
- * @note 255 = accepts all widths (no filtering)
- * @note FPV-OPTIMIZED: 200 — analog FM video spans up to 15+ MHz (~192 bins).
- *       Previous default (30 = 2.3 MHz) rejected legitimate FPV signals
- *       wider than 2.3 MHz, causing missed detections on strong wide peaks.
- *       Symmetry + flatness + valley depth filters still reject flat WiFi/BT
- *       noise independently of max width — so widening does NOT increase FPs.
- * @note Previous default was 30 (rejected wide FPV signals)
+ * @note 230 = FPV video: accommodates full ~18 MHz channels (~230 bins at
+ *       78 kHz/bin). Previous default (200 = ~15.6 MHz) rejected legitimate
+ *       18 MHz-wide FPV signals at medium range (peak_margin 40-80), where
+ *       the width measurement is reliable and no bypass applies. Wi-Fi 20 MHz
+ *       OFDM (~256 bins) is still rejected. Even wider flat noise is caught
+ *       by the flatness + valley depth filters independently of max width.
+ * @note Previous defaults: 30 (rejected wide FPV), then 200 (rejected 18 MHz FPV)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 200;
+constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 230;
 
 /**
  * @brief Default minimum peak sharpness ratio (50-250)
@@ -877,6 +877,20 @@ constexpr uint8_t DEFAULT_SPECTRUM_FLATNESS = 35;
  *       width) handle rejection, which are more stable at low SNR.
  */
 constexpr uint8_t FLATNESS_MIN_PEAK_MARGIN = 40;
+
+/**
+ * @brief Minimum signal width (bins) for the flatness filter to be applied
+ * @note Flatness is meaningless for very narrow signals: a 2-4 bin burst
+ *       (ELRS/FrSky in 20 MHz sweep mode) is inherently "flat" — 1-2
+ *       high-power bins out of 2-4 total = 50-100% — and was previously
+ *       rejected whenever peak_margin >= FLATNESS_MIN_PEAK_MARGIN, making
+ *       spectrum_min_width=2 unreachable at moderate+ SNR (narrowband
+ *       control signals were invisible exactly when strong enough to detect).
+ * @note WiFi/BT flat-tops span dozens of bins and are unaffected by this guard.
+ * @note Flatness applies only when the measured signal spans MORE bins than
+ *       this constant.
+ */
+constexpr uint8_t FLATNESS_MIN_SIGNAL_WIDTH = 4;
 
 /**
  * @brief Default signal symmetry threshold (0-100, percent)

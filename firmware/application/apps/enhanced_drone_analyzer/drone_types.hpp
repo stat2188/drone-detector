@@ -467,6 +467,27 @@ struct TrackedDrone {
     [[nodiscard]] uint8_t get_missed_cycles() const noexcept { return missed_cycles_; }
 
     /**
+     * @brief Record an RSSI observation WITHOUT threat reclassification
+     * @param observed_rssi Raw RSSI sample (dBm)
+     * @param timestamp Sample time (ms)
+     * @note Used by the RSSI-variance noise gate: the sample refreshes the
+     *       history (so the variance can recover below the threshold instead
+     *       of staying frozen above it) and keeps last_seen fresh (the
+     *       tracker stays alive while the noisy signal persists), but the
+     *       threat level is deliberately NOT re-evaluated from chaotic samples.
+     */
+    void observe_rssi(RssiValue observed_rssi, SystemTime timestamp) noexcept {
+        const size_t write_idx = history_index_ % RSSI_HISTORY_SIZE;
+        rssi_history_[write_idx] = static_cast<int16_t>(observed_rssi);
+        timestamp_history_[write_idx % TIMESTAMP_HISTORY_SIZE] = timestamp;
+        history_index_++;
+        if (update_count < RSSI_HISTORY_SIZE) {
+            update_count++;
+        }
+        last_seen = timestamp;
+    }
+
+    /**
      * @brief Calculate RSSI variance from history (integer arithmetic)
      * @return Variance value (0 if insufficient samples)
      * @note Real drones: variance < 25 (stable signal)

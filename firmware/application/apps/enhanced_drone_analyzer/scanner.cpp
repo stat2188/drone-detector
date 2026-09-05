@@ -818,7 +818,13 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
 
         // Neighbor margin check (if enabled): center freq must dominate neighbors
         // This eliminates wideband noise false positives (WiFi, BT, microwave)
-        if (config_.neighbor_margin_db > 0) {
+        // SKIPPED for shape-validated detections: the shape filters already
+        // reject wideband noise, and the margin check would wrongly reject the
+        // weaker peak of a dual-carrier emitter (FPV video + audio subcarrier
+        // scanned as separate DB channels) whenever the other carrier is
+        // stronger. The check still guards RSSI-only and TBD detections.
+        const bool shape_validated = has_shape_result;
+        if (config_.neighbor_margin_db > 0 && !shape_validated) {
             neighbor_margin_checker_.add(frequency, effective_rssi);
             if (!neighbor_margin_checker_.check_margin(frequency, effective_rssi, config_.neighbor_margin_db)) {
                 // Current frequency not stronger than neighbors — wideband noise
@@ -1032,9 +1038,15 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
         
         // RSSI variance rejection: noise has chaotic fluctuations
         // Real drones have stable signal (variance < 25), noise > 100
+        // FIX: record the observation WITHOUT threat reclassification
+        // (observe_rssi). Previously the sample was dropped entirely: the
+        // history never refreshed, so the variance stayed frozen above the
+        // threshold forever, threat never escalated, and the tracker could
+        // go stale while the (noisy) signal was still present.
         if (config_.rssi_variance_enabled) {
             const uint32_t variance = tracked_drones_[index].calculate_rssi_variance();
             if (variance > static_cast<uint32_t>(DEFAULT_RSSI_VARIANCE_THRESHOLD)) {
+                tracked_drones_[index].observe_rssi(rssi, timestamp);
                 // RSSI too chaotic — likely noise, don't upgrade threat
                 return ErrorCode::SUCCESS;
             }
@@ -1701,6 +1713,18 @@ bool DroneScanner::analyze_spectrum_shape_lg(
         out_rssi, LG_EDGE_SKIP_PX, /*has_dc_gap=*/false, total_gain);
 }
 
+uint8_t DroneScanner::effective_spectrum_margin() const noexcept {
+    // Single source of truth for the sensitive-mode margin relaxation.
+    // Applied identically by the sweep candidate gate (process_spectrum_sweep)
+    // and by apply_shape_filters Step 3, in BOTH normal and sweep mode.
+    if (config_.sensitive_mode) {
+        return (config_.spectrum_margin > 2)
+            ? static_cast<uint8_t>(config_.spectrum_margin - 2)
+            : 1;
+    }
+    return config_.spectrum_margin;
+}
+
 bool DroneScanner::apply_shape_filters(
     const uint8_t* data,
     size_t peak_idx,
@@ -1734,12 +1758,23 @@ bool DroneScanner::apply_shape_filters(
     const int32_t rssi_sens = -(config_.rssi_threshold_dbm + 95);
 
     // Step 3: Peak must be significantly above noise floor
-    // Scale margin at high sensitivity: +1 unit per 2 sensitivity points above default.
+    // Sensitive mode relaxes the margin by 2 (min 1) via
+    // effective_spectrum_margin() — the SAME reduction the sweep candidate
+    // gate applies. Previously the reduction was nullified here (this step
+    // re-checked the full config margin), so peaks with margin 3-4 passed
+    // CFAR and were then rejected — the sensitive relaxation was dead code.
+    // Non-sensitive mode scales the margin UP at high RSSI sensitivity
+    // (+1 unit per 2 sensitivity points above the -95 dBm default): the RSSI
+    // gate is wide open there, so shape filters must work harder.
     // At sens=75 (default): effective_margin = spectrum_margin (no change).
     // At sens=87 (rssi_sens=12): effective_margin = spectrum_margin + 6.
-    const uint8_t effective_margin = (rssi_sens > 0)
-        ? static_cast<uint8_t>(config_.spectrum_margin + rssi_sens / 2)
-        : config_.spectrum_margin;
+    // In sensitive mode the scaling is NOT applied — the user explicitly opts
+    // for maximum weak-signal sensitivity, and the scaling would partially
+    // cancel the relaxation.
+    const uint8_t base_margin = effective_spectrum_margin();
+    const uint8_t effective_margin = (!config_.sensitive_mode && rssi_sens > 0)
+        ? static_cast<uint8_t>(base_margin + rssi_sens / 2)
+        : base_margin;
     if (peak_margin < effective_margin) return false;
 
     // Step 4: Count elevated bins around peak (signal width)
@@ -1798,8 +1833,10 @@ bool DroneScanner::apply_shape_filters(
     }
 
     // Step 7: Peak sharpness (enforce inverted-V shape)
+    // Sensitive mode: skip — at low SNR noise bins inflate avg_margin and the
+    // peak/avg ratio becomes unreliable (same rationale as valley/flatness).
     int32_t avg_margin = 0;
-    if (config_.spectrum_peak_sharpness > 50) {
+    if (config_.spectrum_peak_sharpness > 50 && !config_.sensitive_mode) {
         int32_t margin_sum = 0;
         size_t count = 0;
         for (size_t i = left; i <= right; ++i) {
@@ -1878,22 +1915,13 @@ bool DroneScanner::apply_shape_filters(
             ? (FLATNESS_MIN_PEAK_MARGIN - rssi_sens)
             : 15)
         : FLATNESS_MIN_PEAK_MARGIN;
-    // Sensitive mode: skip flatness entirely — #1 cause of missed weak FPV signals
-    if (config_.spectrum_flatness > 0 && peak_margin >= effective_flatness_min && !config_.sensitive_mode) {
-        const uint8_t high_power_threshold = raw_peak * 9 / 10;
-        size_t high_power_count = 0;
-
-        for (size_t i = peak_idx; i > left && i > edge_skip; --i) {
-            if (has_dc_gap && i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-            if (data[i] >= high_power_threshold) ++high_power_count;
-            else break;
-        }
-        for (size_t i = peak_idx + 1; i <= right && i < upper_limit; ++i) {
-            if (has_dc_gap && i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-            if (data[i] >= high_power_threshold) ++high_power_count;
-            else break;
-        }
-
+    // Sensitive mode skips flatness for WEAK signals (#1 cause of missed weak
+    // FPV) but KEEPS it for very_strong peaks: with max_width/valley/symmetry
+    // all bypassed at very_strong, disabling flatness too would let a
+    // close-range WiFi/BT flat-top pass unfiltered (sharpness ≈ 100 passes
+    // the default threshold).
+    if (config_.spectrum_flatness > 0 && peak_margin >= effective_flatness_min
+        && (!config_.sensitive_mode || very_strong)) {
         // Denominator: signal width excluding DC spike bins (if present)
         size_t effective_width = right - left + 1;
         if (has_dc_gap && left < FFT_DC_SPIKE_END && right >= FFT_DC_SPIKE_START) {
@@ -1901,9 +1929,32 @@ bool DroneScanner::apply_shape_filters(
             const size_t dc_end = (right < FFT_DC_SPIKE_END) ? right : (FFT_DC_SPIKE_END - 1);
             effective_width -= (dc_end - dc_start + 1);
         }
-        if (effective_width > 0) {
-            const uint8_t flatness_pct = static_cast<uint8_t>((high_power_count * 100) / effective_width);
-            if (flatness_pct > config_.spectrum_flatness) return false;
+
+        // Narrowband guard: flatness is meaningless for very narrow signals.
+        // A 2-4 bin burst (ELRS/FrSky in sweep mode) is inherently "flat"
+        // (1-2 high-power bins out of 2-4 = 50-100%) and was previously
+        // rejected whenever peak_margin >= FLATNESS_MIN_PEAK_MARGIN — making
+        // spectrum_min_width=2 unreachable at moderate+ SNR. WiFi/BT
+        // flat-tops span dozens of bins and are unaffected by this guard.
+        if (effective_width > FLATNESS_MIN_SIGNAL_WIDTH) {
+            const uint8_t high_power_threshold = raw_peak * 9 / 10;
+            size_t high_power_count = 0;
+
+            for (size_t i = peak_idx; i > left && i > edge_skip; --i) {
+                if (has_dc_gap && i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+                if (data[i] >= high_power_threshold) ++high_power_count;
+                else break;
+            }
+            for (size_t i = peak_idx + 1; i <= right && i < upper_limit; ++i) {
+                if (has_dc_gap && i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+                if (data[i] >= high_power_threshold) ++high_power_count;
+                else break;
+            }
+
+            if (effective_width > 0) {
+                const uint8_t flatness_pct = static_cast<uint8_t>((high_power_count * 100) / effective_width);
+                if (flatness_pct > config_.spectrum_flatness) return false;
+            }
         }
     }
 
@@ -2051,6 +2102,16 @@ void DroneScanner::process_spectrum_sweep(
     // providing meaningful RSSI smoothing after ~7 passes (~11 seconds at 1.6s/pass).
     if (center_freq != last_sweep_freq_) {
         rssi_median_filter_.reset();
+        // Reset temporal history on frequency change. Previously the waterfall
+        // was NOT reset in sweep mode, so TBD "confirmed" targets by
+        // integrating the last 8 frames (~8 slices ≈ 70 MHz of DIFFERENT RF
+        // frequencies) — statistically meaningless and a source of phantom
+        // detections on the current slice's frequency. TBD now integrates
+        // only revisit frames of the SAME slice (requires 3 sweep cycles).
+        // NOTE: per-frequency RSSI smoothing (median, window 7, warm at 4)
+        // likewise needs several revisit cycles per frequency, so both
+        // median_enabled and sweep TBD are slow integrators on wide windows.
+        waterfall_history_.reset();
         last_sweep_freq_ = center_freq;
     }
 
@@ -2064,12 +2125,13 @@ void DroneScanner::process_spectrum_sweep(
     // Feed waterfall history for sweep mode (runs without mutex — scanner thread stopped)
     waterfall_history_.push(spectrum.db.data());
 
-    // Sensitive mode: reduce sweep margin by 2 for maximum weak-signal detection.
-    // Default margin=5 (~1.6 dB above noise); sensitive: margin=3 (~1 dB above noise).
-    // Only applies to sweep mode — normal mode uses full margin for FP rejection.
-    const uint8_t cfg_margin = config_.sensitive_mode
-        ? ((config_.spectrum_margin > 2) ? (config_.spectrum_margin - 2) : 1)
-        : config_.spectrum_margin;
+    // Sensitive mode: reduce the spectrum margin by 2 (min 1) for maximum
+    // weak-signal detection — single source of truth via
+    // effective_spectrum_margin(); apply_shape_filters Step 3 applies the
+    // identical reduction in BOTH scan modes, so the relaxation is no longer
+    // nullified downstream.
+    // Default margin=5 (~1 dB above noise); sensitive: margin=3 (~0.6 dB).
+    const uint8_t cfg_margin = effective_spectrum_margin();
 
     // Step 1: Compute noise floor (25th percentile of usable bins).
     // Shared for all peaks in this frame — computed once.

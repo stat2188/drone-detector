@@ -80,6 +80,12 @@ struct SettingsStruct {
     // Sensitive mode — relaxes shape filters for weak/long-range signals
     bool sensitive_mode{false};
 
+    // Advanced detection — persisted for round-trip but NOT exposed in the
+    // settings UI (file-only opt-in; defaults preserve previous behavior)
+    bool kurtosis_enabled{false};        // Shape-filter step 12 (default OFF)
+    int16_t kurtosis_min_x10{20};        // Minimum kurtosis ×10 (2.0)
+    bool adaptive_cfar_enabled{false};   // Auto-tune CFAR threshold (default OFF)
+
     // Sweep window 1
     FreqHz sweep_start_freq;
     FreqHz sweep_end_freq;

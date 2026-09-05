@@ -34,7 +34,7 @@ SettingsStruct::SettingsStruct() noexcept
     , confirm_count_enabled(true)
     , noise_blacklist_enabled(true)
     , spectrum_detection_enabled(true)
-    , median_enabled(false)
+    , median_enabled(true)
     , spectrum_margin(DEFAULT_SPECTRUM_MARGIN)
     , spectrum_min_width(DEFAULT_SPECTRUM_MIN_WIDTH)  // 2 bins = 156 kHz
     , spectrum_max_width(DEFAULT_SPECTRUM_MAX_WIDTH)
@@ -58,6 +58,9 @@ SettingsStruct::SettingsStruct() noexcept
     , mahalanobis_enabled(true)
     , mahalanobis_threshold_x10(DEFAULT_MAHALOBIS_THRESHOLD_X10)
     , sensitive_mode(false)
+    , kurtosis_enabled(false)
+    , kurtosis_min_x10(20)
+    , adaptive_cfar_enabled(false)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
     , sweep_step_freq(17812500)
@@ -138,7 +141,9 @@ static void parse_settings_line(
     // --- Scanning ---
     if (key_matches("scan_interval_ms")) {
         const uint64_t v = parse_int();
-        s.scan_interval_ms = static_cast<uint32_t>((v < 10) ? 10 : (v > 10000 ? 10000 : v));
+        // Clamp matches the settings UI range (NumberField {10, 1000}) so a
+        // hand-edited file cannot hold a value the UI cannot display.
+        s.scan_interval_ms = static_cast<uint32_t>((v < 10) ? 10 : (v > 1000 ? 1000 : v));
     } else if (key_matches("sensitivity")) {
         const int32_t sens = static_cast<int32_t>(parse_int());
         s.scan_sensitivity = static_cast<uint8_t>(sens > 100 ? 100 : (sens < 0 ? 0 : sens));
@@ -207,7 +212,9 @@ static void parse_settings_line(
         s.spectrum_peak_ratio = static_cast<uint8_t>((v > 255) ? 255 : v);
     } else if (key_matches("spectrum_valley_depth")) {
         const uint64_t v = parse_int();
-        s.spectrum_valley_depth = static_cast<uint8_t>((v > 255) ? 255 : v);
+        // Clamp matches the settings UI range (NumberField {0, 200}) so a
+        // hand-edited file cannot hold a value the UI cannot display.
+        s.spectrum_valley_depth = static_cast<uint8_t>((v > 200) ? 200 : v);
     } else if (key_matches("spectrum_flatness")) {
         const uint64_t v = parse_int();
         s.spectrum_flatness = static_cast<uint8_t>((v > 100) ? 100 : v);
@@ -238,6 +245,10 @@ static void parse_settings_line(
     } else if (key_matches("sweep_end_mhz")) {
         s.sweep_end_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
     } else if (key_matches("sweep_step_khz")) {
+        // NOTE: persisted for round-trip only — SweepWindow::init()
+        // intentionally ignores the user pitch and auto-derives a gapless
+        // step (SWEEP_GAPLESS_STEP_MAX_HZ); any other pitch recreates blind
+        // notches or wastes dwell (see drone_scanner_ui.cpp).
         s.sweep_step_freq = static_cast<uint64_t>(parse_int()) * 1000ULL;
 
     // --- Sweep window 2 ---
@@ -343,6 +354,15 @@ static void parse_settings_line(
             : (v > MAHALANOBIS_THRESHOLD_MAX_X10 ? MAHALANOBIS_THRESHOLD_MAX_X10 : v));
     } else if (key_matches("sensitive_mode")) {
         s.sensitive_mode = parse_bool();
+
+    // --- Advanced detection (file-only opt-in, not in the settings UI) ---
+    } else if (key_matches("kurtosis_enabled")) {
+        s.kurtosis_enabled = parse_bool();
+    } else if (key_matches("kurtosis_min_x10")) {
+        const int32_t v = parse_signed_int();
+        s.kurtosis_min_x10 = static_cast<int16_t>((v < 0) ? 0 : (v > 200 ? 200 : v));
+    } else if (key_matches("adaptive_cfar_enabled")) {
+        s.adaptive_cfar_enabled = parse_bool();
     }
 }
 
@@ -415,7 +435,13 @@ ErrorCode SettingsFileManager::load(SettingsStruct& out) noexcept {
     // Normalize CFAR hybrid weights to sum to 100
     const uint16_t hybrid_sum = static_cast<uint16_t>(
         out.cfar_hybrid_alpha + out.cfar_hybrid_beta + out.cfar_hybrid_gamma);
-    if (hybrid_sum != 100 && hybrid_sum > 0) {
+    if (hybrid_sum == 0) {
+        // All-zero weights make the HYBRID noise estimate 0 → every bin
+        // passes CFAR (false-positive storm). Restore factory weights.
+        out.cfar_hybrid_alpha = DEFAULT_CFAR_HYBRID_ALPHA;
+        out.cfar_hybrid_beta = DEFAULT_CFAR_HYBRID_BETA;
+        out.cfar_hybrid_gamma = DEFAULT_CFAR_HYBRID_GAMMA;
+    } else if (hybrid_sum != 100) {
         out.cfar_hybrid_alpha = static_cast<uint8_t>(
             (out.cfar_hybrid_alpha * 100) / hybrid_sum);
         out.cfar_hybrid_beta = static_cast<uint8_t>(
@@ -616,9 +642,14 @@ ErrorCode SettingsFileManager::save(
     // Sensitive mode
     wbool(file, "sensitive_mode", s.sensitive_mode);
 
+    // Advanced detection (file-only opt-in, not in the settings UI)
+    wbool(file, "kurtosis_enabled", s.kurtosis_enabled);
+    wl(file, "kurtosis_min_x10", static_cast<int64_t>(s.kurtosis_min_x10));
+    wbool(file, "adaptive_cfar_enabled", s.adaptive_cfar_enabled);
+
     // Metadata
     ws(file, "freqman_path=DRONES\n");
-    ws(file, "settings_version=1.2\n");
+    ws(file, "settings_version=1.3\n");
 
     (void)file.sync();
     file.close();
@@ -657,6 +688,11 @@ void SettingsFileManager::apply_to_config(
 
     // Sensitive mode
     config.sensitive_mode = s.sensitive_mode;
+
+    // Advanced detection
+    config.kurtosis_enabled = s.kurtosis_enabled;
+    config.kurtosis_min_x10 = s.kurtosis_min_x10;
+    config.adaptive_cfar_enabled = s.adaptive_cfar_enabled;
 
     config.neighbor_margin_db = s.neighbor_margin_db;
     config.rssi_variance_enabled = s.rssi_variance_enabled;
@@ -808,5 +844,10 @@ void SettingsFileManager::extract_from_config(
 
     // Sensitive mode
     s.sensitive_mode = config.sensitive_mode;
+
+    // Advanced detection
+    s.kurtosis_enabled = config.kurtosis_enabled;
+    s.kurtosis_min_x10 = config.kurtosis_min_x10;
+    s.adaptive_cfar_enabled = config.adaptive_cfar_enabled;
 }
 } // namespace drone_analyzer

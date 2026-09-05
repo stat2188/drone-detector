@@ -73,7 +73,7 @@ struct ScanConfig {
     bool noise_blacklist_enabled{true}; // Skip frequencies with persistent noise
     bool spectrum_detection_enabled{true}; // Detect drone signals by spectrum shape (U/V peaks)
     bool median_enabled{true};              // Median filter for RSSI spike rejection (ON by default)
-    uint8_t spectrum_margin{DEFAULT_SPECTRUM_MARGIN};            // Peak margin above noise (FPV-optimized: 25 ≈ 8 dB, Wi-Fi rejection)
+    uint8_t spectrum_margin{DEFAULT_SPECTRUM_MARGIN};            // Peak margin above noise (5 ≈ 1 dB; CFAR + post-filters do FP rejection)
     uint8_t spectrum_min_width{DEFAULT_SPECTRUM_MIN_WIDTH};      // Min signal width in bins (rejects narrow noise spikes)
     uint8_t spectrum_max_width{DEFAULT_SPECTRUM_MAX_WIDTH};            // Max signal width (reject flat U/I shapes)
     uint8_t spectrum_peak_sharpness{DEFAULT_SPECTRUM_PEAK_SHARPNESS};  // Min sharpness ratio (rejects noise spikes)
@@ -116,12 +116,17 @@ struct ScanConfig {
     bool adaptive_cfar_enabled{false};   // Default OFF — auto-tunes threshold to maintain ≤5% FAR
 
     // Waterfall history (multi-frame analysis)
-    bool waterfall_enabled{true};        // Default ON — enables TBD, Doppler, history (2KB SRAM)
-
+    bool waterfall_enabled{true};        // Default ON — reserved gate; currently
+                                         // NOT read anywhere (TBD/Doppler run
+                                         // unconditionally). Not persisted.
     // Sensitive mode — relaxes shape filters for weak/long-range signals
-    // When ON: disables flatness, symmetry, valley_depth, kurtosis checks;
-    //          reduces spectrum_margin by 2 for sweep mode.
-    // When OFF (default): full 11-step shape filter chain active.
+    // When ON: reduces spectrum_margin by 2 (min 1) in BOTH scan modes via
+    //          effective_spectrum_margin(); skips sharpness, valley_depth,
+    //          symmetry and kurtosis checks; skips flatness for WEAK peaks
+    //          only (very_strong peaks keep flatness, so a close-range
+    //          WiFi/BT flat-top cannot slip through with every other
+    //          filter bypassed).
+    // When OFF (default): full 12-step shape filter chain active.
     bool sensitive_mode{false};          // Default OFF — opt-in for max sensitivity
     /**
      * @brief Default constructor
@@ -367,7 +372,7 @@ public:
                     static_cast<int32_t>(alpha) * ca_noise +
                     static_cast<int32_t>(beta) * go_noise +
                     static_cast<int32_t>(gamma) * so_noise;
-                noise_estimate = weighted / 100;
+                noise_estimate = (weighted > 0) ? (weighted / 100) : ca_noise;
                 break;
             }
             case CFARMode::OS: {
@@ -1433,6 +1438,16 @@ private:
         ShapeDetectionResult& out_result,
         FreqHz center_freq
     ) noexcept;
+
+    /**
+     * @brief Spectrum margin with the sensitive-mode relaxation applied
+     * @return spectrum_margin, reduced by 2 (min 1) when sensitive_mode is on
+     * @note Single source of truth, shared by process_spectrum_sweep() candidate
+     *       gating and apply_shape_filters() Step 3 (both scan modes). Previously
+     *       the reduction existed only in the sweep candidate gate and was
+     *       nullified by Step 3, which re-checked the full margin.
+     */
+    [[nodiscard]] uint8_t effective_spectrum_margin() const noexcept;
 
     /**
      * @brief Shared spectrum shape analysis with configurable edge skip.
