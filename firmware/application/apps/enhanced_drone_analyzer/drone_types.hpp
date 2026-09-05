@@ -239,9 +239,11 @@ struct ThreatThresholds {
 };
 
 /**
- * @brief Tracked drone data structure (56 bytes)
+ * @brief Tracked drone data structure (~160 bytes with alignment)
  * @note No virtual functions, no vtable
  * @note Memory layout optimized for cache efficiency
+ * @note Size breakdown: 128B base fields + 48B Mahalanobis + 8B sweep fields
+ *       + trend hysteresis. 16 drones × 160B = 2,560B BSS.
  */
 struct TrackedDrone {
     FreqHz frequency;                    // 8 bytes (uint64_t)
@@ -311,7 +313,8 @@ struct TrackedDrone {
         return mahalanobis_stats_;
     }
 
-    // Total: ~96 bytes base + ~48 bytes Mahalanobis = ~144 bytes (no vtable, no virtual functions)
+    // Total: ~128 bytes base fields + 48 bytes MahalanobisStatistics + ~16 bytes sweep/hysteresis
+    // = ~160 bytes (no vtable, no virtual functions). 16 drones × 160B = 2,560B BSS.
     
     /**
      * @brief Default constructor

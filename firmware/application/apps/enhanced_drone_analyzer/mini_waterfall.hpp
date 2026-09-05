@@ -64,10 +64,12 @@ public:
      * @note Compression: 240 bins -> 60 bands of 4 -> peak per band -> 4-bit quantize.
      *       New row appears at the bottom; oldest row scrolls off the top.
      *       Stack: ~0 bytes (no locals beyond loop vars).
+     * @return true if a scroll occurred (buffer was full, oldest row overwritten).
      */
-    void push_row(const uint8_t* composite_240) noexcept {
-        if (composite_240 == nullptr) return;
+    bool push_row(const uint8_t* composite_240) noexcept {
+        if (composite_240 == nullptr) return false;
 
+        const bool scrolled = (count_ >= MAX_ROWS);
         const uint16_t offset = static_cast<uint16_t>(write_pos_) * ROW_SIZE;
 
         for (uint8_t band = 0; band < BANDS; ++band) {
@@ -89,6 +91,7 @@ public:
 
         write_pos_ = (write_pos_ + 1) % MAX_ROWS;
         if (count_ < MAX_ROWS) ++count_;
+        return scrolled;
     }
 
     /**
@@ -96,8 +99,10 @@ public:
      * @param peak_power Maximum FFT bin power (0-255) for this frame.
      * @note For non-sweep mode: all 60 bands get the same quantized value.
      *       Stack: ~0 bytes.
+     * @return true if a scroll occurred (buffer was full, oldest row overwritten).
      */
-    void push_single_value(uint8_t peak_power) noexcept {
+    bool push_single_value(uint8_t peak_power) noexcept {
+        const bool scrolled = (count_ >= MAX_ROWS);
         const uint8_t nibble = peak_power >> 4;
         const uint8_t packed = static_cast<uint8_t>((nibble << 4) | nibble);
 
@@ -108,6 +113,7 @@ public:
 
         write_pos_ = (write_pos_ + 1) % MAX_ROWS;
         if (count_ < MAX_ROWS) ++count_;
+        return scrolled;
     }
 
     /**

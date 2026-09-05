@@ -8,6 +8,11 @@
 namespace drone_analyzer {
 
 // ============================================================================
+// Waterfall rendering constants
+// ============================================================================
+constexpr uint16_t WF_LABEL_H = 10;              // header row height for "WF" label
+
+// ============================================================================
 // Drone list layout constants (single source for render, draw, and hit-test)
 // ============================================================================
 namespace {
@@ -60,7 +65,7 @@ constexpr uint8_t count_bits8(uint8_t v) noexcept {
 
 // ============================================================================
 // Large buffers moved from DroneDisplay members to file-scope static.
-// Saves ~960 bytes of heap per DroneDisplay instance.
+// Saves ~960 bytes of SRAM per DroneDisplay instance (BSS, not heap).
 // Thread-safety: single-producer (UI thread only) — no concurrent access.
 // ============================================================================
 struct DisplayBuffers {
@@ -77,6 +82,58 @@ static DisplayBuffers s_dd;
 static void write_uint(char*& buf, size_t& remaining, uint32_t value) noexcept;
 static void write_uint_pad(char*& buf, size_t& remaining, uint32_t value, int pad) noexcept;
 static void write_str(char*& buf, size_t& remaining, const char* s) noexcept;
+
+// ============================================================================
+// Waterfall RLE row renderer (OPT-1 + OPT-3)
+// ============================================================================
+// Merges adjacent bands with the same palette value into a single wider
+// fill_rectangle() call, reducing SPI transactions by ~60-70%.
+// Precomputes band boundary positions to eliminate per-band integer division.
+//
+// Stack: ~128 bytes (band_x[61] lookup + 4 locals).
+// Flash: ~256 bytes (one-shot, no heap).
+// ============================================================================
+static void render_waterfall_row_rle(
+    Painter& painter,
+    const MiniWaterfall& wf,
+    uint8_t data_row,
+    uint16_t x_start,
+    uint16_t y,
+    uint16_t total_width
+) noexcept {
+    if (total_width < MiniWaterfall::BANDS) return;
+
+    // Precompute band boundary X positions: band_x[i] = x_start + (total_width * i) / BANDS
+    // Eliminates 60 integer divisions per row (replaced by table lookup).
+    std::array<uint16_t, MiniWaterfall::BANDS + 1> band_x{};
+    for (uint8_t i = 0; i <= MiniWaterfall::BANDS; ++i) {
+        band_x[i] = static_cast<uint16_t>(x_start + (static_cast<uint32_t>(total_width) * i) / MiniWaterfall::BANDS);
+    }
+
+    // RLE: scan bands left-to-right, merge runs of identical palette values.
+    uint8_t run_value = wf.get_pixel(data_row, 0);
+    uint8_t run_start = 0;
+
+    for (uint8_t band = 1; band <= MiniWaterfall::BANDS; ++band) {
+        const uint8_t val = (band < MiniWaterfall::BANDS)
+            ? wf.get_pixel(data_row, band) : 0;  // sentinel terminates final run
+
+        if (val == run_value && band < MiniWaterfall::BANDS) continue;
+
+        // Flush the completed run (skip black/background runs).
+        if (run_value != 0) {
+            const Color color = Color::RGB(MiniWaterfall::PALETTE[run_value]);
+            const uint16_t px_start = band_x[run_start];
+            const uint16_t px_end = band_x[band];
+            if (px_end > px_start) {
+                painter.fill_rectangle({px_start, y, static_cast<int>(px_end - px_start), 1}, color);
+            }
+        }
+
+        run_value = val;
+        run_start = band;
+    }
+}
 
 // ============================================================================
 // Constructor / Destructor
@@ -277,14 +334,13 @@ void DroneDisplay::render_waterfall(
     draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
     draw_text(painter, "WF", start_x + 2, start_y + 2, COLOR_TEXT);
 
-    constexpr uint16_t LABEL_H = 10;
     if (waterfall.count() == 0) {
-        draw_text(painter, "Waiting...", start_x + 2, start_y + LABEL_H, COLOR_UNKNOWN_THREAT);
+        draw_text(painter, "Waiting...", start_x + 2, start_y + WF_LABEL_H, COLOR_UNKNOWN_THREAT);
         return;
     }
     const uint16_t chart_start_x = start_x + 2;
-    const uint16_t chart_start_y = start_y + LABEL_H;
-    const uint16_t chart_h = (height > LABEL_H + 1) ? (height - LABEL_H - 1) : 4;
+    const uint16_t chart_start_y = start_y + WF_LABEL_H;
+    const uint16_t chart_h = (height > WF_LABEL_H + 1) ? (height - WF_LABEL_H - 1) : 4;
     const uint16_t chart_w = (width > 4) ? (width - 4) : width;
     if (chart_w < 4) return;
 
@@ -299,15 +355,7 @@ void DroneDisplay::render_waterfall(
         const uint8_t data_row = static_cast<uint8_t>(
             static_cast<int>(row_count) - 1 - static_cast<int>(vis_row));
 
-        for (uint8_t band = 0; band < MiniWaterfall::BANDS; ++band) {
-            const uint8_t pixel = waterfall.get_pixel(data_row, band);
-            if (pixel == 0) continue;
-
-            const uint32_t color = MiniWaterfall::PALETTE[pixel];
-            const uint16_t px_start = chart_start_x + (chart_w * band) / MiniWaterfall::BANDS;
-            const uint16_t px_end = chart_start_x + (chart_w * (band + 1)) / MiniWaterfall::BANDS;
-            draw_rectangle(painter, px_start, py, px_end - px_start, 1, color);
-        }
+        render_waterfall_row_rle(painter, waterfall, data_row, chart_start_x, py, chart_w);
     }
 }
 
@@ -320,12 +368,15 @@ void DroneDisplay::render_sweep_waterfalls(
 ) noexcept {
     if (width < 10 || height < 4 || active_waterfall_mask_ == 0) return;
 
+    // Always full repaint: clear background + header.
+    // 12-row waterfall with RLE is fast (~5-15 SPI calls per row per window).
+    // Incremental rendering is incompatible with newest-at-top layout because
+    // every new row shifts ALL visual positions by +1 Y pixel.
     draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
     draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
 
-    constexpr uint16_t LABEL_H = 10;
-    const uint16_t chart_start_y = start_y + LABEL_H;
-    const uint16_t chart_h = (height > LABEL_H + 1) ? (height - LABEL_H - 1) : 4;
+    const uint16_t chart_start_y = start_y + WF_LABEL_H;
+    const uint16_t chart_h = (height > WF_LABEL_H + 1) ? (height - WF_LABEL_H - 1) : 4;
     const uint16_t chart_start_x = start_x + 2;
     const uint16_t chart_w = (width > 4) ? (width - 4) : width;
 
@@ -334,9 +385,7 @@ void DroneDisplay::render_sweep_waterfalls(
     const uint16_t win_w = chart_w / active_count;
     if (win_w < 2) return;
 
-    // Header row (start_y .. start_y + LABEL_H - 1): per-window frequency labels
-    // drawn ABOVE the data rows so the first sweep row is never overwritten.
-    // While no window has data yet, show a waiting hint instead.
+    // Header row: per-window frequency labels.
     bool any_label = false;
     for (uint8_t i = 0; i < NUM_SWEEP_WATERFALLS; ++i) {
         if (sweep_wf_freq_start_[i] > 0) {
@@ -348,22 +397,16 @@ void DroneDisplay::render_sweep_waterfalls(
         draw_text(painter, "Waiting...", chart_start_x, start_y + 2, COLOR_UNKNOWN_THREAT);
     }
 
-    // Slot-based layout: slot = order of an active window among all active
-    // windows. Columns never shift, even while windows warm up (count() == 0).
+    // Separator + labels (one pass over active windows)
     uint8_t slot = 0;
     for (uint8_t i = 0; i < NUM_SWEEP_WATERFALLS; ++i) {
         if ((active_waterfall_mask_ & (1u << i)) == 0) continue;
-
         const uint16_t wx = chart_start_x + static_cast<uint16_t>(slot) * win_w;
-
-        // Separator line between windows (1px gap, not overlapping data).
         if (slot > 0) {
             draw_rectangle(painter, wx - 1, chart_start_y, 1, chart_h, COLOR_UNKNOWN_THREAT);
         }
-
-        // Frequency label for this window (e.g., "2400M") in the header row.
         if (sweep_wf_freq_start_[i] > 0) {
-            char label[12];  // Stack: 12 bytes
+            char label[12];
             const uint32_t mhz = static_cast<uint32_t>(sweep_wf_freq_start_[i] / 1000000ULL);
             char* dst = label;
             size_t rem = sizeof(label);
@@ -372,49 +415,29 @@ void DroneDisplay::render_sweep_waterfalls(
             *dst = '\0';
             draw_text(painter, label, wx + 1, start_y + 2, COLOR_TEXT);
         }
-
         ++slot;
     }
 
-    // Data rows: one independent waterfall per active window, newest at top,
-    // older below, positioned at the same slot-based column as its label.
+    // Data rows: one independent waterfall per active window.
+    // NEWEST at top (vis_row 0), oldest below (top-down time flow).
+    // Each row rendered via RLE (merges adjacent same-color bands).
     slot = 0;
     for (uint8_t i = 0; i < NUM_SWEEP_WATERFALLS; ++i) {
         if ((active_waterfall_mask_ & (1u << i)) == 0) continue;
-
         const uint16_t wx = chart_start_x + static_cast<uint16_t>(slot) * win_w;
-
-        if (sweep_waterfalls_[i].count() == 0) {
-            ++slot;
-            continue;
-        }
-
+        if (sweep_waterfalls_[i].count() == 0) { ++slot; continue; }
         const uint16_t slot_w = chart_w - static_cast<uint16_t>(slot) * win_w;
         const uint16_t this_w = (slot_w < win_w) ? slot_w : win_w;
-        if (this_w < 4) {
-            ++slot;
-            continue;
-        }
+        if (this_w < 4) { ++slot; continue; }
 
         const uint8_t row_count = sweep_waterfalls_[i].count();
         const uint8_t max_visible = (chart_h < row_count) ? static_cast<uint8_t>(chart_h) : row_count;
-
         for (uint8_t vis_row = 0; vis_row < max_visible; ++vis_row) {
             const uint16_t py = chart_start_y + vis_row;
             const uint8_t data_row = static_cast<uint8_t>(
                 static_cast<int>(row_count) - 1 - static_cast<int>(vis_row));
-
-            for (uint8_t band = 0; band < MiniWaterfall::BANDS; ++band) {
-                const uint8_t pixel = sweep_waterfalls_[i].get_pixel(data_row, band);
-                if (pixel == 0) continue;
-
-                const uint32_t color = MiniWaterfall::PALETTE[pixel];
-                const uint16_t px_start = wx + (this_w * band) / MiniWaterfall::BANDS;
-                const uint16_t px_end = wx + (this_w * (band + 1)) / MiniWaterfall::BANDS;
-                draw_rectangle(painter, px_start, py, px_end - px_start, 1, color);
-            }
+            render_waterfall_row_rle(painter, sweep_waterfalls_[i], data_row, wx, py, this_w);
         }
-
         ++slot;
     }
 }
@@ -1108,20 +1131,28 @@ void DroneDisplay::render_composite(
     uint16_t width,
     uint16_t height,
     int16_t scan_head,
-    uint8_t noise_floor
+    uint8_t noise_floor,
+    FreqHz freq_start_override,
+    FreqHz freq_end_override
 ) noexcept {
     if (composite_data == nullptr || composite_size == 0 || height < 4) {
         return;
     }
 
+    // Use override values if provided, otherwise fall back to member variables.
+    // This eliminates the save/restore mutation that render_dual_composite()
+    // previously performed on sweep_freq_start_/sweep_freq_end_.
+    const FreqHz title_start = (freq_start_override != 0) ? freq_start_override : sweep_freq_start_;
+    const FreqHz title_end   = (freq_end_override != 0)   ? freq_end_override   : sweep_freq_end_;
+
     draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
     draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
 
     // Title: compact frequency range (e.g. "5700M-5900M")
-    if (sweep_freq_start_ < sweep_freq_end_) {
+    if (title_start < title_end) {
         char title_buf[20];
-        const uint32_t mhz_lo = static_cast<uint32_t>(sweep_freq_start_ / 1000000ULL);
-        const uint32_t mhz_hi = static_cast<uint32_t>(sweep_freq_end_ / 1000000ULL);
+        const uint32_t mhz_lo = static_cast<uint32_t>(title_start / 1000000ULL);
+        const uint32_t mhz_hi = static_cast<uint32_t>(title_end / 1000000ULL);
         char* dst = title_buf;
         size_t rem = sizeof(title_buf);
         write_uint(dst, rem, mhz_lo);
@@ -1324,23 +1355,19 @@ void DroneDisplay::render_dual_composite(
     const uint16_t band_h = height / 2;
     if (band_h < 4) return;
 
-    // Render sweep 1 (top half) — upper band scan head
-    // Pass band 1's noise floor for correct per-band noise subtraction.
+    // Render sweep 1 (top half) — upper band scan head.
+    // Pass band 1's noise floor and explicit freq range (no member mutation).
     const uint8_t nf1 = composite_noise_floor_valid_ ? composite_noise_floor_ : 0;
     render_composite(painter, composite_data_, composite_data_size_,
-                     start_x, start_y, width, band_h, scan_head_position_[0], nf1);
+                     start_x, start_y, width, band_h, scan_head_position_[0], nf1,
+                     sweep_freq_start_, sweep_freq_end_);
 
-    // Render sweep 2 (bottom half) — temporarily swap freq range
+    // Render sweep 2 (bottom half) — pass band 2's freq range as override.
     // Pass band 2's independently computed noise floor.
-    const FreqHz saved_start = sweep_freq_start_;
-    const FreqHz saved_end = sweep_freq_end_;
-    sweep_freq_start_ = sweep2_freq_start_;
-    sweep_freq_end_ = sweep2_freq_end_;
     const uint8_t nf2 = sweep2_noise_floor_valid_ ? sweep2_noise_floor_ : 0;
     render_composite(painter, sweep2_data_, sweep2_data_size_,
-                     start_x, start_y + band_h, width, band_h, scan_head_position_[1], nf2);
-    sweep_freq_start_ = saved_start;
-    sweep_freq_end_ = saved_end;
+                     start_x, start_y + band_h, width, band_h, scan_head_position_[1], nf2,
+                     sweep2_freq_start_, sweep2_freq_end_);
 }
 
 int16_t DroneDisplay::hit_test(uint16_t x, uint16_t y) const noexcept {

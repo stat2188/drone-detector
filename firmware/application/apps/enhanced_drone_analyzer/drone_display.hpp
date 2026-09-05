@@ -580,7 +580,9 @@ private:
         uint16_t width,
         uint16_t height,
         int16_t scan_head = -1,
-        uint8_t noise_floor = 0
+        uint8_t noise_floor = 0,
+        FreqHz freq_start_override = 0,
+        FreqHz freq_end_override = 0
     ) noexcept;
 
     void render_multi_zone(
