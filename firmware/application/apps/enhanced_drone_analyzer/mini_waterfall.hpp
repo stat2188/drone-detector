@@ -32,7 +32,7 @@ namespace drone_analyzer {
 class MiniWaterfall {
 public:
     static constexpr uint8_t BANDS = WATERFALL_HEIGHT;
-    static constexpr uint8_t MAX_ROWS = 24;
+    static constexpr uint8_t MAX_ROWS = 15;
     static constexpr uint8_t BAND_SIZE = 4;
     static constexpr uint8_t ROW_SIZE = BANDS / 2;
     static constexpr size_t PALETTE_SIZE = 16;
