@@ -1584,7 +1584,7 @@ void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) n
     // approach of draining the FIFO before processing (it stops streaming,
     // sleeps 5ms, then restarts). We can't stop/restart streaming here
     // without injecting M0 control messages and causing stutter.
-    static constexpr uint8_t STALE_FIFO_FRAMES = 3;
+    static constexpr uint8_t STALE_FIFO_FRAMES = 1;
     win.settle_frames_remaining_ =
         static_cast<uint8_t>(SWEEP_SETTLE_FRAMES + STALE_FIFO_FRAMES);
     (void)prefix;
