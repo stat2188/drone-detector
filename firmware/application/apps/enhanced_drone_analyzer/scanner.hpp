@@ -39,7 +39,7 @@ struct ScanConfig {
     int32_t threat_high_dbm{RSSI_HIGH_THREAT_THRESHOLD_DBM};
     int32_t threat_critical_dbm{RSSI_CRITICAL_THREAT_THRESHOLD_DBM};
     uint32_t stale_timeout_ms;
-    
+
     // Sweep range (Hz) — window 1
     FreqHz sweep_start_freq;
     FreqHz sweep_end_freq;
@@ -107,7 +107,7 @@ struct ScanConfig {
     FreqHz sweep_exceptions[4][EXCEPTIONS_PER_WINDOW]{};
     uint8_t exception_radius_mhz{DEFAULT_EXCEPTION_RADIUS_MHZ};  // 1-100, configurable exclusion radius
     uint8_t rssi_decrease_cycles{5};  // Normal mode: seconds of RSSI decrease before threat decay (sweep uses hardcoded MAX_SWEEP_CYCLES_MISSED)
-    
+
     // Spectral Kurtosis (higher-order statistics)
     bool kurtosis_enabled{false};        // Default OFF (opt-in — new feature, untested in field)
     int16_t kurtosis_min_x10{20};        // Minimum kurtosis × 10 (2.0) to accept signal
@@ -150,12 +150,12 @@ struct ScanStatistics {
     uint32_t failed_cycles;
     uint32_t drones_detected;
     int32_t max_rssi_dbm;
-    
+
     /**
      * @brief Default constructor
      */
     ScanStatistics() noexcept;
-    
+
     /**
      * @brief Reset statistics
      */
@@ -309,7 +309,7 @@ public:
         // Left window: [cbin - guard_cells - ref_cells ... cbin - guard_cells - 1]
         // Right window: [cbin + guard_cells + 1 ... cbin + guard_cells + ref_cells]
         const int32_t total_span = static_cast<int32_t>(guard_cells + ref_cells);
-        
+
         // Sum left reference window
         int32_t left_sum = 0;
         int32_t left_count = 0;
@@ -344,12 +344,12 @@ public:
         // Compute noise estimates for each CFAR mode
         // CA-CFAR: average of both windows
         const int32_t ca_noise = (left_sum + right_sum) / (left_count + right_count);
-        
+
         // GO-CFAR: maximum of the two window averages
         const int32_t left_avg = (left_count > 0) ? left_sum / left_count : 0;
         const int32_t right_avg = (right_count > 0) ? right_sum / right_count : 0;
         const int32_t go_noise = (left_avg > right_avg) ? left_avg : right_avg;
-        
+
         // SO-CFAR: minimum of the two window averages
         const int32_t so_noise = (left_avg < right_avg) ? left_avg : right_avg;
 
@@ -431,7 +431,7 @@ public:
                 // VI = variance / mean^2 measures clutter homogeneity
                 // Low VI → homogeneous → CA-CFAR (best noise estimate)
                 // High VI → clutter edge → GO-CFAR (robust at edges) or SO-CFAR (in clutter)
-                
+
                 // Compute mean and variance for left window
                 int32_t left_mean = (left_count > 0) ? left_sum / left_count : 0;
                 int32_t left_var = 0;
@@ -447,7 +447,7 @@ public:
                     }
                     left_var /= static_cast<int32_t>(left_count);
                 }
-                
+
                 // Compute mean and variance for right window
                 int32_t right_mean = (right_count > 0) ? right_sum / right_count : 0;
                 int32_t right_var = 0;
@@ -463,7 +463,7 @@ public:
                     }
                     right_var /= static_cast<int32_t>(right_count);
                 }
-                
+
                 // Variability Index: VI = variance / mean^2 (×1000 for integer precision)
                 // To avoid division by zero, use max(mean, 1)
                 // Use int64_t for intermediate multiplication to prevent overflow
@@ -476,11 +476,11 @@ public:
                 const int32_t right_vi = static_cast<int32_t>(
                     (static_cast<int64_t>(right_var) * 1000) /
                     (static_cast<int64_t>(right_mean_safe) * right_mean_safe));
-                
+
                 // vi_threshold_x10 is threshold × 10, compare with VI × 1000
                 // So: vi_threshold × 100 = vi_threshold_x10 × 10
                 const int32_t vi_threshold = static_cast<int32_t>(vi_threshold_x10) * 100;
-                
+
                 // Adaptive mode selection based on variability
                 if (left_vi < vi_threshold && right_vi < vi_threshold) {
                     // Both windows homogeneous → CA-CFAR
@@ -541,14 +541,14 @@ public:
         uint8_t vi_threshold_x10 = 15
     ) noexcept {
         if (mode == CFARMode::OFF || spectrum == nullptr) return bin_count;
-        
+
         size_t peak_bin = bin_count;
         uint8_t peak_power = 0;
 
         for (size_t i = skip_start; i < bin_count - skip_end; ++i) {
             // Skip DC spike
             if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-            
+
             if (detect(spectrum, bin_count, i, mode, ref_cells, guard_cells, 
                        threshold_x10, alpha, beta, gamma, os_k_percent, vi_threshold_x10)) {
                 if (spectrum[i] > peak_power) {
@@ -741,46 +741,46 @@ public:
      * @param hardware Reference to hardware controller
      */
     DroneScanner(DatabaseManager& database, HardwareController& hardware) noexcept;
-    
+
     /**
      * @brief Destructor
      */
     ~DroneScanner() noexcept;
-    
+
     // Delete copy and move operations
     DroneScanner(const DroneScanner&) = delete;
     DroneScanner& operator=(const DroneScanner&) = delete;
     DroneScanner(DroneScanner&&) = delete;
     DroneScanner& operator=(DroneScanner&&) = delete;
-    
+
     /**
      * @brief Initialize scanner
      * @return ErrorCode::SUCCESS if initialized, error code otherwise
      * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorCode initialize() noexcept;
-    
+
     /**
      * @brief Start scanning
      * @return ErrorCode::SUCCESS if started, error code otherwise
      * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorCode start_scanning() noexcept;
-    
+
     /**
      * @brief Stop scanning
      * @return ErrorCode::SUCCESS if stopped, error code otherwise
      * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorCode stop_scanning() noexcept;
-    
+
     /**
      * @brief Pause scanning
      * @return ErrorCode::SUCCESS if paused, error code otherwise
      * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorCode pause_scanning() noexcept;
-    
+
     /**
      * @brief Resume scanning from paused state
      * @return ErrorCode::SUCCESS if resumed, error code otherwise
@@ -803,7 +803,7 @@ public:
      * @note Called by scanner thread BEFORE dwell logic to break out of LOCKING
      */
     bool try_consume_force_resume_flag() noexcept;
-    
+
     /**
      * @brief Remove tracked drone on a specific frequency (no mutex)
      * @note Called by scanner thread after force-resume
@@ -833,7 +833,7 @@ public:
      * @brief Check if frequency is blacklisted (persistent noise)
      */
     bool is_blacklisted(FreqHz frequency) const noexcept;
-    
+
     /**
      * @brief Perform single scan cycle (frequency hop)
      * @note Called periodically by scanner thread
@@ -846,7 +846,7 @@ public:
      *       by the UI thread via process_spectrum_message().
      */
     [[nodiscard]] ErrorCode perform_scan_cycle() noexcept;
-    
+
     /**
      * @brief Update tracked drones with new data
      * @param frequency Frequency of detected signal
@@ -881,19 +881,19 @@ public:
         TrackedDrone* drones,
         size_t max_count
     ) const noexcept;
-    
+
     /**
      * @brief Get scanner state
      * @return Current scanner state
      */
     [[nodiscard]] ScannerState get_state() const noexcept;
-    
+
     /**
      * @brief Check if scanning is active
      * @return true if scanning, false otherwise
      */
     [[nodiscard]] bool is_scanning() const noexcept;
-    
+
     /**
      * @brief Get scan configuration (thread-safe copy)
      * @return Copy of current scan configuration (~368 bytes)
@@ -905,7 +905,7 @@ public:
      *       Prefer targeted getters (get_threat_critical_dbm()) in hot paths.
      */
     void get_config(ScanConfig& out) const noexcept;
-    
+
     /**
      * @brief Get critical threat RSSI threshold (thread-safe, no full config copy)
      * @return Critical threat threshold in dBm
@@ -937,7 +937,7 @@ public:
      * @note Use instead of get_config().adaptive_cfar_enabled in hot paths
      */
     [[nodiscard]] bool is_adaptive_cfar_enabled() const noexcept;
-    
+
     /**
      * @brief Get sweep step frequency in Hz
      * @return Sweep step frequency (bins per step × bin size)
@@ -946,7 +946,7 @@ public:
     [[nodiscard]] FreqHz get_sweep_step() const noexcept {
         return SWEEP_BINS_PER_STEP * SWEEP_BIN_SIZE;
     }
-    
+
     /**
      * @brief Set scan configuration
      * @param config Configuration to apply
@@ -954,20 +954,20 @@ public:
      * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorCode set_config(const ScanConfig& config) noexcept;
-    
+
     /**
      * @brief Get scan statistics
      * @return Current scan statistics
      * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ScanStatistics get_statistics() const noexcept;
-    
+
     /**
      * @brief Reset scan statistics
      * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     void reset_statistics() noexcept;
-    
+
     /**
      * @brief Get current scan frequency
      * @return ErrorResult containing current frequency or error
@@ -988,7 +988,7 @@ public:
      * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     void clear_lock_state() noexcept;
-    
+
     /**
      * @brief Get number of tracked drones
      * @return Number of tracked drones
@@ -1325,7 +1325,7 @@ private:
      * @pre Mutex must be held (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorCode perform_scan_cycle_internal() noexcept;
-    
+
     /**
      * @brief Internal: Update tracked drone
      * @note Called by update_tracked_drones() and apply_sweep_tracking() with mutex held
@@ -1342,7 +1342,7 @@ private:
         SystemTime timestamp,
         size_t* out_index = nullptr
     ) noexcept;
-    
+
     /**
      * @brief Internal: Find the tracked drone nearest to a detection frequency
      * @param frequency Frequency to match (Hz)
@@ -1360,7 +1360,45 @@ private:
         FreqHz frequency,
         FreqHz radius_hz
     ) const noexcept;
-    
+
+    /**
+     * @brief Internal: Match a detection to the nearest tracked drone AND
+     *        consolidate near-duplicate entries within the match radius
+     *
+     *        Merge policy ("a close frequency corrects the tracked entry"):
+     *        1. Mark every tracker entry within radius_hz of the detection.
+     *        2. The OLDEST in-radius entry (earliest created_time_, ties →
+     *           lowest index) survives — it carries the longest trend history
+     *           and the most stable hysteresis state.
+     *        3. Every other in-radius entry is absorbed into the survivor
+     *           (TrackedDrone::absorb_from): RSSI history, sweep cycle peaks,
+     *           decay counters and Mahalanobis statistics merge, so the
+     *           survivor's movement trend continues as ONE continuous stream.
+     *        4. Absorbed entries are removed (array compacted) and the
+     *           survivor's new index is returned. The caller then re-centers
+     *           the survivor onto the detection frequency and feeds the
+     *           detection's RSSI through the normal update path.
+     *
+     *        This heals duplicates that pre-date the radius (created by older
+     *        firmware, mode switches, or multi-window sweep races) which the
+     *        read-only find_nearest_drone_internal() could never merge once
+     *        both entries started receiving their own exact-matching hits.
+     *
+     * @param frequency Detection frequency (Hz)
+     * @param radius_hz Maximum allowed |difference| (Hz)
+     * @return ErrorResult containing the survivor's (post-compaction) index,
+     *         or failure when no tracked drone lies within radius_hz
+     * @pre Caller must hold DATA_MUTEX, or have exclusive access to the
+     *      tracker (sweep mode: scanner thread stopped, UI thread idle)
+     * @note Stack: ~24 bytes (bool in_radius[16] + scalars). O(n²) worst case
+     *       with n <= 16 (120 pair checks); absorb path is rare. Compaction
+     *       is the same pattern as remove_stale_drones_internal().
+     */
+    [[nodiscard]] ErrorResult<size_t> match_and_consolidate_drone_internal(
+        FreqHz frequency,
+        FreqHz radius_hz
+    ) noexcept;
+
     /**
      * @brief Internal: Add new tracked drone
      * @param frequency_hz Frequency of detected signal (Hz)
@@ -1374,7 +1412,7 @@ private:
         RssiValue rssi_dbm,
         SystemTime timestamp_ms
     ) noexcept;
-    
+
     /**
      * @brief Internal: Remove stale drones
      * @note Called by remove_stale_drones() with mutex held
@@ -1382,7 +1420,7 @@ private:
      * @pre Mutex must be held (LockOrder::DATA_MUTEX)
      */
     void remove_stale_drones_internal(SystemTime current_time) noexcept;
-    
+
     /**
      * @brief Internal: Determine drone type from frequency
      * @param frequency Frequency to analyze
@@ -1572,10 +1610,10 @@ private:
     // References to dependencies
     DatabaseManager& database_;
     HardwareController& hardware_;
-    
+
     // Scanner state
     ScannerState state_;
-    
+
     // Scan configuration
     ScanConfig config_;
 
@@ -1585,16 +1623,16 @@ private:
     SystemTime track_start_time_{0};           // Tracking start time
     char current_drone_type_[5]{'\0', '\0', '\0', '\0', '\0'};  // All bytes initialized
     bool drone_type_valid_{false};              // Drone type valid flag
-    
+
     // Scan statistics
     ScanStatistics statistics_;
-    
+
     // Tracked drones (fixed-size array, no heap allocation)
     std::array<TrackedDrone, MAX_TRACKED_DRONES> tracked_drones_;
-    
+
     // Number of tracked drones (uint8_t sufficient for MAX_TRACKED_DRONES=16)
     uint8_t tracked_count_;
-    
+
     // Current scan frequency
     FreqHz current_frequency_;
 
@@ -1624,13 +1662,13 @@ private:
 
     // Last scan time
     SystemTime last_scan_time_;
-    
+
     // Scanning active flag
     AtomicFlag scanning_active_;
-    
+
     // Alert callback
     ThreatAlertCallback alert_callback_;
-    
+
     // Mutex for thread safety (LockOrder::DATA_MUTEX)
     mutable Mutex mutex_;
 

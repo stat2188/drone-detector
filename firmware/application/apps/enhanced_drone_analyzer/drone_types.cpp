@@ -190,6 +190,141 @@ void TrackedDrone::update_rssi(RssiValue new_rssi, SystemTime timestamp, const T
     last_rssi_ = static_cast<int16_t>(new_rssi);
 }
 
+void TrackedDrone::absorb_from(const TrackedDrone& other) noexcept {
+    // Array-size derivation instead of RSSI_HISTORY_SIZE / TIMESTAMP_HISTORY_SIZE:
+    // this .cpp's header must not include constants.hpp (circular include),
+    // same policy as observe_rssi(). constants.hpp static_asserts both == 6.
+    constexpr size_t RSSI_LEN = sizeof(rssi_history_) / sizeof(rssi_history_[0]);
+    constexpr size_t TS_LEN = sizeof(timestamp_history_) / sizeof(timestamp_history_[0]);
+    static_assert(RSSI_LEN == TS_LEN, "history arrays must stay aligned");
+
+    // Stack: 12 * 8 B = 96 bytes + scalars ≈ 128 bytes. Well under the 512 B
+    // per-frame limit. No heap, no recursion.
+    struct HistorySample {
+        SystemTime timestamp;
+        int16_t rssi;
+    };
+    HistorySample merged[RSSI_LEN * 2];
+    size_t count = 0;
+
+    // Extract this (survivor) entry's valid samples, oldest -> newest.
+    // The last own_n writes live at slots (history_index_ - own_n + i) % LEN;
+    // the base guard also covers the theoretical uint16 cursor wrap.
+    const size_t own_n = (update_count < RSSI_LEN) ? update_count : RSSI_LEN;
+    const size_t own_base = (static_cast<size_t>(history_index_) >= own_n)
+        ? (static_cast<size_t>(history_index_) - own_n)
+        : (static_cast<size_t>(history_index_) + RSSI_LEN - own_n);
+    for (size_t i = 0; i < own_n; ++i) {
+        const size_t slot = (own_base + i) % RSSI_LEN;
+        merged[count].timestamp = timestamp_history_[slot];
+        merged[count].rssi = rssi_history_[slot];
+        ++count;
+    }
+
+    // Extract the absorbed entry's valid samples the same way.
+    const size_t other_n = (other.update_count < RSSI_LEN) ? other.update_count : RSSI_LEN;
+    const size_t other_base = (static_cast<size_t>(other.history_index_) >= other_n)
+        ? (static_cast<size_t>(other.history_index_) - other_n)
+        : (static_cast<size_t>(other.history_index_) + RSSI_LEN - other_n);
+    for (size_t i = 0; i < other_n; ++i) {
+        const size_t slot = (other_base + i) % RSSI_LEN;
+        merged[count].timestamp = other.timestamp_history_[slot];
+        merged[count].rssi = other.rssi_history_[slot];
+        ++count;
+    }
+
+    // Insertion sort by timestamp, ascending. n <= 12 → max 66 comparisons.
+    for (size_t i = 1; i < count; ++i) {
+        const HistorySample key = merged[i];
+        size_t j = i;
+        while (j > 0 && merged[j - 1].timestamp > key.timestamp) {
+            merged[j] = merged[j - 1];
+            --j;
+        }
+        merged[j] = key;
+    }
+
+    // Keep only the newest RSSI_LEN samples; rewrite the circular buffer in
+    // chronological order starting at slot 0 (matches the read pattern in
+    // get_movement_trend(): start = history_index_ % LEN, n = update_count).
+    const size_t keep = (count > RSSI_LEN) ? RSSI_LEN : count;
+    const size_t first = count - keep;
+    for (size_t i = 0; i < keep; ++i) {
+        rssi_history_[i] = merged[first + i].rssi;
+        timestamp_history_[i] = merged[first + i].timestamp;
+    }
+    history_index_ = static_cast<uint16_t>(keep);
+    update_count = static_cast<uint8_t>(keep);
+
+    if (keep > 0) {
+        // Newest merged sample becomes the current observation — the merged
+        // entry reads exactly as if every detection had hit one tracker.
+        const HistorySample& newest = merged[count - 1];
+        last_rssi_ = newest.rssi;
+        rssi = newest.rssi;
+        last_seen = newest.timestamp;
+    }
+
+    // ---- Lifecycle: keep the oldest birth, the freshest sighting ----
+    if (other.created_time_ != 0
+        && (created_time_ == 0 || other.created_time_ < created_time_)) {
+        created_time_ = other.created_time_;
+    }
+    if (other.last_seen_time_ > last_seen_time_) {
+        last_seen_time_ = other.last_seen_time_;
+    }
+
+    // ---- Decay state: most optimistic (the merged drone was just seen) ----
+    if (other.missed_cycles_ < missed_cycles_) {
+        missed_cycles_ = other.missed_cycles_;
+    }
+    if (other.sweep_cycles_missed_ < sweep_cycles_missed_) {
+        sweep_cycles_missed_ = other.sweep_cycles_missed_;
+    }
+    if (other.rssi_decrease_counter_ < rssi_decrease_counter_) {
+        rssi_decrease_counter_ = other.rssi_decrease_counter_;
+    }
+
+    // ---- RSSI-increase tracking: union, keep the freshest timestamp ----
+    if (other.rssi_increased_) {
+        rssi_increased_ = true;
+        if (other.last_increase_time_ > last_increase_time_) {
+            last_increase_time_ = other.last_increase_time_;
+        }
+    }
+
+    // ---- Classification: fill UNKNOWN type, keep the higher threat ----
+    // The next update_rssi() reclassifies the threat from the merged history.
+    if (drone_type == DroneType::UNKNOWN && other.drone_type != DroneType::UNKNOWN) {
+        drone_type = other.drone_type;
+    }
+    if (other.threat_level > threat_level) {
+        threat_level = other.threat_level;
+    }
+
+    // ---- Sweep trend state: merge cycle peaks so the trend continues ----
+    if (other.last_cycle_peak_rssi_ != SWEEP_CYCLE_PEAK_INVALID_DBM) {
+        if (last_cycle_peak_rssi_ == SWEEP_CYCLE_PEAK_INVALID_DBM
+            || other.last_cycle_peak_rssi_ > last_cycle_peak_rssi_) {
+            last_cycle_peak_rssi_ = other.last_cycle_peak_rssi_;
+        }
+    }
+    if (!has_prev_cycle_peak_ && other.has_prev_cycle_peak_) {
+        prev_cycle_peak_rssi_ = other.prev_cycle_peak_rssi_;
+        has_prev_cycle_peak_ = true;
+    }
+    sweep_mode_active_ = sweep_mode_active_ || other.sweep_mode_active_;
+
+    // ---- Mahalanobis statistics: keep the richer sample set ----
+    if (other.mahalanobis_stats_.sample_count > mahalanobis_stats_.sample_count) {
+        mahalanobis_stats_ = other.mahalanobis_stats_;
+    }
+
+    // ---- Trend hysteresis: deliberately kept from the survivor (this).
+    // The survivor is the OLDEST entry, so its cached_trend_ carries the most
+    // stable hysteresis state; merging hold counters would be meaningless. ----
+}
+
 RssiValue TrackedDrone::get_average_rssi() const noexcept {
     if (update_count == 0) {
         return rssi;

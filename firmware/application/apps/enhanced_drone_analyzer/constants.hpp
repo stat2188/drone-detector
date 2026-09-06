@@ -82,6 +82,12 @@ constexpr size_t MAX_DISPLAYED_DRONES = 16;
  * @note Exact matches (difference == 0) always take priority over in-radius
  *       matches — two tracked database channels never collapse into one entry
  *       while both are being detected at their own centers.
+ * @note Duplicates that pre-date the radius (created by older firmware, mode
+ *       switches, or multi-window sweep races) are HEALED by consolidation:
+ *       when a detection lands in-radius, ALL in-radius entries merge into
+ *       the oldest one (RSSI history, sweep cycle peaks, trend state) — see
+ *       DroneScanner::match_and_consolidate_drone_internal() and
+ *       TrackedDrone::absorb_from().
  */
 constexpr FreqHz DRONE_FREQ_MATCH_RADIUS_HZ = 1'000'000ULL;
 

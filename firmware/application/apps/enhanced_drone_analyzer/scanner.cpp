@@ -1014,7 +1014,21 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
     size_t* out_index
 ) noexcept {
     if (out_index != nullptr) *out_index = SIZE_MAX;
-    ErrorResult<size_t> index_result = find_nearest_drone_internal(
+    // Nearest-match lookup WITH duplicate consolidation ("a close frequency
+    // corrects the tracked entry"): a detection landing inside the match
+    // radius updates the nearest existing tracker instead of spawning a
+    // duplicate, and ALL other in-radius entries are absorbed into the
+    // survivor (oldest) — their RSSI history, sweep cycle peaks and trend
+    // state merge, so the trend applies as if every detection had always hit
+    // one ("current") entry. The returned index is the post-compaction
+    // survivor; the re-centering below then pins it onto the latest
+    // observation so slow RF drift (FHSS wander, TX/RX offset, 78 kHz
+    // FFT-bin quantization, overlapping sweep windows) can never walk
+    // outside the radius.
+    // NOTE: in normal (DB scan) mode `frequency` IS the tune center, so
+    // the re-centering below is a no-op there — the key stays pinned to
+    // the database channel; only sweep-mode bin measurements drift it.
+    ErrorResult<size_t> index_result = match_and_consolidate_drone_internal(
         frequency, DRONE_FREQ_MATCH_RADIUS_HZ);
 
     if (index_result.has_value()) {
@@ -1022,15 +1036,8 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
         size_t index = index_result.value();
         if (out_index != nullptr) *out_index = index;
 
-        // Frequency-drift absorption: a detection landing inside the match
-        // radius updates the NEAREST existing tracker instead of spawning a
-        // duplicate entry. Re-center the tracking key on the latest
-        // observation so slow RF drift (FHSS wander, TX/RX offset, 78 kHz
-        // FFT-bin quantization, overlapping sweep windows) can never walk
-        // outside the radius, and refresh the display frequency.
-        // NOTE: in normal (DB scan) mode `frequency` IS the tune center, so
-        // the re-centering below is a no-op there — the key stays pinned to
-        // the database channel; only sweep-mode bin measurements drift it.
+        // Re-center the survivor's tracking key onto the latest observation
+        // (already consolidated above) and refresh the display frequency.
         if (tracked_drones_[index].frequency != frequency) {
             tracked_drones_[index].frequency = frequency;
         }
@@ -1115,6 +1122,86 @@ ErrorResult<size_t> DroneScanner::find_nearest_drone_internal(
     }
 
     return best_match;
+}
+
+ErrorResult<size_t> DroneScanner::match_and_consolidate_drone_internal(
+    FreqHz frequency,
+    FreqHz radius_hz
+) noexcept {
+    // Stack: ~24 bytes (bool in_radius[16] + scalars). O(n²) worst case with
+    // n <= 16 (120 pair checks); the absorb path is rare (duplicate healing),
+    // the common path is a single O(n) scan with zero absorptions.
+    if (tracked_count_ == 0) {
+        return ErrorResult<size_t>::failure(ErrorCode::INVALID_PARAMETER);
+    }
+
+    // Pass 1: mark every entry within the match radius of the detection.
+    // FreqHz is uint64_t — unsigned difference is computed by branch, never
+    // by signed cast, so no underflow is possible.
+    bool in_radius[MAX_TRACKED_DRONES];
+    size_t in_radius_count = 0;
+    for (size_t i = 0; i < tracked_count_; ++i) {
+        const FreqHz entry_freq = tracked_drones_[i].frequency;
+        const FreqHz diff = (frequency > entry_freq) ? (frequency - entry_freq)
+                                                     : (entry_freq - frequency);
+        in_radius[i] = (diff <= radius_hz);
+        if (in_radius[i]) {
+            ++in_radius_count;
+        }
+    }
+
+    // No candidate within radius — nothing to match, nothing to consolidate.
+    if (in_radius_count == 0) {
+        return ErrorResult<size_t>::failure(ErrorCode::INVALID_PARAMETER);
+    }
+
+    // Pass 2: survivor = OLDEST in-radius entry (earliest created_time_,
+    // ties -> lowest index). The oldest entry carries the longest trend
+    // history and hysteresis state, so the merged entry keeps a stable
+    // movement trend ("apply the trend as to the current one").
+    size_t survivor = 0;
+    SystemTime oldest_created = 0;
+    bool survivor_set = false;
+    for (size_t i = 0; i < tracked_count_; ++i) {
+        if (!in_radius[i]) {
+            continue;
+        }
+        const SystemTime created = tracked_drones_[i].created_time_;
+        if (!survivor_set || created < oldest_created) {
+            survivor = i;
+            oldest_created = created;
+            survivor_set = true;
+        }
+    }
+
+    // Pass 3: absorb every OTHER in-radius entry into the survivor. Each
+    // duplicate's RSSI history, cycle peaks and decay state merge into the
+    // survivor, so the trend sees one continuous sample stream.
+    for (size_t i = 0; i < tracked_count_; ++i) {
+        if (in_radius[i] && i != survivor) {
+            tracked_drones_[survivor].absorb_from(tracked_drones_[i]);
+        }
+    }
+
+    // Pass 4: compact the array (same pattern as remove_stale_drones_internal),
+    // dropping the absorbed duplicates, and record the survivor's new index.
+    size_t write_index = 0;
+    size_t survivor_new_index = SIZE_MAX;
+    for (size_t read_index = 0; read_index < tracked_count_; ++read_index) {
+        if (in_radius[read_index] && read_index != survivor) {
+            continue;  // absorbed duplicate — drop
+        }
+        if (read_index == survivor) {
+            survivor_new_index = write_index;
+        }
+        if (write_index != read_index) {
+            tracked_drones_[write_index] = tracked_drones_[read_index];
+        }
+        ++write_index;
+    }
+    tracked_count_ = write_index;
+
+    return ErrorResult<size_t>::success(survivor_new_index);
 }
 
 ErrorCode DroneScanner::get_current_drone_type(char* buffer, size_t buffer_size) const noexcept {

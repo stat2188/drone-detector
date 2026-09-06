@@ -504,6 +504,25 @@ struct TrackedDrone {
     }
 
     /**
+     * @brief Merge another tracked drone into this one (duplicate consolidation)
+     * @param other Entry being absorbed (the caller drops it right afterwards)
+     * @note Called when two tracker entries lie within DRONE_FREQ_MATCH_RADIUS_HZ
+     *       of the same detection: the OLDEST entry survives and absorbs the
+     *       duplicate, so its RSSI history, sweep cycle peaks and decay state
+     *       continue as ONE continuous stream — the close-frequency detection
+     *       then updates the survivor exactly as if it had always been the
+     *       only ("current") entry for that emitter.
+     * @note Fixed-size merge: at most 6 + 6 = 12 history samples, the newest
+     *       6 (by timestamp) survive. Stack: ~128 bytes. No heap. No loops
+     *       longer than 12 iterations (insertion sort, max 66 comparisons).
+     * @pre this != &other
+     * @pre Caller holds DATA_MUTEX, or has exclusive tracker access
+     *      (sweep mode: scanner thread stopped, UI thread idle)
+     */
+    void absorb_from(const TrackedDrone& other) noexcept;
+
+
+    /**
      * @brief Calculate RSSI variance from history (integer arithmetic)
      * @return Variance value (0 if insufficient samples)
      * @note Real drones: variance < 25 (stable signal)
