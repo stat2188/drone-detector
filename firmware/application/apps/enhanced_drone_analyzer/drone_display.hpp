@@ -717,7 +717,7 @@ private:
     FreqHz sweep2_freq_end_{0};
 
     // Dual-column drone list (two narrow detection columns)
-    bool dual_column_mode_{false};
+    bool dual_column_mode_{true};
 
     // Real-time scan-head position [0]=upper band, [1]=lower band (dual mode).
     // -1 means "no marker" for that band.

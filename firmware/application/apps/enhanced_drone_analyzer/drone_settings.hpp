@@ -52,7 +52,7 @@ private:
     ui::Checkbox check_audio_alerts_;
     ui::Checkbox check_spectrum_visible_;
     ui::Checkbox check_timeline_visible_;
-    ui::Checkbox check_dual_column_;
+
 
     // Detection features
     ui::Checkbox check_dwell_enabled_;

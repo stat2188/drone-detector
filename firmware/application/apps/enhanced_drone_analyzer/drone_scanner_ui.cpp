@@ -482,7 +482,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         // Apply volume from settings (not during parsing to avoid side-effects)
         portapack::receiver_model.set_normalized_headphone_volume(g_workspace_settings.volume);
         // Apply display-only settings that are not part of ScanConfig
-        drone_display_.set_dual_column_mode(g_workspace_settings.dual_column_list);
         drone_display_.set_spectrum_visible(g_workspace_settings.spectrum_visible);
         drone_display_.set_timeline_visible(g_workspace_settings.timeline_visible);
     }

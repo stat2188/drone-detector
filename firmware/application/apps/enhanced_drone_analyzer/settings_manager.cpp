@@ -28,7 +28,7 @@ SettingsStruct::SettingsStruct() noexcept
     , threat_critical_dbm(RSSI_CRITICAL_THREAT_THRESHOLD_DBM)
     , spectrum_visible(true)
     , timeline_visible(true)
-    , dual_column_list(true)
+
     , audio_alerts_enabled(true)
     , dwell_enabled(true)
     , confirm_count_enabled(true)
@@ -180,8 +180,7 @@ static void parse_settings_line(
         s.timeline_visible = parse_bool();
     } else if (key_matches("show_histogram")) {
         s.timeline_visible = parse_bool();
-    } else if (key_matches("dual_column_list")) {
-        s.dual_column_list = parse_bool();
+
 
     // --- Detection features ---
     } else if (key_matches("spectrum_detection")) {
@@ -565,7 +564,7 @@ ErrorCode SettingsFileManager::save(
     wl(file, "volume", static_cast<int64_t>(s.volume));
     wbool(file, "show_spectrum", s.spectrum_visible);
     wbool(file, "show_timeline", s.timeline_visible);
-    wbool(file, "dual_column_list", s.dual_column_list);
+
 
     // Detection features
     wbool(file, "spectrum_detection", s.spectrum_detection_enabled);

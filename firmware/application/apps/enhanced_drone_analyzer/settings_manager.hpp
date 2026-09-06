@@ -31,7 +31,7 @@ struct SettingsStruct {
     // Display
     bool spectrum_visible;
     bool timeline_visible;
-    bool dual_column_list;
+
 
     // Alerts
     bool audio_alerts_enabled;

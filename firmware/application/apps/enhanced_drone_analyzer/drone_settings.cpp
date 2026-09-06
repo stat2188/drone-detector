@@ -43,17 +43,17 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         {{UI_POS_X(8), UI_POS_Y(16)}, "Md:", Color::white()},
         {{UI_POS_X(16), UI_POS_Y(16)}, "Hi:", Color::white()},
         {{UI_POS_X(24), UI_POS_Y(16)}, "Cr:", Color::white()},
-        {{UI_POS_X(0), UI_POS_Y(8)}, "Mrg:", Color::white()},
+        {{UI_POS_X(0), UI_POS_Y(7)}, "Mrg:", Color::white()},
     })
     , field_scan_interval_({UI_POS_X(1), UI_POS_Y(2)}, 4, {10, 1000}, 10, ' ')
     , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(4)}, 3, {0, 100}, 1, ' ')
     , field_volume_({UI_POS_X(17), UI_POS_Y(2)}, 2, {0, 99}, 1, ' ')
     , field_rssi_dec_cyc_({UI_POS_X(17), UI_POS_Y(3)}, 2, {1, 50}, 1, ' ')
-    , field_freq_match_radius_({UI_POS_X(4), UI_POS_Y(8)}, 3, {0, 100}, 1, ' ')
+    , field_freq_match_radius_({UI_POS_X(4), UI_POS_Y(7)}, 3, {0, 100}, 1, ' ')
     , check_audio_alerts_({UI_POS_X(1), UI_POS_Y(9)}, 6, "Audio", false)
     , check_spectrum_visible_({UI_POS_X(20), UI_POS_Y(9)}, 5, "SpVis", false)
     , check_timeline_visible_({UI_POS_X(20), UI_POS_Y(13)}, 5, "WF", false)
-    , check_dual_column_({UI_POS_X(20), UI_POS_Y(3)}, 5, "2Col", false)
+
     , check_dwell_enabled_({UI_POS_X(1), UI_POS_Y(11)}, 6, "Dwell", false)
     , check_confirm_count_({UI_POS_X(1), UI_POS_Y(13)}, 8, "Confirm", false)
     , field_confirm_count_({UI_POS_X(13), UI_POS_Y(13)}, 2, {1, 10}, 1, ' ')
@@ -119,7 +119,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &check_audio_alerts_,
         &check_spectrum_visible_,
         &check_timeline_visible_,
-        &check_dual_column_,
+
         &check_dwell_enabled_,
         &check_confirm_count_,
         &field_confirm_count_,
@@ -216,13 +216,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         settings_dirty_ = true;
     };
 
-    check_dual_column_.on_select = [this](ui::Checkbox&, bool v) {
-        settings_.dual_column_list = v;
-        if (display_ptr_ != nullptr) {
-            display_ptr_->set_dual_column_mode(v);
-        }
-        settings_dirty_ = true;
-    };
+
 
     check_dwell_enabled_.on_select = [this](ui::Checkbox&, bool v) {
         settings_.dwell_enabled = v;
@@ -522,7 +516,7 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     check_audio_alerts_.set_value(settings_.audio_alerts_enabled);
     check_spectrum_visible_.set_value(settings_.spectrum_visible);
     check_timeline_visible_.set_value(settings_.timeline_visible);
-    check_dual_column_.set_value(settings_.dual_column_list);
+
     check_dwell_enabled_.set_value(settings_.dwell_enabled);
     check_confirm_count_.set_value(settings_.confirm_count_enabled);
     field_confirm_count_.set_value(static_cast<int32_t>(settings_.confirm_count));
