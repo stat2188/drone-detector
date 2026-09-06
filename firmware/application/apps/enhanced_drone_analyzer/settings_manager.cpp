@@ -309,6 +309,11 @@ static void parse_settings_line(
         const int32_t r = static_cast<int32_t>(parse_int());
         s.exception_radius_mhz = static_cast<uint8_t>(r > 100 ? 100 : (r < 1 ? 1 : r));
 
+    // --- Drone frequency match merge radius ---
+    } else if (key_matches("freq_match_radius_mhz")) {
+        const int32_t r = static_cast<int32_t>(parse_int());
+        s.freq_match_radius_mhz = static_cast<uint8_t>(r > 100 ? 100 : (r < 0 ? 0 : r));
+
     // --- RSSI decrease cycles ---
     } else if (key_matches("rssi_decrease_cycles")) {
         const int32_t c = static_cast<int32_t>(parse_int());
@@ -624,6 +629,9 @@ ErrorCode SettingsFileManager::save(
     // Exception radius
     wl(file, "exception_radius_mhz", static_cast<int64_t>(s.exception_radius_mhz));
 
+    // Drone frequency match merge radius
+    wl(file, "freq_match_radius_mhz", static_cast<int64_t>(s.freq_match_radius_mhz));
+
     // RSSI decrease cycles
     wl(file, "rssi_decrease_cycles", static_cast<int64_t>(s.rssi_decrease_cycles));
 
@@ -762,6 +770,7 @@ void SettingsFileManager::apply_to_config(
     }
     config.exception_radius_mhz = s.exception_radius_mhz;
     config.rssi_decrease_cycles = s.rssi_decrease_cycles;
+    config.freq_match_radius_mhz = s.freq_match_radius_mhz;
 }
 
 // ============================================================================
@@ -846,6 +855,7 @@ void SettingsFileManager::extract_from_config(
     }
     s.exception_radius_mhz = config.exception_radius_mhz;
     s.rssi_decrease_cycles = config.rssi_decrease_cycles;
+    s.freq_match_radius_mhz = config.freq_match_radius_mhz;
 
     // Mahalanobis gate
     s.mahalanobis_enabled = config.mahalanobis_enabled;

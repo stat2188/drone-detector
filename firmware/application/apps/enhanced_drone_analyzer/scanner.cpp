@@ -875,7 +875,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             }
 
             ErrorResult<size_t> existing = find_nearest_drone_internal(
-                frequency, DRONE_FREQ_MATCH_RADIUS_HZ);
+                frequency, static_cast<FreqHz>(config_.freq_match_radius_mhz) * 1'000'000ULL);
             if (!existing.has_value() && pending_count_ < config_.confirm_count) {
                 should_update = false;  // waiting for more confirmations
             }
@@ -1029,7 +1029,7 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
     // the re-centering below is a no-op there — the key stays pinned to
     // the database channel; only sweep-mode bin measurements drift it.
     ErrorResult<size_t> index_result = match_and_consolidate_drone_internal(
-        frequency, DRONE_FREQ_MATCH_RADIUS_HZ);
+        frequency, static_cast<FreqHz>(config_.freq_match_radius_mhz) * 1'000'000ULL);
 
     if (index_result.has_value()) {
         // Existing drone — update and alert on threat increase
@@ -2149,7 +2149,7 @@ void DroneScanner::apply_sweep_tracking(
         // bin-quantized peak frequencies drift by 1-3 bins between sweep
         // cycles, so exact equality never accumulated per-drone statistics.
         const ErrorResult<size_t> match = find_nearest_drone_internal(
-            peak_freq, DRONE_FREQ_MATCH_RADIUS_HZ);
+            peak_freq, static_cast<FreqHz>(config_.freq_match_radius_mhz) * 1'000'000ULL);
         if (match.has_value()) {
             drone_idx = match.value();
             drone_found = true;

@@ -92,6 +92,15 @@ constexpr size_t MAX_DISPLAYED_DRONES = 16;
 constexpr FreqHz DRONE_FREQ_MATCH_RADIUS_HZ = 1'000'000ULL;
 
 /**
+ * @brief Default drone frequency match merge radius (MHz)
+ * @note Configurable at runtime via ScanConfig.freq_match_radius_mhz (0-100).
+ *       0 = only exact frequency matches consolidate (no merging)
+ *       1 = 1 MHz radius (default — matches legacy DRONE_FREQ_MATCH_RADIUS_HZ)
+ * @see DroneScanner::match_and_consolidate_drone_internal()
+ */
+constexpr uint8_t DEFAULT_FREQ_MATCH_RADIUS_MHZ = 1;
+
+/**
  * @brief Spectrum buffer size (bytes)
  * @note Must match ChannelSpectrum::db.size() (256 bins)
  */

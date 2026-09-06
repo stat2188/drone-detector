@@ -43,11 +43,13 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         {{UI_POS_X(8), UI_POS_Y(16)}, "Md:", Color::white()},
         {{UI_POS_X(16), UI_POS_Y(16)}, "Hi:", Color::white()},
         {{UI_POS_X(24), UI_POS_Y(16)}, "Cr:", Color::white()},
+        {{UI_POS_X(0), UI_POS_Y(8)}, "Mrg:", Color::white()},
     })
     , field_scan_interval_({UI_POS_X(1), UI_POS_Y(2)}, 4, {10, 1000}, 10, ' ')
     , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(4)}, 3, {0, 100}, 1, ' ')
     , field_volume_({UI_POS_X(17), UI_POS_Y(2)}, 2, {0, 99}, 1, ' ')
     , field_rssi_dec_cyc_({UI_POS_X(17), UI_POS_Y(3)}, 2, {1, 50}, 1, ' ')
+    , field_freq_match_radius_({UI_POS_X(4), UI_POS_Y(8)}, 3, {0, 100}, 1, ' ')
     , check_audio_alerts_({UI_POS_X(1), UI_POS_Y(9)}, 6, "Audio", false)
     , check_spectrum_visible_({UI_POS_X(20), UI_POS_Y(9)}, 5, "SpVis", false)
     , check_timeline_visible_({UI_POS_X(20), UI_POS_Y(13)}, 5, "WF", false)
@@ -113,6 +115,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &field_rssi_threshold_,
         &field_volume_,
         &field_rssi_dec_cyc_,
+        &field_freq_match_radius_,
         &check_audio_alerts_,
         &check_spectrum_visible_,
         &check_timeline_visible_,
@@ -183,6 +186,11 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
 
     field_rssi_dec_cyc_.on_change = [this](int32_t v) {
         settings_.rssi_decrease_cycles = static_cast<uint8_t>(v);
+        settings_dirty_ = true;
+    };
+
+    field_freq_match_radius_.on_change = [this](int32_t v) {
+        settings_.freq_match_radius_mhz = static_cast<uint8_t>(v);
         settings_dirty_ = true;
     };
 
@@ -510,6 +518,7 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     }
     field_volume_.set_value(static_cast<int32_t>(settings_.volume));
     field_rssi_dec_cyc_.set_value(static_cast<int32_t>(settings_.rssi_decrease_cycles));
+    field_freq_match_radius_.set_value(static_cast<int32_t>(settings_.freq_match_radius_mhz));
     check_audio_alerts_.set_value(settings_.audio_alerts_enabled);
     check_spectrum_visible_.set_value(settings_.spectrum_visible);
     check_timeline_visible_.set_value(settings_.timeline_visible);

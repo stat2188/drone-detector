@@ -107,6 +107,7 @@ struct ScanConfig {
     FreqHz sweep_exceptions[4][EXCEPTIONS_PER_WINDOW]{};
     uint8_t exception_radius_mhz{DEFAULT_EXCEPTION_RADIUS_MHZ};  // 1-100, configurable exclusion radius
     uint8_t rssi_decrease_cycles{5};  // Normal mode: seconds of RSSI decrease before threat decay (sweep uses hardcoded MAX_SWEEP_CYCLES_MISSED)
+    uint8_t freq_match_radius_mhz{DEFAULT_FREQ_MATCH_RADIUS_MHZ};  // 0-100, drone detection merge radius (0=disabled)
 
     // Spectral Kurtosis (higher-order statistics)
     bool kurtosis_enabled{false};        // Default OFF (opt-in — new feature, untested in field)

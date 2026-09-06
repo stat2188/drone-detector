@@ -48,6 +48,7 @@ private:
     ui::NumberField field_rssi_threshold_;
     ui::NumberField field_volume_;
     ui::NumberField field_rssi_dec_cyc_;
+    ui::NumberField field_freq_match_radius_;
     ui::Checkbox check_audio_alerts_;
     ui::Checkbox check_spectrum_visible_;
     ui::Checkbox check_timeline_visible_;
