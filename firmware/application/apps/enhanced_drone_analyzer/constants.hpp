@@ -100,7 +100,7 @@ constexpr FreqHz DRONE_FREQ_MATCH_RADIUS_HZ = 1'000'000ULL;
  * @brief Default drone frequency match merge radius (MHz)
  * @note Configurable at runtime via ScanConfig.freq_match_radius_mhz (0-100).
  *       0 = only exact frequency matches consolidate (no merging)
- *       10 = 10 MHz radiu (FPV default — one analog FPV channel spans ~18 MHz
+ *       10 = 10 MHz radius (FPV default — one analog FPV channel spans ~18 MHz
  *       and its LO drift/FHSS wander easily exceeds the previous 1 MHz radius,
  *       spawning duplicate tracker entries that fragment RSSI history & trend)
  * @see DroneScanner::match_and_consolidate_drone_internal()
@@ -161,8 +161,10 @@ constexpr uint32_t DEFAULT_SAMPLE_RATE_HZ = 2000000;
  *       rssi_threshold_dbm and the threat ladder need a one-time re-tune;
  *       shape filters are per-frame relative (noise percentile) and do NOT.
  * @see DB_FFT_TRIGGER, SWEEP_SLICE_BW
+ * @note Declared as a literal (SWEEP_SLICE_BW is defined further down this
+ *       header); parity is enforced by static_assert after SWEEP_SLICE_BW.
  */
-constexpr FreqHz DB_CAPTURE_RATE_HZ = SWEEP_SLICE_BW;
+constexpr FreqHz DB_CAPTURE_RATE_HZ = 20'000'000ULL;
 
 /**
  * @brief FFT trigger (baseband buffers per FFT frame) for DB scan mode
@@ -700,6 +702,12 @@ constexpr FreqHz SWEEP_SLICE_BW = 20000000;
  * @note Used by both Logic and UI layers to avoid duplication
  */
 constexpr FreqHz SWEEP_BIN_SIZE = SWEEP_SLICE_BW / FFT_BIN_COUNT;
+
+// Bin-size parity guarantee: the DB (normal) scan capture MUST stay identical
+// to the sweep slice bandwidth so that shape-filter settings expressed in bins
+// mean the same bandwidth in both scan modes. If you change one, change both.
+static_assert(DB_CAPTURE_RATE_HZ == SWEEP_SLICE_BW,
+              "DB_CAPTURE_RATE_HZ must equal SWEEP_SLICE_BW (bin-size parity between DB scan and sweep)");
 
 // ============================================================================
 // Sweep Bin Mapping Constants (Looking Glass pattern)
