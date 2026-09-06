@@ -725,20 +725,20 @@ Each step can independently reject a detection.
 
   Step 1: Peak Margin (SNR)
     peak_margin = peak_value - noise_floor
-    Must exceed spectrum_margin (default 5 ≈ 1 dB)
+    Must exceed spectrum_margin (default 20 ≈ 4 dB)
     → Rejects sub-CFAR noise spikes
 
   Step 2: Minimum Width
-    signal_width must exceed spectrum_min_width (default 2 bins = 156 kHz)
+    signal_width must exceed spectrum_min_width (default 9 bins ≈ 700 kHz)
     → Rejects single-bin noise spikes
 
   Step 3: Maximum Width
-    signal_width must be below spectrum_max_width (default 230 bins = 18 MHz)
+    signal_width must be below spectrum_max_width (default 40 bins ≈ 3.1 MHz)
     → Rejects flat U/I noise (WiFi, BT)
 
   Step 4: Peak Sharpness
     sharpness = (peak_margin * 100) / avg_margin
-    Must exceed spectrum_peak_sharpness (default 75)
+    Must exceed spectrum_peak_sharpness (default 150)
     → Rejects flat-top signals, accepts dual-peak FPV
 
   Step 5: Peak-to-Width Ratio
@@ -753,7 +753,7 @@ Each step can independently reject a detection.
 
   Step 7: Flatness
     flatness_pct = (high_power_bins * 100) / signal_width
-    Must be below spectrum_flatness (default 35%)
+    Must be below spectrum_flatness (default 0% = disabled)
     → Rejects WiFi flat-top (>50%), accepts drone V-shape (<20%)
     → Only applied when peak_margin >= 40 AND signal_width > 4
 
@@ -1104,13 +1104,13 @@ FFT Bin Layout:
   SWEEP_BIN_SIZE             = 78,125 Hz
 
 Spectrum Shape Defaults:
-  DEFAULT_SPECTRUM_MARGIN         = 5     (≈1 dB)
-  DEFAULT_SPECTRUM_MIN_WIDTH      = 2     (156 kHz)
-  DEFAULT_SPECTRUM_MAX_WIDTH      = 230   (18 MHz)
-  DEFAULT_SPECTRUM_PEAK_SHARPNESS = 75
+  DEFAULT_SPECTRUM_MARGIN         = 20    (≈4 dB, analog FPV)
+  DEFAULT_SPECTRUM_MIN_WIDTH      = 9     (≈700 kHz, analog FPV)
+  DEFAULT_SPECTRUM_MAX_WIDTH      = 40    (≈3.1 MHz, analog FPV)
+  DEFAULT_SPECTRUM_PEAK_SHARPNESS = 150
   DEFAULT_SPECTRUM_PEAK_RATIO     = 0     (disabled)
   DEFAULT_SPECTRUM_VALLEY_DEPTH   = 80
-  DEFAULT_SPECTRUM_FLATNESS       = 35
+  DEFAULT_SPECTRUM_FLATNESS       = 0     (disabled, analog FPV)
   DEFAULT_SPECTRUM_SYMMETRY       = 0     (disabled)
 
 CFAR Defaults:

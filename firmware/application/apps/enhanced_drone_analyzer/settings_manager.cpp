@@ -36,7 +36,7 @@ SettingsStruct::SettingsStruct() noexcept
     , spectrum_detection_enabled(true)
     , median_enabled(false)
     , spectrum_margin(DEFAULT_SPECTRUM_MARGIN)
-    , spectrum_min_width(DEFAULT_SPECTRUM_MIN_WIDTH)  // 2 bins = 156 kHz
+    , spectrum_min_width(DEFAULT_SPECTRUM_MIN_WIDTH)  // 9 bins ≈ 700 kHz (analog FPV)
     , spectrum_max_width(DEFAULT_SPECTRUM_MAX_WIDTH)
     , spectrum_peak_sharpness(DEFAULT_SPECTRUM_PEAK_SHARPNESS)
     , spectrum_peak_ratio(DEFAULT_SPECTRUM_PEAK_RATIO)
