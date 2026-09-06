@@ -605,7 +605,7 @@ struct ScannerStateSnapshot {
  * @brief Display data for UI updates
  */
 struct DisplayData {
-    DisplayDroneEntry drones[16];     // 16 × ~64 = ~1024 bytes
+    DisplayDroneEntry drones[12];     // 12 × ~64 = ~768 bytes
     size_t drone_count;
     ScannerStateSnapshot state;
     

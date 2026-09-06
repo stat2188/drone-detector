@@ -1174,8 +1174,8 @@ ErrorResult<size_t> DroneScanner::match_and_consolidate_drone_internal(
     FreqHz frequency,
     FreqHz radius_hz
 ) noexcept {
-    // Stack: ~24 bytes (bool in_radius[16] + scalars). O(n²) worst case with
-    // n <= 16 (120 pair checks); the absorb path is rare (duplicate healing),
+    // Stack: ~28 bytes (bool in_radius[20] + scalars). O(n²) worst case with
+    // n <= 20 (190 pair checks); the absorb path is rare (duplicate healing),
     // the common path is a single O(n) scan with zero absorptions.
     if (tracked_count_ == 0) {
         return ErrorResult<size_t>::failure(ErrorCode::INVALID_PARAMETER);

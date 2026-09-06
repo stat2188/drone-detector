@@ -61,12 +61,12 @@ constexpr FreqHz FREQUENCY_BANDWIDTH_HZ = 20'000'000ULL;
 /**
  * @brief Maximum number of tracked drones
  */
-constexpr size_t MAX_TRACKED_DRONES = 16;
+constexpr size_t MAX_TRACKED_DRONES = 20;
 
 /**
  * @brief Maximum number of displayed drones
  */
-constexpr size_t MAX_DISPLAYED_DRONES = 16;
+constexpr size_t MAX_DISPLAYED_DRONES = 12;
 
 /**
  * @brief Frequency match radius for drone tracking (Hz)
@@ -1460,8 +1460,8 @@ static_assert(MAHALANOBIS_HISTORY_SIZE == 8,
     "MAHALANOBIS_HISTORY_SIZE changed — update history[8] in MahalanobisStatistics");
 static_assert(DRONE_TYPE_NAME_LENGTH == 16,
     "DRONE_TYPE_NAME_LENGTH changed — update type_name[16] in DisplayDroneEntry");
-static_assert(MAX_DISPLAYED_DRONES == 16,
-    "MAX_DISPLAYED_DRONES changed — update drones[16] in DisplayData");
+static_assert(MAX_DISPLAYED_DRONES == 12,
+    "MAX_DISPLAYED_DRONES changed — update drones[12] in DisplayData");
 
 } // namespace drone_analyzer
 
