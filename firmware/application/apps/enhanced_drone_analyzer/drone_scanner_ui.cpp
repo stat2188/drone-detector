@@ -433,9 +433,9 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     }
 
     baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
-    portapack::receiver_model.set_sampling_rate(DEFAULT_SAMPLE_RATE_HZ);
-    portapack::receiver_model.set_baseband_bandwidth(DEFAULT_SAMPLE_RATE_HZ);
-    baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, SWEEP_FFT_TRIGGER);
+    portapack::receiver_model.set_sampling_rate(DB_CAPTURE_RATE_HZ);
+    portapack::receiver_model.set_baseband_bandwidth(DB_CAPTURE_RATE_HZ);
+    baseband::set_spectrum(DB_CAPTURE_RATE_HZ, DB_FFT_TRIGGER);
     portapack::receiver_model.enable();
 
     // FPV-OPTIMIZED RF frontend: ensure max sensitivity for long-range analog
@@ -542,9 +542,9 @@ void DroneScannerUI::on_show() {
         // panics with "BBRunning".
         baseband::shutdown();
         baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
-        portapack::receiver_model.set_sampling_rate(DEFAULT_SAMPLE_RATE_HZ);
-        portapack::receiver_model.set_baseband_bandwidth(DEFAULT_SAMPLE_RATE_HZ);
-        baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, SWEEP_FFT_TRIGGER);
+        portapack::receiver_model.set_sampling_rate(DB_CAPTURE_RATE_HZ);
+        portapack::receiver_model.set_baseband_bandwidth(DB_CAPTURE_RATE_HZ);
+        baseband::set_spectrum(DB_CAPTURE_RATE_HZ, DB_FFT_TRIGGER);
         portapack::receiver_model.enable();
 
         // Restore audio output that may have been muted by a sub-view
@@ -924,9 +924,25 @@ void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexce
         // when this spectrum was captured. Do NOT read scanner's current_frequency_
         // because the scanner thread may have already moved to the next frequency.
         const FreqHz freq = get_current_frequency_safe();
-        if (freq != 0) {
-            (void)scanner_ptr_->process_spectrum_message(spectrum, freq);
+        if (freq == 0) {
+            return;
         }
+
+        // RETUNE-STRADDLE GUARD: a frame integrates over ~16.5 ms
+        // (DB_FFT_TRIGGER @ DB_CAPTURE_RATE_HZ); with the 50 ms hop cadence
+        // ~1 frame in 3 straddles a retune and blends the OLD and NEW
+        // frequency. ChannelSpectrum carries no capture-frequency tag, so the
+        // first frame observed after the tuned frequency changes is DISCARDED
+        // (detection, AGC and display alike) — the remaining frames of the
+        // dwell are clean. Required since the widened ±10 MHz capture:
+        // with matched production/consumption frame rates a straddler would
+        // otherwise inject foreign-frequency energy into the tracker.
+        if (freq != last_db_frame_freq_) {
+            last_db_frame_freq_ = freq;
+            return;
+        }
+
+        (void)scanner_ptr_->process_spectrum_message(spectrum, freq);
 
         // Auto gain control: analyze spectrum and adjust RF frontend
         apply_agc(spectrum.db.data());
@@ -1140,9 +1156,9 @@ void DroneScannerUI::exit_sweep_mode(bool suppress_auto_restart) noexcept {
     button_start_stop_.set_text("Start");
 
     // Restore baseband to normal bandwidth immediately
-    portapack::receiver_model.set_sampling_rate(DEFAULT_SAMPLE_RATE_HZ);
-    portapack::receiver_model.set_baseband_bandwidth(DEFAULT_SAMPLE_RATE_HZ);
-    baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, SWEEP_FFT_TRIGGER);
+    portapack::receiver_model.set_sampling_rate(DB_CAPTURE_RATE_HZ);
+    portapack::receiver_model.set_baseband_bandwidth(DB_CAPTURE_RATE_HZ);
+    baseband::set_spectrum(DB_CAPTURE_RATE_HZ, DB_FFT_TRIGGER);
 
     // Only auto-restart scanning if NOT being called from view transition.
     // When suppress_auto_restart=true (video or pattern manager push),

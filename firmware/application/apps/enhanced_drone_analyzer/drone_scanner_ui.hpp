@@ -147,7 +147,11 @@ private:
 
     // Band sweep — Looking Glass pattern: stop → process → retune → start
     // COMPOSITE_SIZE, SWEEP_SLICE_BW, MAX_SWEEP_WINDOWS defined in constants.hpp
-    static constexpr uint8_t DB_SCANS_PER_SWEEP = 50;
+    // DB frames before the auto-cycle switches to sweep mode. The DB FFT frame
+    // is ~16.5 ms (DB_FFT_TRIGGER @ DB_CAPTURE_RATE_HZ), so 200 frames ≈ 3.3 s
+    // of DB airtime per cycle — the same rhythm the legacy 2 MHz capture gave
+    // (50 × 65.5 ms). Sweep runs one full cycle, then auto-returns to DB scan.
+    static constexpr uint8_t DB_SCANS_PER_SWEEP = 200;
     // EACH_BIN_SIZE removed — use SWEEP_BIN_SIZE from constants.hpp instead
 
     /**
@@ -192,6 +196,7 @@ private:
     uint8_t first_enabled_sweep_idx_{0};  // First enabled window (cycle boundary for decay)
     uint8_t current_pair_{0};             // Current displayed pair index (0 or 2)
     uint8_t db_scan_count_{0};
+    FreqHz last_db_frame_freq_{0};        // Capture freq of last processed DB frame (retune-straddle guard)
     AtomicFlag sweep_transition_guard_;   // Prevents concurrent enter/exit
     uint32_t sweep_guard_timestamp_{0};   // Tick when guard was last set (timeout safety)
     AtomicFlag button_debounce_guard_;     // Debounces button_mode_/start_stop rapid taps

@@ -419,6 +419,20 @@ Key Constants:
   SWEEP_BINS_PER_STEP     = 228 (= FFT_USABLE_BINS_NARROW)
   SWEEP_GAPLESS_STEP_MAX  = ~8.8 MHz (max step for zero blind frequencies)
   SWEEP_FFT_TRIGGER       = 63 (phase decimation, ~6.5ms integration)
+
+DB Capture (normal scan mode):
+  DB_CAPTURE_RATE_HZ      = 20 MHz (±10 MHz window, = SWEEP_SLICE_BW →
+                            identical 78.125 kHz bin size in both modes)
+  DB_FFT_TRIGGER          = 160 (161 × 102.4 µs ≈ 16.5 ms → ~60.6 fps,
+                            matched to the 60 Hz DisplayFrameSync consumer;
+                            higher rates saturate the 4-slot FIFO and drop
+                            frames → wrong frequency attribution)
+  Retune-straddle guard   = first frame after a frequency change is
+                            discarded (blends old+new frequency)
+  CALIBRATION             = absolute levels +~10 dB vs legacy 2 MHz capture
+                            (10·log10(20/2)); re-tune rssi_threshold_dbm and
+                            threat ladder once. Shape filters are relative
+                            (per-frame noise percentile) — no re-tuning.
   SWEEP_PERSISTENCE_DECAY = 224/256 = 0.875 (EMA decay factor)
   SWEEP_SETTLE_FRAMES     = 1 (discard after retune)
   MAX_SWEEP_WINDOWS       = 4

@@ -1180,15 +1180,22 @@ public:
 
     /**
      * @brief Maximum independent signal detections per FFT frame
-     * @note Limited to 4 to cap stack usage: 4 × sizeof(ShapeDetection) ≈ 64 bytes
+     * @note 6 = primary (index 0, full hysteresis/confirm/lock pipeline) + up to
+     *       5 secondaries tracked directly (scanner.cpp "Secondary detection
+     *       tracking"). Sized for dense multi-target scenarios: e.g. an ELRS
+     *       trio + FPV channel inside one ±10 MHz DB capture window.
+     * @note Stack: 6 × sizeof(ShapeDetection) ≈ 96 B + CFAR/candidate arrays
+     *       (~48 B + 144 B) — all on the UI thread (4 KB process stack),
+     *       comfortably within the 512 B/frame budget alongside the existing
+     *       256 B TBD buffer.
      */
-    static constexpr size_t MAX_SHAPE_DETECTIONS = 4;
+    static constexpr size_t MAX_SHAPE_DETECTIONS = 6;
 
     /**
      * @brief Result of multi-peak shape analysis for a single FFT frame
      * @note Each entry represents an independent signal that passed shape filters.
      *       Secondary entries (index > 0) are weaker peaks in the same 20 MHz frame.
-     * @note Stack: MAX_SHAPE_DETECTIONS × sizeof(ShapeDetection) ≈ 64 bytes
+     * @note Stack: MAX_SHAPE_DETECTIONS × sizeof(ShapeDetection) ≈ 96 bytes
      */
     struct ShapeDetection {
         FreqHz frequency;    ///< Actual RF frequency of detected peak (Hz)

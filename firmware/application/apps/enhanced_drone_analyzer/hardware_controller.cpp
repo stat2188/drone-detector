@@ -14,7 +14,7 @@ namespace drone_analyzer {
 
 HardwareConfig::HardwareConfig() noexcept
     : center_frequency(0)
-    , sample_rate(DEFAULT_SAMPLE_RATE_HZ)
+    , sample_rate(DB_CAPTURE_RATE_HZ)
     , gain(DEFAULT_GAIN)
     , lna_gain(DEFAULT_LNA_GAIN)
     , vga_gain(DEFAULT_VGA_GAIN) {
@@ -156,6 +156,10 @@ ErrorCode HardwareController::tune_internal(FreqHz frequency) noexcept {
     // Do NOT re-apply config gains here — it would override user settings on every
     // frequency hop during scanning.
 
+    // Re-assert the DB capture bandwidth on every hop. This MUST match the
+    // sampling rate configured at startup (DB_CAPTURE_RATE_HZ): with a 20 MHz
+    // capture a 2 MHz bandwidth here would silently collapse the visible
+    // spectrum back to ±1 MHz (RF LPF gates the front-end before the FFT).
     portapack::receiver_model.set_baseband_bandwidth(config_.sample_rate);
 
     return ErrorCode::SUCCESS;

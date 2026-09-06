@@ -50,7 +50,12 @@ constexpr FreqHz MHZ = 1'000'000ULL;
 constexpr FreqHz KHZ = 1'000ULL;
 
 /**
- * @brief Frequency bandwidth in Hz (2 MHz - matches DEFAULT_SAMPLE_RATE_HZ)
+ * @brief Nominal frequency coverage per DB scan slice (Hz)
+ * @note 20 MHz — matches SWEEP_SLICE_BW: one DB capture covers the same span
+ *       as one sweep slice. FPV_ANALOG Band A channels are spaced exactly
+ *       20 MHz, so adjacent DB entries leave NO unobserved gap.
+ * @note Used by the Mahalanobis frequency-stability normalization and the
+ *       pattern matcher default pattern range.
  */
 constexpr FreqHz FREQUENCY_BANDWIDTH_HZ = 20'000'000ULL;
 
@@ -136,9 +141,43 @@ constexpr size_t FREQUENCY_HASH_TABLE_SIZE = 256;
 // ============================================================================
 
 /**
- * @brief Default sample rate in Hz (2 MHz)
+ * @brief Default sample rate in Hz (2 MHz) — LEGACY DB capture rate
+ * @note Superseded for DB scan by DB_CAPTURE_RATE_HZ (±10 MHz window).
+ *       Kept as the documented legacy value for reference.
  */
 constexpr uint32_t DEFAULT_SAMPLE_RATE_HZ = 2000000;
+
+/**
+ * @brief DB (normal) scan capture sampling rate: ±10 MHz around the tuned frequency
+ * @note 20 MHz — identical to SWEEP_SLICE_BW, so the FFT bin size is 78.125 kHz
+ *       in BOTH scan modes. Shape-filter settings expressed in bins (margin,
+ *       min/max width, sharpness, flatness, valley) now mean the same bandwidth
+ *       in DB and sweep phases — field tuning carries over 1:1.
+ * @note The full ~18 MHz analog FPV channel is visible on the DB spectrum, and
+ *       VTX drift up to ±10 MHz from a DB entry stays inside the capture window
+ *       (FPV_ANALOG Band A entries are spaced exactly 20 MHz — no blind gaps).
+ * @note CALIBRATION: per-bin noise power scales with bin bandwidth — absolute
+ *       levels rise ~10 dB vs the legacy 2 MHz capture (10·log10(20/2)).
+ *       rssi_threshold_dbm and the threat ladder need a one-time re-tune;
+ *       shape filters are per-frame relative (noise percentile) and do NOT.
+ * @see DB_FFT_TRIGGER, SWEEP_SLICE_BW
+ */
+constexpr FreqHz DB_CAPTURE_RATE_HZ = SWEEP_SLICE_BW;
+
+/**
+ * @brief FFT trigger (baseband buffers per FFT frame) for DB scan mode
+ * @note Frame period = (trigger + 1) × 2048 samples / sampling_rate.
+ *       161 × 102.4 µs ≈ 16.5 ms → ~60.6 fps at 20 MHz — MUST match the ~60 Hz
+ *       DisplayFrameSync consumption rate. If production exceeds consumption,
+ *       the 4-slot channel FIFO saturates and DROPS frames (FIFO::in), so every
+ *       consumed frame lags 2-4 hops and detections get attributed to the wrong
+ *       frequency. Do NOT lower this below ~150 at 20 MHz.
+ * @note 16.5 ms integration ≈ +4 dB SNR per frame over the sweep trigger (63).
+ * @note If DB_CAPTURE_RATE_HZ is changed to 10 MHz (±5 MHz), set this to 80
+ *       (81 × 204.8 µs ≈ 16.6 ms) to keep the frame rate matched.
+ * @see DB_CAPTURE_RATE_HZ
+ */
+constexpr size_t DB_FFT_TRIGGER = 160;
 
 /**
  * @brief Default gain value
