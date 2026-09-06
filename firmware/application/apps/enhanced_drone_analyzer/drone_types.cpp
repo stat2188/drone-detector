@@ -263,14 +263,19 @@ void TrackedDrone::absorb_from(const TrackedDrone& other) noexcept {
     update_count = static_cast<uint8_t>(keep);
 
     if (keep > 0) {
-        // Update last_seen to the freshest sighting (from either drone) for
-        // staleness detection. Do NOT overwrite rssi/last_rssi_ — preserve
-        // the higher-threat survivor's RSSI values so the trend comparison
-        // baseline (last_rssi_) and display (rssi) remain correct. A
-        // lower-threat absorbed drone's weak RSSI must never overwrite a
-        // CRITICAL drone's strong RSSI.
         const HistorySample& newest = merged[count - 1];
         last_seen = newest.timestamp;
+
+        // TREND CONTINUITY FIX: restore last_rssi_ from the merged history's
+        // newest sample. After absorb_from() rewrites rssi_history_ with the
+        // combined sample stream, the trend baseline (last_rssi_) must match
+        // the merged history so that the next update_rssi() comparison
+        // (new_rssi > last_rssi_) is against the correct chronological
+        // predecessor, not the survivor's stale pre-merge value.
+        //
+        // Do NOT overwrite rssi (display field) — the peak-only tracking in
+        // update_rssi() preserves the higher-threat survivor's displayed RSSI.
+        last_rssi_ = newest.rssi;
     }
 
     // ---- Lifecycle: keep the oldest birth, the freshest sighting ----
@@ -328,10 +333,18 @@ void TrackedDrone::absorb_from(const TrackedDrone& other) noexcept {
         mahalanobis_stats_ = other.mahalanobis_stats_;
     }
 
-    // ---- Trend hysteresis: deliberately kept from the survivor (this).
-    // The survivor is the HIGHEST-THREAT entry (ties broken by oldest), so
-    // its cached_trend_ carries the most stable hysteresis state; merging
-    // hold counters would be meaningless. ----
+    // ---- Trend hysteresis: keep survivor's state, adopt absorbed if survivor
+    // has no data yet. When the survivor is a newly created drone (highest
+    // threat but just detected), its cached_trend_ is UNKNOWN. The absorbed
+    // drone may carry an established trend (APPROACHING/RECEDING/STATIC) with
+    // a mature hold counter. Adopting it prevents the trend from resetting to
+    // UNKNOWN (displayed as '-') after every merge where the highest-threat
+    // entry is new. If both are UNKNOWN, no adoption is needed. ----
+    if (cached_trend_ == MovementTrend::UNKNOWN
+        && other.cached_trend_ != MovementTrend::UNKNOWN) {
+        cached_trend_ = other.cached_trend_;
+        trend_hold_count_ = other.trend_hold_count_;
+    }
 }
 
 RssiValue TrackedDrone::get_average_rssi() const noexcept {

@@ -521,6 +521,11 @@ struct TrackedDrone {
      * @note Fixed-size merge: at most 6 + 6 = 12 history samples, the newest
      *       6 (by timestamp) survive. Stack: ~128 bytes. No heap. No loops
      *       longer than 12 iterations (insertion sort, max 66 comparisons).
+     * @note Trend continuity: last_rssi_ is restored from the merged history's
+     *       newest sample so the next update_rssi() comparison is against the
+     *       correct chronological predecessor. Trend hysteresis is adopted from
+     *       the absorbed drone when the survivor's cached_trend_ is UNKNOWN
+     *       (newly created drone), preventing trend resets after merges.
      * @pre this != &other
      * @pre Caller holds DATA_MUTEX, or has exclusive tracker access
      *      (sweep mode: scanner thread stopped, UI thread idle)
