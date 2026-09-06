@@ -549,36 +549,33 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
             ? LOCAL_MAX_DWELL_CYCLES : (LOCAL_MAX_DWELL_CYCLES / 2);
 
         if (dwell_cycles_ >= max_dwell) {
-            // Max dwell reached — force resume scanning
-            if (config_.noise_blacklist_enabled) {
-                const FreqHz locked_freq = locked_frequency_;
-                // Find or add noise entry
-                size_t empty_slot = MAX_NOISE_ENTRIES;
-                for (size_t i = 0; i < MAX_NOISE_ENTRIES; ++i) {
-                    if (noise_blacklist_[i].freq == locked_freq) {
-                        if (noise_blacklist_[i].count < 255) {
-                            noise_blacklist_[i].count++;
-                        }
-                        break;
-                    }
-                    if (noise_blacklist_[i].freq == 0 && empty_slot == MAX_NOISE_ENTRIES) {
-                        empty_slot = i;
-                    }
-                }
-                if (empty_slot < MAX_NOISE_ENTRIES && locked_freq != 0) {
-                    noise_blacklist_[empty_slot].freq = locked_freq;
-                    noise_blacklist_[empty_slot].count = 1;
-                }
-                // Remove drone on this frequency
-                for (size_t i = 0; i < tracked_count_; ++i) {
-                    if (tracked_drones_[i].frequency == locked_freq) {
-                        tracked_count_--;
-                        if (i < tracked_count_) {
-                            tracked_drones_[i] = tracked_drones_[tracked_count_];
-                        }
-                        break;
-                    }
-                }
+            // Max dwell reached — force resume scanning so other frequencies
+            // get airtime (multi-target fairness).
+            //
+            // ANTI-DEADLOCK FIX (old bug: a strong persistent signal became
+            // permanently undetectable). Previously EVERY dwell expiry treated
+            // the locked frequency as noise: incremented its blacklist count
+            // AND removed the tracked drone. A real continuous carrier (analog
+            // FPV) re-detected on every visit re-added the drone, and after
+            // NOISE_BLACKLIST_THRESHOLD (3) expiries the frequency was
+            // blacklisted and skipped by the hop loop forever — detection
+            // could never run on it again, so reset_noise_count() (which only
+            // fires on a threat upgrade) could never clear the entry. Result:
+            // a signal at maximum RSSI with perfect shape became permanently
+            // invisible while still on the air.
+            //
+            // Correct semantics (per the blacklist contract "3+ force-resumes
+            // WITHOUT threat upgrade", scanner.hpp): a frequency that produced
+            // a tracked drone is a REAL signal — resume scanning, keep the
+            // tracker, never blacklist. Only a lock that never produced a
+            // drone (a noise spike holding the lock) is blacklisted; in that
+            // case there is no tracker to preserve and nothing to remove.
+            const FreqHz locked_freq = locked_frequency_;
+            const FreqHz mrg_hz = static_cast<FreqHz>(config_.freq_match_radius_mhz) * 1'000'000ULL;
+            const bool has_real_drone = (locked_freq != 0)
+                && find_nearest_drone_internal(locked_freq, mrg_hz).has_value();
+            if (!has_real_drone && config_.noise_blacklist_enabled && locked_freq != 0) {
+                increment_noise_count_internal(locked_freq);
             }
             force_resume_flag_.set();
             dwell_cycles_ = 0;
