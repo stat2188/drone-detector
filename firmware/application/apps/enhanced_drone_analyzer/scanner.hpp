@@ -1754,6 +1754,10 @@ private:
     // Alert callback in progress flag (prevents re-entrant calls)
     AtomicFlag alert_callback_in_progress_;
 
+    // MRG merge flag: set by match_and_consolidate_drone_internal() when
+    // absorption occurred (in_radius_count > 1). Cleared by caller after use.
+    bool last_merge_absorbed_{false};
+
     // RSSI detector for signal analysis and threat classification
     RSSIDetector rssi_detector_;
 

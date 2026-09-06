@@ -321,8 +321,9 @@ void TrackedDrone::absorb_from(const TrackedDrone& other) noexcept {
     }
 
     // ---- Trend hysteresis: deliberately kept from the survivor (this).
-    // The survivor is the OLDEST entry, so its cached_trend_ carries the most
-    // stable hysteresis state; merging hold counters would be meaningless. ----
+    // The survivor is the HIGHEST-THREAT entry (ties broken by oldest), so
+    // its cached_trend_ carries the most stable hysteresis state; merging
+    // hold counters would be meaningless. ----
 }
 
 RssiValue TrackedDrone::get_average_rssi() const noexcept {

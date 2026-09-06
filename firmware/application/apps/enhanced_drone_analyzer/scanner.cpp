@@ -1035,9 +1035,10 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
     // corrects the tracked entry"): a detection landing inside the match
     // radius updates the nearest existing tracker instead of spawning a
     // duplicate, and ALL other in-radius entries are absorbed into the
-    // survivor (oldest) — their RSSI history, sweep cycle peaks and trend
-    // state merge, so the trend applies as if every detection had always hit
-    // one ("current") entry. The returned index is the post-compaction
+    // survivor (highest threat level, ties → oldest) — their RSSI history,
+    // sweep cycle peaks and trend state merge, so the trend applies as if
+    // every detection had always hit one ("current") entry. Lower-severity
+    // threats NEVER displace higher-severity ones during merge. The returned index is the post-compaction
     // survivor; the re-centering below then pins it onto the latest
     // observation so slow RF drift (FHSS wander, TX/RX offset, 78 kHz
     // FFT-bin quantization, overlapping sweep windows) can never walk
@@ -1081,11 +1082,27 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
             tracked_drones_[index].drone_type = determine_drone_type_internal(frequency);
         }
 
-        ThreatLevel old_threat = tracked_drones_[index].get_threat();
+        // After merge, absorb_from() correctly set threat = max(survivor, absorbed).
+        // Capture this BEFORE update_rssi() reclassifies from current RSSI.
+        const ThreatLevel post_merge_threat = tracked_drones_[index].get_threat();
+        const bool merge_occurred = last_merge_absorbed_;
+        last_merge_absorbed_ = false;
+
+        ThreatLevel old_threat = post_merge_threat;
         tracked_drones_[index].update_rssi(rssi, timestamp, ThreatThresholds{
             config_.threat_low_dbm, config_.threat_medium_dbm,
             config_.threat_high_dbm, config_.threat_critical_dbm});
         ThreatLevel new_threat = tracked_drones_[index].get_threat();
+
+        // MRG safety: if absorption occurred, the merged threat level is the
+        // maximum of all absorbed entries. update_rssi() reclassifies from the
+        // current RSSI which may be weak — if so, the merged (higher) threat
+        // must be preserved. Lower-order threats flow INTO higher-order, never
+        // the reverse.
+        if (merge_occurred && post_merge_threat > new_threat) {
+            tracked_drones_[index].threat_level = post_merge_threat;
+            new_threat = post_merge_threat;
+        }
         
         if (new_threat > old_threat) {
             trigger_alert(new_threat);
@@ -1172,20 +1189,25 @@ ErrorResult<size_t> DroneScanner::match_and_consolidate_drone_internal(
         return ErrorResult<size_t>::failure(ErrorCode::INVALID_PARAMETER);
     }
 
-    // Pass 2: survivor = OLDEST in-radius entry (earliest created_time_,
-    // ties -> lowest index). The oldest entry carries the longest trend
-    // history and hysteresis state, so the merged entry keeps a stable
-    // movement trend ("apply the trend as to the current one").
+    // Pass 2: survivor = highest threat_level in-radius entry. Higher-severity
+    // threats must NOT be absorbed into lower-severity ones — a CRITICAL drone
+    // must survive over a LOW drone regardless of age. Ties broken by oldest
+    // created_time_ (longest trend history), then lowest index.
     size_t survivor = 0;
+    ThreatLevel best_threat = ThreatLevel::NONE;
     SystemTime oldest_created = 0;
     bool survivor_set = false;
     for (size_t i = 0; i < tracked_count_; ++i) {
         if (!in_radius[i]) {
             continue;
         }
+        const ThreatLevel threat = tracked_drones_[i].threat_level;
         const SystemTime created = tracked_drones_[i].created_time_;
-        if (!survivor_set || created < oldest_created) {
+        if (!survivor_set
+            || static_cast<uint8_t>(threat) > static_cast<uint8_t>(best_threat)
+            || (threat == best_threat && created < oldest_created)) {
             survivor = i;
+            best_threat = threat;
             oldest_created = created;
             survivor_set = true;
         }
@@ -1194,6 +1216,7 @@ ErrorResult<size_t> DroneScanner::match_and_consolidate_drone_internal(
     // Pass 3: absorb every OTHER in-radius entry into the survivor. Each
     // duplicate's RSSI history, cycle peaks and decay state merge into the
     // survivor, so the trend sees one continuous sample stream.
+    last_merge_absorbed_ = (in_radius_count > 1);
     for (size_t i = 0; i < tracked_count_; ++i) {
         if (in_radius[i] && i != survivor) {
             tracked_drones_[survivor].absorb_from(tracked_drones_[i]);
