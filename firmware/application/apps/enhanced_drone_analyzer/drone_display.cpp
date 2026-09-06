@@ -159,7 +159,6 @@ DroneDisplay::DroneDisplay(const Rect parent_rect) noexcept
     , sweep_waterfalls_{}
     , sweep_wf_freq_start_{}
     , sweep_wf_freq_end_{}
-    , realtime_waterfall_{}
     , active_waterfall_mask_{0}
     , status_text_{0}
     , spectrum_data_size_(0)
@@ -273,12 +272,6 @@ void DroneDisplay::paint(Painter& painter) {
             // Always render (even with 0 rows) so the area is cleared and the
             // "Waiting..." hint is shown until the first sweep pass completes.
             render_sweep_waterfalls(painter, ox, y_offset, w, layout.timeline_h);
-        } else {
-            // Non-sweep mode: single realtime waterfall
-            if (realtime_waterfall_.count() > 0) {
-                render_waterfall(painter, realtime_waterfall_,
-                                 ox, y_offset, w, layout.timeline_h);
-            }
         }
     }
     if (show_tl) y_offset += layout.timeline_h;
@@ -348,48 +341,6 @@ void DroneDisplay::render_spectrum(
         if (bar_height > 0) {
             draw_rectangle(painter, x, y, bar_width, bar_height, color);
         }
-    }
-}
-
-void DroneDisplay::render_waterfall(
-    Painter& painter,
-    const MiniWaterfall& waterfall,
-    uint16_t start_x,
-    uint16_t start_y,
-    uint16_t width,
-    uint16_t height
-) noexcept {
-    if (width < 10 || height < 4) return;
-
-    // Background + label
-    draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
-    draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
-    // Title drawn at +1: the fixed_8x16 glyph box (16 px, opaque background)
-    // then fits entirely inside WF_HEADER_H and never touches the data rows.
-    draw_text(painter, "WF", start_x + 2, start_y + 1, COLOR_TEXT);
-
-    if (waterfall.count() == 0) {
-        draw_text(painter, "Waiting...", start_x + 2, start_y + 1, COLOR_UNKNOWN_THREAT);
-        return;
-    }
-    const uint16_t chart_start_x = start_x + 2;
-    const uint16_t chart_start_y = start_y + WF_HEADER_H;
-    const uint16_t chart_h = (height > WF_HEADER_H + 1) ? (height - WF_HEADER_H - 1) : 4;
-    const uint16_t chart_w = (width > 4) ? (width - 4) : width;
-    if (chart_w < 4) return;
-
-    // Row-oriented rendering: NEWEST at top, oldest at bottom (top-down flow).
-    // vis_row 0 (top of chart) = newest row (row_count-1).
-    // Time scrolls downward as new sweep passes complete (newest pushes in at top).
-    const uint8_t row_count = waterfall.count();
-    const uint8_t max_visible = (chart_h < row_count) ? static_cast<uint8_t>(chart_h) : row_count;
-
-    for (uint8_t vis_row = 0; vis_row < max_visible; ++vis_row) {
-        const uint16_t py = chart_start_y + vis_row;
-        const uint8_t data_row = static_cast<uint8_t>(
-            static_cast<int>(row_count) - 1 - static_cast<int>(vis_row));
-
-        render_waterfall_row_rle(painter, waterfall, data_row, chart_start_x, py, chart_w);
     }
 }
 
@@ -657,12 +608,6 @@ ErrorCode DroneDisplay::set_spectrum_data(
     return ErrorCode::SUCCESS;
 }
 
-void DroneDisplay::push_waterfall_value(uint8_t peak_power) noexcept {
-    realtime_waterfall_.push_single_value(peak_power);
-    dirty_flags_ |= DIRTY_WATERFALL;
-    set_dirty();
-}
-
 void DroneDisplay::push_sweep_waterfall_window(
     uint8_t window_index,
     const uint8_t* composite_240,
@@ -684,29 +629,6 @@ void DroneDisplay::set_active_sweep_windows(uint8_t enabled_mask) noexcept {
         active_waterfall_mask_ = new_mask;
         dirty_waterfall_windows_ = new_mask;  // Mark newly-active windows dirty
     }
-}
-
-void DroneDisplay::reset_waterfall() noexcept {
-    for (auto& wf : sweep_waterfalls_) {
-        wf.reset();
-    }
-    sweep_wf_freq_start_.fill(0);
-    sweep_wf_freq_end_.fill(0);
-    realtime_waterfall_.reset();
-    dirty_waterfall_windows_ = active_waterfall_mask_;  // All active windows need clear
-    dirty_flags_ |= DIRTY_WATERFALL;
-    set_dirty();
-}
-
-void DroneDisplay::reset_sweep_waterfalls() noexcept {
-    for (auto& wf : sweep_waterfalls_) {
-        wf.reset();
-    }
-    sweep_wf_freq_start_.fill(0);
-    sweep_wf_freq_end_.fill(0);
-    dirty_waterfall_windows_ = active_waterfall_mask_;  // All active windows need clear
-    dirty_flags_ |= DIRTY_WATERFALL;
-    set_dirty();
 }
 
 void DroneDisplay::set_status_text(const char* status_text) noexcept {

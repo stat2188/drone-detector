@@ -54,25 +54,6 @@ public:
     ) noexcept;
 
     /**
-     * @brief Render mini waterfall display (4-bit packed scrolling history).
-     * @param painter Painter instance for drawing
-     * @param waterfall MiniWaterfall data to render
-     * @param start_x Starting X coordinate
-     * @param start_y Starting Y coordinate
-     * @param width Display width
-     * @param height Display height (should be >= WATERFALL_MAX_ROWS + WF_HEADER_H + 1 = 34; renderer shows min(chart_h, count) rows)
-     * @note Direction: NEWEST row at top, older rows scroll downward (top-down flow).
-     */
-    void render_waterfall(
-        Painter& painter,
-        const MiniWaterfall& waterfall,
-        uint16_t start_x,
-        uint16_t start_y,
-        uint16_t width,
-        uint16_t height
-    ) noexcept;
-
-    /**
      * @brief Render per-window sweep waterfalls (side-by-side layout).
      * @param painter Painter instance for drawing
      * @param start_x Starting X coordinate
@@ -158,14 +139,8 @@ public:
         size_t spectrum_size
     ) noexcept;
 
-    /**
-     * @brief Push one frame's peak power into the waterfall (non-sweep mode).
-     * @param peak_power Maximum FFT bin power (0-255)
-     * @note Uses push_single_value() -- no fake composite needed.
-     */
-    void push_waterfall_value(uint8_t peak_power) noexcept;
 
-    
+
 
     /**
      * @brief Push one window's composite directly into its per-window waterfall.
@@ -186,24 +161,12 @@ public:
     /**
      * @brief Set which sweep windows are active for independent waterfall rendering.
      * @param enabled_mask Bitmask: bit i set -> sweep window i is active
-     *        (bit 0 = window 1, bit 3 = window 4). 0 = non-sweep (realtime) mode.
+     *        (bit 0 = window 1, bit 3 = window 4). 0 = no sweep waterfalls.
      * @note Called from DroneScannerUI on sweep mode entry/exit.
      *       Layout is slot-based: each active window gets an equal width slice
      *       placed by its order among active windows - stable across sweep passes.
      */
     void set_active_sweep_windows(uint8_t enabled_mask) noexcept;
-
-    /**
-     * @brief Reset waterfall to empty state (clear on mode transitions).
-     */
-    void reset_waterfall() noexcept;
-
-    /**
-     * @brief Reset only sweep waterfalls (preserve realtime waterfall history).
-     * @note Called on sweep mode entry to start fresh sweep data without
-     *       destroying the realtime waterfall accumulated during DB Scan.
-     */
-    void reset_sweep_waterfalls() noexcept;
 
     /**
      * @brief Set status text
@@ -471,7 +434,7 @@ private:
 
     // Per-window sweep waterfalls (one independent history per sweep window).
     // Each MiniWaterfall stores 15 rows × 30 bytes = 450 bytes.
-    // Total: 4 × 450 = 1,800 bytes BSS (+450 bytes for realtime_waterfall_).
+    // Total: 4 × 450 = 1,800 bytes BSS.
     static constexpr uint8_t NUM_SWEEP_WATERFALLS = MAX_SWEEP_WINDOWS;
     std::array<MiniWaterfall, NUM_SWEEP_WATERFALLS> sweep_waterfalls_{};
 
@@ -480,11 +443,8 @@ private:
     std::array<FreqHz, NUM_SWEEP_WATERFALLS> sweep_wf_freq_start_{};
     std::array<FreqHz, NUM_SWEEP_WATERFALLS> sweep_wf_freq_end_{};
 
-    // Realtime waterfall for non-sweep mode (single peak power per frame).
-    MiniWaterfall realtime_waterfall_;
-
     // Bitmask of active sweep windows for independent waterfall rendering.
-    // Bit i = sweep window i active; 0 = non-sweep (realtime) waterfall mode.
+    // Bit i = sweep window i active; 0 = no sweep waterfalls to render.
     uint8_t active_waterfall_mask_{0};
 
     // Per-window dirty bitmask for incremental waterfall rendering.

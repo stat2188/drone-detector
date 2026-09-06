@@ -834,18 +834,11 @@ void DroneScannerUI::refresh_ui() noexcept {
         }
     }  // if (slow_tick): heavy 10 Hz snapshot ends here
 
-    // Push peak power to realtime waterfall (non-sweep mode only, WF enabled).
-    // Throttled to ~10 Hz: at 60 Hz DisplayFrameSync, push every 6th frame.
-    // Waterfall visually updates at most 10 Hz — user cannot perceive faster.
-    // Sweep mode uses per-window waterfalls fed by on_sweep_spectrum() on
-    // pair_complete — pushing realtime rows here would fill an invisible
-    // buffer and burn CPU every DisplayFrameSync frame for no benefit.
-    if (!composite_active_ && drone_display_.get_timeline_visible()) {
-        if (++wf_push_counter_ >= WF_PUSH_INTERVAL) {
-            wf_push_counter_ = 0;
-            drone_display_.push_waterfall_value(scanner_ptr_->get_last_peak_power());
-        }
-    }
+    // Waterfall data flow: sweep waterfall is the sole waterfall.
+    // It draws live during sweep mode and freezes as a static snapshot
+    // in DB scan mode. Before the first sweep the WF area shows "Waiting...".
+    // push_sweep_waterfall_window() in on_sweep_spectrum() handles all
+    // waterfall data flow.
 
     // Update big frequency display
     {
@@ -961,10 +954,9 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     drone_display_.set_spectrum_filter(SWEEP_DISPLAY_NOISE_MARGIN);
     // Start with a clean EMA state and hidden scan heads.
     drone_display_.reset_composite_persistence();
-    // Reset only sweep waterfalls — preserve realtime waterfall history from DB Scan.
-    // The realtime waterfall persists across mode switches so when the user
-    // returns to DB Scan mode, their sweep history is still visible.
-    drone_display_.reset_sweep_waterfalls();
+    // Sweep waterfall history persists across mode transitions so the user
+    // sees continuous WF data when toggling between DB Scan and Sweep modes.
+    // push_sweep_waterfall_window() appends new rows to existing history.
     drone_display_.set_scan_head(-1, -1);
 
     if (scanner_ptr_ != nullptr) {
@@ -1133,7 +1125,10 @@ void DroneScannerUI::exit_sweep_mode(bool suppress_auto_restart) noexcept {
     // and the non-sweep view does not show leftover markers.
     drone_display_.reset_composite_persistence();
     drone_display_.set_scan_head(-1, -1);
-    drone_display_.set_active_sweep_windows(0);
+    // NOTE: Do NOT call set_active_sweep_windows(0) here.
+    // The sweep waterfall mask must persist so paint() continues rendering
+    // the static sweep WF snapshot in DB scan mode. The sweep WF freezes
+    // (no new rows pushed) and resumes when re-entering sweep mode.
 
     // Stop streaming BEFORE nulling fifo — prevents stale data in frame_sync
     if (scanning_) {

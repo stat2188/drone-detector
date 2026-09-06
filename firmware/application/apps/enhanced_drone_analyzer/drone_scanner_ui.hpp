@@ -109,13 +109,6 @@ private:
     char displayed_drone_type_[MAX_DRONE_TYPE_DISPLAY + 1]{};
     uint32_t drone_type_display_timer_{0};
 
-    // Throttle waterfall push to ~10 Hz (every 6th DisplayFrameSync at 60 Hz).
-    // At 60 Hz, push_waterfall_value() adds a row and calls set_dirty() every frame.
-    // Waterfall visually updates at most 10 Hz — user cannot perceive faster.
-    // Saves ~300 set_dirty() calls/sec and the associated ring-buffer + compress work.
-    static constexpr uint8_t WF_PUSH_INTERVAL = 6;
-    uint8_t wf_push_counter_{0};
-
     // Cache for bigdisplay_update() — skip big_display_.set() when frequency unchanged.
     FreqHz bigdisplay_last_freq_{0};
     BigDisplayColor bigdisplay_last_color_{BigDisplayColor::GREY};

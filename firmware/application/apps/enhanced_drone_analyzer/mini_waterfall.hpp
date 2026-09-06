@@ -15,7 +15,7 @@ namespace drone_analyzer {
  * Each sweep pass produces one ROW of 60 frequency bands (compressed from 240 bins).
  * Rows are stored time-ordered: row 0 = oldest, row count()-1 = newest (ring buffer).
  * The renderer places the newest row at the TOP (top-down flow) by reading rows
- * in reverse order — see DroneDisplay::render_waterfall()/render_sweep_waterfalls().
+ * in reverse order — see DroneDisplay::render_sweep_waterfalls().
  *
  * Layout: X axis = frequency (bands left-to-right), Y axis = time (newest at top).
  *
