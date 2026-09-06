@@ -357,6 +357,23 @@ private:
     ) noexcept;
 
     /**
+     * @brief Draw 5-label frequency ruler with tick marks and dashes.
+     *
+     * Renders: "XXXXM----XXXXM----XXXXM----XXXXM----XXXXM"
+     * Computes 5 evenly spaced values from [f_start, f_end].
+     * Falls back to "start-end" format if width < 50px.
+     * Stack: ~54 bytes (label + dash buffers).
+     */
+    void draw_ruler_5(
+        Painter& painter,
+        FreqHz f_start,
+        FreqHz f_end,
+        uint16_t x,
+        uint16_t y,
+        uint16_t width
+    ) noexcept;
+
+    /**
      * @brief Draw rectangle
      * @param painter Painter instance for drawing
      * @param x X coordinate

@@ -781,6 +781,28 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     if (!signal_detected && waterfall_history_.is_warm(TBD_MIN_FRAMES)
         && config_.spectrum_detection_enabled) {
 
+        // Compute noise floor for TBD narrowband guard.
+        // FIX: When shape analysis found nothing (CFAR peak_count == 0),
+        // shape_result.noise_floor stays at 0 (zero-initialized struct).
+        // Passing 0 to tbd_peak_is_narrowband() makes elevated_threshold =
+        // peak/3 instead of noise_floor + margin/3, corrupting the width
+        // measurement: weak signals appear wider (false reject) and strong
+        // wideband signals may appear narrower (false accept). Compute
+        // independently from the current frame's raw FFT data to guarantee
+        // a correct noise floor regardless of shape analysis outcome.
+        // Stack: 256 bytes (usable bins buffer). Well within 512B limit.
+        uint8_t tbd_usable[FFT_BIN_COUNT];
+        size_t tbd_usable_count = 0;
+        for (size_t i = FFT_EDGE_SKIP; i < FFT_DC_SPIKE_START; ++i) {
+            tbd_usable[tbd_usable_count++] = spectrum.db[i];
+        }
+        for (size_t i = FFT_DC_SPIKE_END; i < (FFT_BIN_COUNT - FFT_EDGE_SKIP); ++i) {
+            tbd_usable[tbd_usable_count++] = spectrum.db[i];
+        }
+        const uint8_t tbd_noise_floor = (tbd_usable_count > 0)
+            ? quickselect_percentile(tbd_usable, tbd_usable_count, 25)
+            : 0;
+
         // Find peak bin from newest frame
         size_t tbd_peak_bin = FFT_EDGE_SKIP;
         uint8_t tbd_peak_power = 0;
@@ -817,10 +839,12 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             // and tracked as a drone — the user's MaxW setting was silently
             // ignored with bypass OFF. Re-enforce the MaxW width semantics on
             // the current frame: wideband targets must stay rejected.
+            // FIX: Use tbd_noise_floor (computed from current frame) instead of
+            // shape_result.noise_floor (0 when shape analysis found nothing).
             if (tbd_rssi > rssi_threshold &&
                 tbd_peak_is_narrowband(
                     spectrum.db.data(), FFT_BIN_COUNT, tbd_peak_bin,
-                    shape_result.noise_floor, FFT_EDGE_SKIP, /*has_dc_gap=*/true)) {
+                    tbd_noise_floor, FFT_EDGE_SKIP, /*has_dc_gap=*/true)) {
                 signal_detected = true;
                 signal_present_ = true;
                 effective_rssi = tbd_rssi;
@@ -2309,19 +2333,26 @@ void DroneScanner::process_spectrum_sweep(
 ) noexcept {
     current_frequency_ = center_freq;
 
-    // Per-frequency median filter reset: only reset when the tuned frequency changes.
-    // In sweep mode, each FFT frame is a different frequency, so resetting every frame
-    // makes the filter useless (never reaches warm state of 7 samples). By tracking
-    // the last frequency, the filter accumulates across sweep CYCLES for the same freq,
-    // providing meaningful RSSI smoothing after ~7 passes (~11 seconds at 1.6s/pass).
-    if (center_freq != last_sweep_freq_) {
+    // Per-frequency median filter and waterfall reset: only reset when the tuned
+    // frequency changes by MORE than half a sweep step. Across sweep passes,
+    // center_freq values for the same step are identical (f_center_ini + i *
+    // step_hz), but integer division rounding in step_hz could cause ±1 Hz
+    // variation. Using a tolerance of SWEEP_GAPLESS_STEP_MAX_HZ/2 (~4.4 MHz)
+    // ensures:
+    //   - Same step across passes: center_freq == last_sweep_freq_ → NO reset
+    //     → waterfall accumulates across passes → TBD fires after 3 passes
+    //   - Different step: |diff| > 4.4 MHz → RESET → prevents cross-frequency
+    //     contamination (integrating power from different RF frequencies)
+    // Stack: 0 bytes. Flash: ~16 bytes (one division + comparison).
+    constexpr FreqHz SWEEP_FREQ_TOLERANCE_HZ = SWEEP_GAPLESS_STEP_MAX_HZ / 2;
+    const FreqHz freq_diff = (center_freq > last_sweep_freq_)
+        ? (center_freq - last_sweep_freq_)
+        : (last_sweep_freq_ - center_freq);
+    if (freq_diff > SWEEP_FREQ_TOLERANCE_HZ) {
         rssi_median_filter_.reset();
-        // Reset temporal history on frequency change. Previously the waterfall
-        // was NOT reset in sweep mode, so TBD "confirmed" targets by
-        // integrating the last 8 frames (~8 slices ≈ 70 MHz of DIFFERENT RF
-        // frequencies) — statistically meaningless and a source of phantom
-        // detections on the current slice's frequency. TBD now integrates
-        // only revisit frames of the SAME slice (requires 3 sweep cycles).
+        // Reset temporal history on significant frequency change.
+        // Across passes at the same step, center_freq is identical → no reset
+        // → waterfall accumulates → TBD fires after 3 passes (~3-9 seconds).
         // NOTE: per-frequency RSSI smoothing (median, window 7, warm at 4)
         // likewise needs several revisit cycles per frequency, so both
         // median_enabled and sweep TBD are slow integrators on wide windows.
