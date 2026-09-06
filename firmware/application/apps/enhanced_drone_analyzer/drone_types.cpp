@@ -257,11 +257,13 @@ void TrackedDrone::absorb_from(const TrackedDrone& other) noexcept {
     update_count = static_cast<uint8_t>(keep);
 
     if (keep > 0) {
-        // Newest merged sample becomes the current observation — the merged
-        // entry reads exactly as if every detection had hit one tracker.
+        // Update last_seen to the freshest sighting (from either drone) for
+        // staleness detection. Do NOT overwrite rssi/last_rssi_ — preserve
+        // the higher-threat survivor's RSSI values so the trend comparison
+        // baseline (last_rssi_) and display (rssi) remain correct. A
+        // lower-threat absorbed drone's weak RSSI must never overwrite a
+        // CRITICAL drone's strong RSSI.
         const HistorySample& newest = merged[count - 1];
-        last_rssi_ = newest.rssi;
-        rssi = newest.rssi;
         last_seen = newest.timestamp;
     }
 

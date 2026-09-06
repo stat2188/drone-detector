@@ -1088,17 +1088,29 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
         const bool merge_occurred = last_merge_absorbed_;
         last_merge_absorbed_ = false;
 
+        // Save the higher-threat survivor's RSSI before update_rssi() overwrites it.
+        // A weak detection (e.g. -90 dBm LOW) merging into a strong CRIT (-75 dBm)
+        // must NOT replace the displayed RSSI or the trend baseline.
+        const RssiValue survivor_rssi = tracked_drones_[index].rssi;
+        const int16_t survivor_last_rssi = tracked_drones_[index].last_rssi_;
+
         ThreatLevel old_threat = post_merge_threat;
         tracked_drones_[index].update_rssi(rssi, timestamp, ThreatThresholds{
             config_.threat_low_dbm, config_.threat_medium_dbm,
             config_.threat_high_dbm, config_.threat_critical_dbm});
         ThreatLevel new_threat = tracked_drones_[index].get_threat();
 
-        // MRG safety: if absorption occurred, the merged threat level is the
-        // maximum of all absorbed entries. update_rssi() reclassifies from the
-        // current RSSI which may be weak — if so, the merged (higher) threat
-        // must be preserved. Lower-order threats flow INTO higher-order, never
-        // the reverse.
+        // MRG safety: when a merge occurred, preserve the higher-threat
+        // survivor's RSSI and trend baseline if the current detection is weaker.
+        // A weak LOW detection (-90 dBm) merging into a CRIT drone (-75 dBm)
+        // must NOT replace the displayed RSSI or the trend baseline (last_rssi_).
+        if (merge_occurred && survivor_rssi > rssi) {
+            tracked_drones_[index].rssi = survivor_rssi;
+            tracked_drones_[index].last_rssi_ = survivor_last_rssi;
+        }
+
+        // Also preserve the merged threat level if update_rssi() would downgrade it.
+        // Lower-order threats flow INTO higher-order, never the reverse.
         if (merge_occurred && post_merge_threat > new_threat) {
             tracked_drones_[index].threat_level = post_merge_threat;
             new_threat = post_merge_threat;
