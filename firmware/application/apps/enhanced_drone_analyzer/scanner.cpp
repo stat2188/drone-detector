@@ -11,6 +11,14 @@
 namespace drone_analyzer {
 
 /**
+ * @brief Looking Glass edge skip (pixels) used by analyze_spectrum_shape_lg()
+ *        and by the TBD narrowband guard in process_spectrum_sweep().
+ * @note File-scope so both call sites share one definition (was a function
+ *       local — duplicated magic number if the guard re-declared it).
+ */
+constexpr size_t LG_EDGE_SKIP_PX = 4;
+
+/**
  * @brief Convert a spectrum.db uint8_t value to calibrated dBm (with cached gain)
  * @param value Raw spectrum.db value (0-255, from baseband)
  * @param total_gain LNA + VGA + (RF_AMP enabled ? RF_AMP_GAIN_DB : 0) in dB
@@ -803,7 +811,16 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             const uint8_t avg_power = static_cast<uint8_t>(integrated / waterfall_history_.size());
             const int32_t tbd_rssi = spectrum_value_to_dbm(avg_power, total_gain_tbd);
 
-            if (tbd_rssi > rssi_threshold) {
+            // NARROWBAND GUARD (MaxW): TBD integrates power only and never
+            // runs apply_shape_filters(), so a persistent WiFi/BT flat-top
+            // rejected by MaxW single-frame was re-confirmed after 3 frames
+            // and tracked as a drone — the user's MaxW setting was silently
+            // ignored with bypass OFF. Re-enforce the MaxW width semantics on
+            // the current frame: wideband targets must stay rejected.
+            if (tbd_rssi > rssi_threshold &&
+                tbd_peak_is_narrowband(
+                    spectrum.db.data(), FFT_BIN_COUNT, tbd_peak_bin,
+                    shape_result.noise_floor, FFT_EDGE_SKIP, /*has_dc_gap=*/true)) {
                 signal_detected = true;
                 signal_present_ = true;
                 effective_rssi = tbd_rssi;
@@ -1812,8 +1829,6 @@ bool DroneScanner::analyze_spectrum_shape_lg(
     int32_t& out_rssi,
     int32_t total_gain
 ) noexcept {
-    static constexpr size_t LG_EDGE_SKIP_PX = 4;
-
     if (peak_pixel >= COMPOSITE_SIZE) return false;
 
     const uint8_t raw_peak = lg_buffer[peak_pixel];
@@ -2112,6 +2127,62 @@ bool DroneScanner::apply_shape_filters(
 
     out_rssi = spectrum_value_to_dbm(raw_peak, total_gain);
     return true;
+}
+
+// ============================================================================
+// tbd_peak_is_narrowband — MaxW guard for Track-Before-Detect (TBD)
+// ============================================================================
+
+bool DroneScanner::tbd_peak_is_narrowband(
+    const uint8_t* data,
+    size_t data_size,
+    size_t peak_idx,
+    uint8_t noise_floor,
+    size_t edge_skip,
+    bool has_dc_gap
+) const noexcept {
+    // TBD confirms signals purely by multi-frame power integration and NEVER
+    // runs apply_shape_filters(). Consequently a persistent WiFi/BT flat-top
+    // that MaxW rejected in the single-frame chain was re-confirmed after
+    // TBD_MIN_FRAMES frames and tracked as a drone — the MaxW setting was
+    // silently ignored (bypass OFF or ON made no difference). This guard
+    // re-applies the exact MaxW width semantics of apply_shape_filters()
+    // Steps 4+6 around the TBD-confirmed bin on the CURRENT frame: if the
+    // contiguous elevated width exceeds spectrum_max_width, the target is
+    // wideband and must stay rejected.
+    // Stack: 16 bytes (safe on 4KB task stack). Flash: ~64 bytes.
+    if (peak_idx >= data_size || edge_skip >= data_size / 2) return false;
+    if (peak_idx < edge_skip || peak_idx >= data_size - edge_skip) return false;
+
+    const uint8_t raw_peak = data[peak_idx];
+    if (raw_peak <= noise_floor) return false;
+
+    // Same elevated threshold as apply_shape_filters Step 4 (non-bypass path).
+    // peak_margin/3 in uint8 arithmetic: raw_peak > noise_floor guarantees a
+    // positive margin, and raw_peak <= 255 caps the sum well below 256+.
+    const uint8_t peak_margin = raw_peak - noise_floor;
+    const uint8_t elevated_threshold = noise_floor + static_cast<uint8_t>(peak_margin / 3);
+
+    const size_t upper_limit = data_size - edge_skip;
+
+    size_t left = peak_idx;
+    while (left > edge_skip) {
+        const size_t prev = left - 1;
+        if (has_dc_gap && prev >= FFT_DC_SPIKE_START && prev < FFT_DC_SPIKE_END) break;
+        if (data[prev] < elevated_threshold) break;
+        --left;
+    }
+
+    size_t right = peak_idx;
+    while (right < upper_limit - 1) {
+        const size_t next = right + 1;
+        if (has_dc_gap && next >= FFT_DC_SPIKE_START && next < FFT_DC_SPIKE_END) break;
+        if (data[next] < elevated_threshold) break;
+        ++right;
+    }
+
+    const size_t signal_width = right - left + 1;
+    return signal_width <= config_.spectrum_max_width;
 }
 
 // ============================================================================
@@ -2430,14 +2501,20 @@ void DroneScanner::process_spectrum_sweep(
             const uint8_t avg_power = static_cast<uint8_t>(integrated / waterfall_history_.size());
             const int32_t tbd_rssi = spectrum_value_to_dbm(avg_power, total_gain_tbd);
 
-            if (tbd_rssi > config_.rssi_threshold_dbm) {
+            // NARROWBAND GUARD (MaxW): mirror of the normal-mode TBD guard.
+            // TBD must never resurrect a wideband flat-top (WiFi/BT) that the
+            // single-frame shape chain (MaxW step of apply_shape_filters)
+            // already rejected — enforce MaxW on the LG buffer too.
+            const size_t tbd_peak_pixel = fft_bin_to_lg_pixel(tbd_peak_bin);
+            if (tbd_rssi > config_.rssi_threshold_dbm &&
+                tbd_peak_pixel < COMPOSITE_SIZE &&
+                tbd_peak_is_narrowband(
+                    lg_buffer, COMPOSITE_SIZE, tbd_peak_pixel, noise_floor,
+                    LG_EDGE_SKIP_PX, /*has_dc_gap=*/false)) {
                 const FreqHz tbd_freq = fft_bin_to_freq(center_freq, tbd_peak_bin);
-                // Skip DC spike bins
-                if (fft_bin_to_lg_pixel(tbd_peak_bin) < COMPOSITE_SIZE) {
-                    apply_sweep_tracking(
-                        tbd_freq, tbd_rssi, center_freq, f_min, f_max
-                    );
-                }
+                apply_sweep_tracking(
+                    tbd_freq, tbd_rssi, center_freq, f_min, f_max
+                );
             }
         }
     }

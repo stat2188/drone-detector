@@ -1574,6 +1574,33 @@ private:
     ) const noexcept;
 
     /**
+     * @brief MaxW guard for Track-Before-Detect (TBD) confirmation.
+     * @param data        Power data buffer (spectrum.db.data() or lg_buffer)
+     * @param data_size   Buffer length (FFT_BIN_COUNT or COMPOSITE_SIZE)
+     * @param peak_idx    Index of the TBD-confirmed bin/pixel
+     * @param noise_floor Computed noise floor (25th percentile)
+     * @param edge_skip   Number of edge bins/pixels to skip
+     * @param has_dc_gap  true = skip FFT DC spike bins (120-135); false = LG buffer
+     * @return true only if the contiguous elevated width around the peak does
+     *         NOT exceed config_.spectrum_max_width
+     * @note TBD integrates power only and never runs apply_shape_filters(),
+     *       so a persistent WiFi/BT flat-top rejected by MaxW single-frame was
+     *       re-confirmed 3 frames later and tracked as a drone — silently
+     *       ignoring the user's MaxW setting with bypass OFF. This guard
+     *       re-applies the MaxW width semantics (apply_shape_filters Steps
+     *       4+6) on the current frame so every detection honors MaxW.
+     * @note Stack: ~16 bytes. Flash: ~64 bytes.
+     */
+    [[nodiscard]] bool tbd_peak_is_narrowband(
+        const uint8_t* data,
+        size_t data_size,
+        size_t peak_idx,
+        uint8_t noise_floor,
+        size_t edge_skip,
+        bool has_dc_gap
+    ) const noexcept;
+
+    /**
      * @brief Sweep-mode post-detection: range check, exception filter, Mahalanobis gate,
      *        and drone tracking.
      * @param peak_freq       Detected peak RF frequency (Hz)
