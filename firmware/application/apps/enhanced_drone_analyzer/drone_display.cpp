@@ -187,9 +187,9 @@ DroneDisplay::~DroneDisplay() noexcept {
 DroneDisplay::LayoutMetrics DroneDisplay::calculate_layout() const noexcept {
     constexpr uint16_t SPECTRUM_H = 50;
     // Timeline (waterfall) section: must equal WF_HEADER_H + WATERFALL_MAX_ROWS
-    // + 1 = 18 + 21 + 1 = 40 so the waterfall fills the section with zero dead
+    // + 1 = 18 + 15 + 1 = 34 so the waterfall fills the section with zero dead
     // pixels (see render_sweep_waterfalls()/MiniWaterfall::MAX_ROWS).
-    constexpr uint16_t TIMELINE_H = 40;
+    constexpr uint16_t TIMELINE_H = 34;
 
     const uint16_t total_h = parent_rect().size().height();
 

@@ -463,10 +463,11 @@ constexpr uint32_t AUDIO_ALERT_LONG_GAP_MS = 50;
  * - Signal timeline: 62 bytes
  * - RSSI detector: ~108 bytes (includes RSSIStatistics struct)
  * - Scanner thread stack: 2,048 bytes (BSS)
+ * - Mini waterfalls: 5 × 450 = 2,250 bytes (reduced from 3,150)
  * - Other structures: ~200 bytes
- * - Total static RAM: ~6,450 bytes
+ * - Total static RAM: ~8,550 bytes
  */
-constexpr size_t STATIC_RAM_BUDGET_BYTES = 6450;
+constexpr size_t STATIC_RAM_BUDGET_BYTES = 8550;
 
 /**
  * @brief Total stack budget (bytes)
@@ -478,7 +479,7 @@ constexpr size_t STACK_BUDGET_BYTES = 4096;
  * @brief Total memory budget (bytes)
  * @note Sum of static RAM and stack budgets
  */
-constexpr size_t TOTAL_MEMORY_BUDGET_BYTES = 10546;
+constexpr size_t TOTAL_MEMORY_BUDGET_BYTES = 12646;
 
 /**
  * @brief Maximum stack usage per function (bytes)
@@ -770,8 +771,8 @@ constexpr uint8_t SWEEP_NOISE_FLOOR_PERCENTILE = 15;
  * @note 60 bands (each = 4 composite bins) × WATERFALL_MAX_ROWS rows of history.
  *       Row-oriented: each sweep pass produces one row (60 frequency bands).
  *       Rows scroll top-to-bottom (oldest at top, newest at bottom).
- *       SRAM: WATERFALL_MAX_ROWS × 30 bytes/row = 630 bytes per MiniWaterfall
- *       instance; 5 instances (4 sweep windows + 1 realtime) = 3,150 bytes BSS.
+ *       SRAM: WATERFALL_MAX_ROWS × 30 bytes/row = 450 bytes per MiniWaterfall
+ *       instance; 5 instances (4 sweep windows + 1 realtime) = 2,250 bytes BSS.
  *       Each band maps to 4 screen pixels (240 / 60 = 4), giving 4px-wide
  *       vertical stripes — 2.5× finer than the previous 24-band (10px) layout.
  *       Renderer shows min(chart_h, count) rows — fills available height.
@@ -781,11 +782,13 @@ constexpr uint16_t WATERFALL_HEIGHT = 60;
 /**
  * @brief Vertical depth (history rows) of each MiniWaterfall.
  * @note Sized to exactly fill the timeline section with zero dead pixels:
- *       TIMELINE_H(40) − WF_HEADER_H(18) − 1 bottom gap = 21 rows.
- *       Values above 21 only waste SRAM (renderer clips at chart_h);
- *       values below 21 leave permanently blank rows under the waterfall.
+ *       TIMELINE_H(34) − WF_HEADER_H(18) − 1 bottom gap = 15 rows.
+ *       Values above 15 only waste SRAM (renderer clips at chart_h);
+ *       values below 15 leave permanently blank rows under the waterfall.
+ *       Reduced from 21 to 15 to save 900 bytes BSS (5 × 180 bytes)
+ *       and prevent stack pressure on tab transitions.
  */
-constexpr uint8_t WATERFALL_MAX_ROWS = 21;
+constexpr uint8_t WATERFALL_MAX_ROWS = 15;
 
 // ============================================================================
 // Spectrum Shape Filter Constants
