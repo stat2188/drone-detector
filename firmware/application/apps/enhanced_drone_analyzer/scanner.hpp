@@ -1672,7 +1672,7 @@ private:
     // Tracked drones (fixed-size array, no heap allocation)
     std::array<TrackedDrone, MAX_TRACKED_DRONES> tracked_drones_;
 
-    // Number of tracked drones (uint8_t sufficient for MAX_TRACKED_DRONES=20)
+    // Number of tracked drones (uint8_t sufficient for MAX_TRACKED_DRONES=30)
     uint8_t tracked_count_;
 
     // Current scan frequency
