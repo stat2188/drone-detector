@@ -72,7 +72,7 @@ struct ScanConfig {
     bool confirm_count_enabled{true};   // Require multiple confirmations before creating drone
     bool noise_blacklist_enabled{true}; // Skip frequencies with persistent noise
     bool spectrum_detection_enabled{true}; // Detect drone signals by spectrum shape (U/V peaks)
-    bool median_enabled{true};              // Median filter for RSSI spike rejection (ON by default)
+    bool median_enabled{false};              // Median filter for RSSI spike rejection (OFF by default — opt-in)
     uint8_t spectrum_margin{DEFAULT_SPECTRUM_MARGIN};            // Peak margin above noise (5 ≈ 1 dB; CFAR + post-filters do FP rejection)
     uint8_t spectrum_min_width{DEFAULT_SPECTRUM_MIN_WIDTH};      // Min signal width in bins (rejects narrow noise spikes)
     uint8_t spectrum_max_width{DEFAULT_SPECTRUM_MAX_WIDTH};            // Max signal width (reject flat U/I shapes)

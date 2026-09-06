@@ -42,7 +42,7 @@ struct SettingsStruct {
     bool confirm_count_enabled;
     bool noise_blacklist_enabled;
     bool spectrum_detection_enabled;
-    bool median_enabled;
+    bool median_enabled{false};  // Median filter (Md+) — OFF by default, opt-in
 
     // Spectrum shape filter
     uint8_t spectrum_margin;
