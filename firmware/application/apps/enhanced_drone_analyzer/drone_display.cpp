@@ -828,67 +828,6 @@ void DroneDisplay::draw_text_small(
     );
 }
 
-void DroneDisplay::draw_ruler_5(
-    Painter& painter,
-    FreqHz f_start,
-    FreqHz f_end,
-    uint16_t x,
-    uint16_t y,
-    uint16_t width
-) noexcept {
-    if (f_start >= f_end || width < 50) {
-        if (f_start > 0) {
-            char label[12];
-            const uint32_t mhz = static_cast<uint32_t>(f_start / 1000000ULL);
-            char* dst = label;
-            size_t rem = sizeof(label);
-            write_uint(dst, rem, mhz);
-            write_str(dst, rem, "M");
-            *dst = '\0';
-            draw_text_small(painter, label, x + 2, y, COLOR_TEXT);
-        }
-        return;
-    }
-
-    // 5 label slots, each 25px (5 chars × 5px font). Stack: ~54 bytes.
-    constexpr uint16_t LABEL_W = 25;
-    constexpr uint8_t NUM_LABELS = 5;
-
-    const uint16_t chart_x = x + 2;
-    const uint16_t usable_w = (width > 4) ? (width - 4) : 0;
-
-    for (uint8_t i = 0; i < NUM_LABELS; ++i) {
-        const uint32_t mhz = static_cast<uint32_t>(
-            (f_start + (f_end - f_start) * i / (NUM_LABELS - 1)) / 1000000ULL);
-
-        char label[12];
-        char* dst = label;
-        size_t rem = sizeof(label);
-        write_uint(dst, rem, mhz);
-        write_str(dst, rem, "M");
-        *dst = '\0';
-
-        const uint16_t label_x = chart_x + (usable_w * i) / (NUM_LABELS - 1) - LABEL_W / 2;
-        draw_text_small(painter, label, label_x, y, COLOR_TEXT);
-
-        // Tick mark (1px below label)
-        draw_rectangle(painter, label_x + LABEL_W / 2, y + 8, 1, 2, COLOR_TEXT);
-
-        // Dashes between labels
-        if (i < NUM_LABELS - 1) {
-            const uint16_t dash_start_px = chart_x + (usable_w * i) / (NUM_LABELS - 1) + LABEL_W / 2 + 2;
-            const uint16_t dash_end_px = chart_x + (usable_w * (i + 1)) / (NUM_LABELS - 1) - LABEL_W / 2 - 2;
-            const uint16_t dash_count = (dash_end_px > dash_start_px) ? (dash_end_px - dash_start_px) : 0;
-            if (dash_count > 0 && dash_count <= 40) {
-                char dashes[42];
-                for (uint16_t d = 0; d < dash_count; ++d) dashes[d] = '-';
-                dashes[dash_count] = '\0';
-                draw_text_small(painter, dashes, dash_start_px, y, COLOR_UNKNOWN_THREAT);
-            }
-        }
-    }
-}
-
 void DroneDisplay::draw_rectangle(
     Painter& painter,
     uint16_t x,
@@ -1222,8 +1161,22 @@ void DroneDisplay::render_composite_full_band(
     draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
     draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
 
-    // Ruler: 5 evenly spaced frequency labels with tick marks and dashes
-    draw_ruler_5(painter, title_start, title_end, start_x, start_y + 1, width);
+    // Title: compact frequency range (e.g. "5700M-5900M")
+    if (title_start < title_end) {
+        char title_buf[20];
+        const uint32_t mhz_lo = static_cast<uint32_t>(title_start / 1000000ULL);
+        const uint32_t mhz_hi = static_cast<uint32_t>(title_end / 1000000ULL);
+        char* dst = title_buf;
+        size_t rem = sizeof(title_buf);
+        write_uint(dst, rem, mhz_lo);
+        write_str(dst, rem, "M-");
+        write_uint(dst, rem, mhz_hi);
+        write_str(dst, rem, "M");
+        *dst = '\0';
+        draw_text_small(painter, title_buf, start_x + 2, start_y + 1, COLOR_TEXT);
+    } else {
+        draw_text_small(painter, "SWEEP", start_x + 2, start_y + 1, COLOR_TEXT);
+    }
 
     const uint16_t chart_start_x = start_x + 2;
     const uint16_t chart_start_y = start_y + WF_HEADER_H;
@@ -1473,10 +1426,19 @@ void DroneDisplay::render_multi_zone(
             draw_rectangle(painter, start_x, zone_y - sep_h, width, sep_h, COLOR_UNKNOWN_THREAT);
         }
 
-        // Ruler: 5 evenly spaced frequency labels
+        // Title: zone frequency range
         if (data != nullptr) {
-            draw_ruler_5(painter, zone_freq_start_[z], zone_freq_end_[z],
-                         start_x, zone_y + 1, width);
+            char title[16];
+            const uint32_t mhz_lo = static_cast<uint32_t>(zone_freq_start_[z] / 1000000ULL);
+            const uint32_t mhz_hi = static_cast<uint32_t>(zone_freq_end_[z] / 1000000ULL);
+            char* dst = title;
+            size_t rem = sizeof(title);
+            write_uint(dst, rem, mhz_lo);
+            write_str(dst, rem, "-");
+            write_uint(dst, rem, mhz_hi);
+            write_str(dst, rem, "M");
+            *dst = '\0';
+            draw_text_small(painter, title, start_x + 2, zone_y + 1, COLOR_TEXT);
 
             // Bar chart + white envelope via shared method (DRY).
             // Stack: ~6 bytes (EnvelopeState).
