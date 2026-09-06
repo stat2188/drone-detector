@@ -61,7 +61,7 @@ constexpr FreqHz FREQUENCY_BANDWIDTH_HZ = 20'000'000ULL;
 /**
  * @brief Maximum number of tracked drones
  */
-constexpr size_t MAX_TRACKED_DRONES = 30;
+constexpr size_t MAX_TRACKED_DRONES = 25;
 
 /**
  * @brief Maximum number of displayed drones
