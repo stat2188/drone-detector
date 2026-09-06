@@ -131,22 +131,31 @@ void TrackedDrone::update_rssi(RssiValue new_rssi, SystemTime timestamp, const T
     // Use circular buffer from the start
     const size_t write_idx = history_index_ % RSSI_HISTORY_SIZE;
     rssi_history_[write_idx] = static_cast<int16_t>(new_rssi);
-    
+
     // Timestamp buffer is smaller (3 entries), use modulo for wrap
     const size_t timestamp_idx = history_index_ % TIMESTAMP_HISTORY_SIZE;
     timestamp_history_[timestamp_idx] = timestamp;
-    
+
     // Increment index (uint8_t wrap-safe)
     history_index_++;
-    
-    rssi = new_rssi;
+
+    // PRESERVATION RULE: rssi tracks the PEAK (strongest seen) value — used for
+    // display and threat classification. Weaker detections must NOT overwrite it.
+    // This prevents a transient weak sample (e.g. fade, multipath, merge with
+    // lower-threat drone) from corrupting the displayed RSSI or the threat
+    // classification baseline. The peak naturally decays as weak samples age
+    // out of the 6-sample ring buffer, so genuine sustained weakening is
+    // reflected correctly.
+    if (new_rssi > rssi) {
+        rssi = new_rssi;
+    }
     last_seen = timestamp;
-    
+
     // Clamp update_count to RSSI_HISTORY_SIZE
     if (update_count < RSSI_HISTORY_SIZE) {
         update_count++;
     }
-    
+
     // Classify threat from RSSI value.
     // In NORMAL mode: use peak of rssi_history_ for stability (survives noise spikes).
     // In SWEEP mode: use direct new_rssi because rssi_history_ is contaminated
@@ -162,10 +171,6 @@ void TrackedDrone::update_rssi(RssiValue new_rssi, SystemTime timestamp, const T
         classify_rssi = peak_rssi;
     }
 
-    // Weak but active signals (above the detection gate yet below the medium
-    // threshold) classify as LOW. Escalates with signal strength. Signals that
-    // pass the detection gate but fall below the configured LOW threshold stay
-    // at NONE — the LOW threshold is the user-configurable floor of the scale.
     ThreatLevel classified = ThreatLevel::NONE;
     if (classify_rssi >= thresholds.critical) {
         classified = ThreatLevel::CRITICAL;
@@ -181,12 +186,13 @@ void TrackedDrone::update_rssi(RssiValue new_rssi, SystemTime timestamp, const T
     threat_level = classified;
 
     // Track RSSI trend: compare against previous sample (last_rssi_).
-    // This flag is read by apply_rssi_decay() at cycle boundaries to decide decay.
+    // last_rssi_ is ALWAYS updated to the current detection so that the
+    // inter-sample trend (rssi_increased_) tracks the actual signal trajectory.
+    // rssi_increased_ is read by apply_rssi_decay() at cycle boundaries.
     if (new_rssi > last_rssi_) {
         rssi_increased_ = true;
         last_increase_time_ = timestamp;
     }
-    // Update last_rssi_ for next sample comparison (intra-cycle tracking)
     last_rssi_ = static_cast<int16_t>(new_rssi);
 }
 

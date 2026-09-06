@@ -342,6 +342,10 @@ struct TrackedDrone {
     
     /**
      * @brief Update drone with new RSSI reading
+     * @note rssi (display/peak) is only updated when new_rssi is stronger —
+     *       weaker detections refresh history and last_seen but do NOT overwrite
+     *       the displayed RSSI or the threat classification baseline.
+     *       last_rssi_ (trend baseline) is always updated to track signal trajectory.
      */
     void update_rssi(RssiValue new_rssi, SystemTime timestamp, const ThreatThresholds& thresholds) noexcept;
 
