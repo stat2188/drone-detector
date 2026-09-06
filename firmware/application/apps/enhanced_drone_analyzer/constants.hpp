@@ -100,7 +100,7 @@ constexpr FreqHz DRONE_FREQ_MATCH_RADIUS_HZ = 1'000'000ULL;
  * @brief Default drone frequency match merge radius (MHz)
  * @note Configurable at runtime via ScanConfig.freq_match_radius_mhz (0-100).
  *       0 = only exact frequency matches consolidate (no merging)
- *       10 = 10 MHz radius (FPV default — one analog FPV channel spans ~18 MHz
+ *       10 = 10 MHz radiu (FPV default — one analog FPV channel spans ~18 MHz
  *       and its LO drift/FHSS wander easily exceeds the previous 1 MHz radius,
  *       spawning duplicate tracker entries that fragment RSSI history & trend)
  * @see DroneScanner::match_and_consolidate_drone_internal()
