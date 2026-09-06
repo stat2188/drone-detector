@@ -166,7 +166,9 @@ DroneDisplay::DroneDisplay(const Rect parent_rect) noexcept
     , spectrum_visible_(true)
     , timeline_visible_(true)
     , drone_list_visible_(true)
-    , status_bar_visible_(true) {
+    , status_bar_visible_(true)
+    , band1_{}
+    , band2_{} {
     // Incremental spectrum render shadows (non-owning, point into s_dd BSS).
     band1_.shadow = s_dd.composite_rendered;
     band2_.shadow = s_dd.sweep2_rendered;
