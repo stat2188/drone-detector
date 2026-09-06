@@ -80,6 +80,11 @@ struct SettingsStruct {
     // Sensitive mode — relaxes shape filters for weak/long-range signals
     bool sensitive_mode{false};
 
+    // Very-strong signal shape-filter bypass (default OFF) — mirrors
+    // ScanConfig::shape_bypass_enabled. When OFF, MaxW/Vly/Sym shape filters
+    // are enforced on every signal regardless of strength.
+    bool shape_bypass_enabled{false};
+
     // Advanced detection — persisted for round-trip but NOT exposed in the
     // settings UI (file-only opt-in; defaults preserve previous behavior)
     bool kurtosis_enabled{false};        // Shape-filter step 12 (default OFF)

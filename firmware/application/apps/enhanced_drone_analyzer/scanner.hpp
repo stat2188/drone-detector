@@ -128,6 +128,20 @@ struct ScanConfig {
     //          filter bypassed).
     // When OFF (default): full 12-step shape filter chain active.
     bool sensitive_mode{false};          // Default OFF — opt-in for max sensitivity
+
+    // Very-strong signal shape-filter bypass (opt-in, default OFF)
+    // When ON: peak_margin > 80 (~16 dB) narrows the width measurement
+    //          (margin/2 threshold) and skips valley/symmetry/kurtosis;
+    //          peak_margin > 96 (~19 dB) additionally skips the max_width
+    //          check (see apply_shape_filters Step 6). Intended only for
+    //          close-range WIDE FPV (15+ MHz) whose inflated width would
+    //          otherwise exceed MaxW.
+    // When OFF (default): ALL shape filters are enforced on EVERY signal —
+    //          Settings values (MaxW/Vly/Sym) are authoritative at any
+    //          signal strength; a strong flat WiFi/BT carrier can never
+    //          bypass MaxW (previously bypass was implicit and always on,
+    //          which let close-range wideband signals pass with MaxW=5).
+    bool shape_bypass_enabled{false};
     /**
      * @brief Default constructor
      */

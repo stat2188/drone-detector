@@ -58,6 +58,7 @@ SettingsStruct::SettingsStruct() noexcept
     , mahalanobis_enabled(true)
     , mahalanobis_threshold_x10(DEFAULT_MAHALOBIS_THRESHOLD_X10)
     , sensitive_mode(false)
+    , shape_bypass_enabled(false)
     , kurtosis_enabled(false)
     , kurtosis_min_x10(20)
     , adaptive_cfar_enabled(false)
@@ -354,6 +355,8 @@ static void parse_settings_line(
             : (v > MAHALANOBIS_THRESHOLD_MAX_X10 ? MAHALANOBIS_THRESHOLD_MAX_X10 : v));
     } else if (key_matches("sensitive_mode")) {
         s.sensitive_mode = parse_bool();
+    } else if (key_matches("shape_bypass_enabled")) {
+        s.shape_bypass_enabled = parse_bool();
 
     // --- Advanced detection (file-only opt-in, not in the settings UI) ---
     } else if (key_matches("kurtosis_enabled")) {
@@ -642,6 +645,9 @@ ErrorCode SettingsFileManager::save(
     // Sensitive mode
     wbool(file, "sensitive_mode", s.sensitive_mode);
 
+    // Very-strong signal shape-filter bypass (default OFF)
+    wbool(file, "shape_bypass_enabled", s.shape_bypass_enabled);
+
     // Advanced detection (file-only opt-in, not in the settings UI)
     wbool(file, "kurtosis_enabled", s.kurtosis_enabled);
     wl(file, "kurtosis_min_x10", static_cast<int64_t>(s.kurtosis_min_x10));
@@ -688,6 +694,9 @@ void SettingsFileManager::apply_to_config(
 
     // Sensitive mode
     config.sensitive_mode = s.sensitive_mode;
+
+    // Very-strong signal shape-filter bypass (default OFF)
+    config.shape_bypass_enabled = s.shape_bypass_enabled;
 
     // Advanced detection
     config.kurtosis_enabled = s.kurtosis_enabled;
@@ -844,6 +853,9 @@ void SettingsFileManager::extract_from_config(
 
     // Sensitive mode
     s.sensitive_mode = config.sensitive_mode;
+
+    // Very-strong signal shape-filter bypass (default OFF)
+    s.shape_bypass_enabled = config.shape_bypass_enabled;
 
     // Advanced detection
     s.kurtosis_enabled = config.kurtosis_enabled;

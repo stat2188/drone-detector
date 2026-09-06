@@ -1848,17 +1848,23 @@ bool DroneScanner::apply_shape_filters(
 ) const noexcept {
     const uint8_t peak_margin = raw_peak - noise_floor;
 
-    // VERY STRONG SIGNAL BYPASS:
-    // When peak_margin > 80 (~16 dB above noise, e.g. drone within ~50m),
-    // three effects activate:
+    // VERY STRONG SIGNAL BYPASS (opt-in via config_.shape_bypass_enabled):
+    // When enabled AND peak_margin > 80 (~16 dB above noise, e.g. drone
+    // within ~50m), three effects activate:
     //   1) Switch elevated_threshold from margin/3 to margin/2, narrowing the
     //      width measurement to prevent inflation from elevated flanking bins.
     //   2) Skip valley depth, symmetry, and kurtosis checks (unreliable when
     //      all bins in the signal band are elevated).
     //   3) At peak_margin > 96 (~19 dB), also skip max_width check because
     //      even the narrowed threshold may still capture the full bandwidth.
+    // Default (shape_bypass_enabled == false): very_strong is always false —
+    // max_width, valley, symmetry and kurtosis are enforced on EVERY signal
+    // regardless of strength, so a powerful flat WiFi/BT carrier can never
+    // bypass MaxW (bypass used to be implicit and always-on, which let
+    // close-range wideband signals through even with MaxW=5).
     // Stack: 1 byte (local bool). Flash: 0 (inline).
-    const bool very_strong = (peak_margin > VERY_STRONG_SIGNAL_MARGIN);
+    const bool very_strong = config_.shape_bypass_enabled
+        && (peak_margin > VERY_STRONG_SIGNAL_MARGIN);
 
     // Sensitivity-adaptive filter scaling:
     // At high sensitivity (low threshold), the RSSI gate is wide open and shape
@@ -1934,11 +1940,13 @@ bool DroneScanner::apply_shape_filters(
     if (signal_width < config_.spectrum_min_width) return false;
 
     // Step 6: Maximum width
-    // Very strong signal bypass: at peak_margin > 96 (~19 dB), ALL bins in the
-    // signal band are elevated, making width measurement unreliable even with the
-    // narrowed /2 threshold. Skip max_width check.
-    // At peak_margin 81-96: use config max_width (200 = ~15.6 MHz) with narrowed
-    // /2 threshold — width is now reliable enough to enforce.
+    // Opt-in bypass only (shape_bypass_enabled): at peak_margin > 96 (~19 dB),
+    // ALL bins in the signal band are elevated, making width measurement
+    // unreliable even with the narrowed /2 threshold. Skip max_width check.
+    // At peak_margin 81-96: use config max_width with the narrowed /2
+    // threshold — width is now reliable enough to enforce.
+    // Default (bypass disabled): max_width is ALWAYS enforced — the MaxW
+    // value from Settings is authoritative at any signal strength.
     if (!very_strong || peak_margin <= EXTREME_SIGNAL_MARGIN) {
         if (signal_width > config_.spectrum_max_width) return false;
     }

@@ -78,6 +78,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(13), 20}, "DEFAULT")
     , button_about_({UI_POS_X(13), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(2), 20}, "!")
     , button_save_({UI_POS_X(15), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(14), 20}, "SAVE")
+    , check_shape_bypass_({UI_POS_X(9), UI_POS_Y(7)}, 5, "Byp", false)
     , check_median_enabled_({UI_POS_X(15), UI_POS_Y(7)}, 4, "Md+", false)
     , field_threat_low_({UI_POS_X(3), UI_POS_Y(16)}, 3, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
     , field_threat_medium_({UI_POS_X(11), UI_POS_Y(16)}, 3, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
@@ -139,6 +140,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &button_defaults_,
         &button_about_,
         &button_save_,
+        &check_shape_bypass_,
         &check_median_enabled_,
         &field_cfar_mode_,
         &field_cfar_ref_cells_,
@@ -412,6 +414,12 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         settings_dirty_ = true;
     };
 
+    // Very-strong shape-filter bypass toggle (default OFF)
+    check_shape_bypass_.on_select = [this](ui::Checkbox&, bool v) {
+        settings_.shape_bypass_enabled = v;
+        settings_dirty_ = true;
+    };
+
     // CFAR callbacks
     field_cfar_mode_.on_change = [this](size_t, int32_t v) {
         settings_.cfar_mode = static_cast<CFARMode>(v);
@@ -524,6 +532,7 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     check_neighbor_margin_.set_value(settings_.neighbor_margin_db > 0);
     field_neighbor_margin_.set_value(static_cast<int32_t>(settings_.neighbor_margin_db));
     check_rssi_variance_.set_value(settings_.rssi_variance_enabled);
+    check_shape_bypass_.set_value(settings_.shape_bypass_enabled);
     check_median_enabled_.set_value(settings_.median_enabled);
     check_mahalanobis_.set_value(settings_.mahalanobis_enabled);
     field_mahalanobis_threshold_.set_value(static_cast<int32_t>(settings_.mahalanobis_threshold_x10));
@@ -579,6 +588,7 @@ void DroneSettingsView::set_shape_filter_visibility(bool visible) noexcept {
     field_spectrum_valley_depth_.visible(visible);
     field_spectrum_flatness_.visible(visible);
     field_spectrum_symmetry_.visible(visible);
+    check_shape_bypass_.visible(visible);
     check_median_enabled_.visible(visible);
     // CFAR fields are also gated by spectrum detection
     field_cfar_mode_.visible(visible);

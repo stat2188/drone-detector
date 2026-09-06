@@ -90,6 +90,9 @@ private:
     ui::Button button_about_;
     ui::Button button_save_;
 
+    // Very-strong shape-filter bypass toggle (default OFF — MaxW always enforced)
+    ui::Checkbox check_shape_bypass_;
+
     // Median filter toggle
     ui::Checkbox check_median_enabled_;
 
