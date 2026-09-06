@@ -6,6 +6,7 @@
 #include <array>
 #include <string_view>
 #include "ui_widget.hpp"
+#include "ui_font_fixed_5x8.hpp"
 #include "drone_types.hpp"
 #include "constants.hpp"
 #include "mini_waterfall.hpp"
@@ -332,6 +333,22 @@ private:
     ) noexcept;
 
     void draw_text(
+        Painter& painter,
+        std::string_view text,
+        uint16_t x,
+        uint16_t y,
+        uint32_t color
+    ) noexcept;
+
+    void draw_text_small(
+        Painter& painter,
+        const char* text,
+        uint16_t x,
+        uint16_t y,
+        uint32_t color
+    ) noexcept;
+
+    void draw_text_small(
         Painter& painter,
         std::string_view text,
         uint16_t x,

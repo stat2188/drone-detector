@@ -4,6 +4,7 @@
 #include <string_view>
 
 #include "drone_display.hpp"
+#include "ui_font_fixed_5x8.hpp"
 
 namespace drone_analyzer {
 
@@ -11,13 +12,10 @@ namespace drone_analyzer {
 // Waterfall rendering constants
 // ============================================================================
 // Section header height for waterfall/spectrum titles.
-// draw_text() renders with the theme's fixed_8x16 font: a 16 px glyph box
-// (with opaque background) even though visible ink is only ~10 px. The header
-// MUST cover the full box, otherwise the title erases/overlaps the data rows
-// below it ("2400M lying on top of the waterfall" defect).
-// 18 px = 1 px top border + 16 px font box + 1 px gap. Titles are drawn at
-// start_y + 1 so they sit as high as possible without touching the border.
-constexpr uint16_t WF_HEADER_H = 18;
+// draw_text_small() renders with fixed_5x8 font: an 8 px glyph box
+// (with opaque background). The header covers: 1 px top border + 8 px font
+// + 1 px gap = 10 px total.
+constexpr uint16_t WF_HEADER_H = 10;
 
 // ============================================================================
 // Drone list layout constants (single source for render, draw, and hit-test)
@@ -184,11 +182,14 @@ DroneDisplay::~DroneDisplay() noexcept {
 // ============================================================================
 
 DroneDisplay::LayoutMetrics DroneDisplay::calculate_layout() const noexcept {
-    constexpr uint16_t SPECTRUM_H = 50;
-    // Timeline (waterfall) section: must equal WF_HEADER_H + WATERFALL_MAX_ROWS
-    // + 1 = 18 + 15 + 1 = 34 so the waterfall fills the section with zero dead
-    // pixels (see render_sweep_waterfalls()/MiniWaterfall::MAX_ROWS).
-    constexpr uint16_t TIMELINE_H = 34;
+    // Spectrum section: 58 px (was 50). Freed 8 px from reduced WF_HEADER_H
+    // (18→10) are reinvested here, giving dual-sweep bands 27 px each
+    // instead of 25 px — critical for chart readability in 2x mode.
+    constexpr uint16_t SPECTRUM_H = 58;
+    // Timeline (waterfall) section: WF_HEADER_H(10) + WATERFALL_MAX_ROWS(15)
+    // + 1 bottom gap = 26 px. Renderer clips at chart_h, so extra rows
+    // beyond count() are never drawn.
+    constexpr uint16_t TIMELINE_H = WF_HEADER_H + WATERFALL_MAX_ROWS + 1;
 
     const uint16_t total_h = parent_rect().size().height();
 
@@ -308,7 +309,7 @@ void DroneDisplay::render_spectrum(
 
     draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
     draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
-    draw_text(painter, "SPECTRUM +/-1MHz", start_x + 2, start_y + 1, COLOR_TEXT);
+    draw_text_small(painter, "SPECTRUM +/-1MHz", start_x + 2, start_y + 1, COLOR_TEXT);
 
     constexpr uint16_t MIN_BAR_WIDTH = 2;
     const uint16_t usable_width = width - 4;
@@ -372,7 +373,7 @@ void DroneDisplay::render_sweep_waterfalls(
         if (sweep_wf_freq_start_[j] > 0) { any_label = true; break; }
     }
     if (!any_label) {
-        draw_text(painter, "Waiting...", chart_start_x, start_y + 1, COLOR_UNKNOWN_THREAT);
+        draw_text_small(painter, "Waiting...", chart_start_x, start_y + 1, COLOR_UNKNOWN_THREAT);
     }
     uint8_t hdr_slot = 0;
     for (uint8_t j = 0; j < NUM_SWEEP_WATERFALLS; ++j) {
@@ -386,7 +387,7 @@ void DroneDisplay::render_sweep_waterfalls(
             write_uint(dst, rem, mhz);
             write_str(dst, rem, "M");
             *dst = '\0';
-            draw_text(painter, label, jx + 1, start_y + 1, COLOR_TEXT);
+            draw_text_small(painter, label, jx + 1, start_y + 1, COLOR_TEXT);
         }
         ++hdr_slot;
     }
@@ -781,6 +782,52 @@ void DroneDisplay::draw_text(
     );
 }
 
+void DroneDisplay::draw_text_small(
+    Painter& painter,
+    const char* text,
+    uint16_t x,
+    uint16_t y,
+    uint32_t color
+) noexcept {
+    if (text == nullptr) {
+        return;
+    }
+
+    const Color fg_color = Color::RGB(color);
+    const Color bg_color = Color::black();
+
+    painter.draw_string(
+        Point{x, y},
+        ui::font::fixed_5x8,
+        fg_color,
+        bg_color,
+        std::string_view(text)
+    );
+}
+
+void DroneDisplay::draw_text_small(
+    Painter& painter,
+    std::string_view text,
+    uint16_t x,
+    uint16_t y,
+    uint32_t color
+) noexcept {
+    if (text.empty()) {
+        return;
+    }
+
+    const Color fg_color = Color::RGB(color);
+    const Color bg_color = Color::black();
+
+    painter.draw_string(
+        Point{x, y},
+        ui::font::fixed_5x8,
+        fg_color,
+        bg_color,
+        text
+    );
+}
+
 void DroneDisplay::draw_rectangle(
     Painter& painter,
     uint16_t x,
@@ -1126,9 +1173,9 @@ void DroneDisplay::render_composite_full_band(
         write_uint(dst, rem, mhz_hi);
         write_str(dst, rem, "M");
         *dst = '\0';
-        draw_text(painter, title_buf, start_x + 2, start_y + 1, COLOR_TEXT);
+        draw_text_small(painter, title_buf, start_x + 2, start_y + 1, COLOR_TEXT);
     } else {
-        draw_text(painter, "SWEEP", start_x + 2, start_y + 1, COLOR_TEXT);
+        draw_text_small(painter, "SWEEP", start_x + 2, start_y + 1, COLOR_TEXT);
     }
 
     const uint16_t chart_start_x = start_x + 2;
@@ -1391,7 +1438,7 @@ void DroneDisplay::render_multi_zone(
             write_uint(dst, rem, mhz_hi);
             write_str(dst, rem, "M");
             *dst = '\0';
-            draw_text(painter, title, start_x + 2, zone_y + 1, COLOR_TEXT);
+            draw_text_small(painter, title, start_x + 2, zone_y + 1, COLOR_TEXT);
 
             // Bar chart + white envelope via shared method (DRY).
             // Stack: ~6 bytes (EnvelopeState).

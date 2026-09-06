@@ -790,8 +790,8 @@ constexpr uint16_t WATERFALL_HEIGHT = 60;
 
 /**
  * @brief Vertical depth (history rows) of each MiniWaterfall.
- * @note Sized to exactly fill the timeline section with zero dead pixels:
- *       TIMELINE_H(34) − WF_HEADER_H(18) − 1 bottom gap = 15 rows.
+ * @note Sized to fill the timeline section:
+ *       TIMELINE_H(26) − WF_HEADER_H(10) − 1 bottom gap = 15 rows.
  *       Values above 15 only waste SRAM (renderer clips at chart_h);
  *       values below 15 leave permanently blank rows under the waterfall.
  *       Reduced from 21 to 15 to save 900 bytes BSS (5 × 180 bytes)

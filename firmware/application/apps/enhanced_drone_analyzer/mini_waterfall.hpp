@@ -32,8 +32,9 @@ namespace drone_analyzer {
 class MiniWaterfall {
 public:
     static constexpr uint8_t BANDS = WATERFALL_HEIGHT;
-    // History depth: sized to exactly fill the timeline section with zero dead
-    // pixels: TIMELINE_H(34) - WF_HEADER_H(18) - 1 bottom gap = 15 rows.
+    // History depth: sized to fill the timeline section.
+    // TIMELINE_H = WF_HEADER_H(10) + WATERFALL_MAX_ROWS(15) + 1 gap = 26 rows.
+    // Renderer clips at chart_h, so extra rows beyond count() are never drawn.
     static constexpr uint8_t MAX_ROWS = WATERFALL_MAX_ROWS;
     static constexpr uint8_t BAND_SIZE = 4;
     static constexpr uint8_t ROW_SIZE = BANDS / 2;
