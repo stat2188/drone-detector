@@ -1844,7 +1844,14 @@ bool DroneScanner::analyze_spectrum_shape_multi(
             const size_t check_bin = static_cast<size_t>(static_cast<int32_t>(max_bin) + offset);
             if (check_bin >= FFT_BIN_COUNT || check_bin == max_bin) continue;
             if (check_bin >= FFT_DC_SPIKE_START && check_bin < FFT_DC_SPIKE_END) continue;
-            if (spectrum.db[check_bin] > noise_floor + config_.spectrum_margin) {
+            // Gate secondary candidates with the FULL Step 3 margin
+            // (shape_gate_margin), same >= semantics as Step 3. Previously the
+            // raw config margin was used here, which (a) nullified the
+            // sensitive-mode relaxation for secondary peaks — the same dead-
+            // relaxation defect the sweep candidate gate had — and (b) at high
+            // sensitivity admitted candidates Step 3 would only reject.
+            if (static_cast<int32_t>(spectrum.db[check_bin])
+                >= static_cast<int32_t>(noise_floor) + shape_gate_margin()) {
                 candidates[cand_count++] = {check_bin, spectrum.db[check_bin]};
             }
         }
@@ -1885,15 +1892,33 @@ bool DroneScanner::analyze_spectrum_shape_lg(
 }
 
 uint8_t DroneScanner::effective_spectrum_margin() const noexcept {
-    // Single source of truth for the sensitive-mode margin relaxation.
-    // Applied identically by the sweep candidate gate (process_spectrum_sweep)
-    // and by apply_shape_filters Step 3, in BOTH normal and sweep mode.
+    // Single source of truth for the sensitive-mode margin relaxation (BASE).
+    // The FULL Step 3 gate — including the high-sensitivity scaling — is
+    // shape_gate_margin(); apply_shape_filters Step 3, both candidate gates,
+    // and the TBD width anchor all consume the full gate from there.
     if (config_.sensitive_mode) {
         return (config_.spectrum_margin > 2)
             ? static_cast<uint8_t>(config_.spectrum_margin - 2)
             : 1;
     }
     return config_.spectrum_margin;
+}
+
+uint8_t DroneScanner::shape_gate_margin() const noexcept {
+    // FULL apply_shape_filters Step 3 gate: sensitive-mode BASE margin
+    // (effective_spectrum_margin) PLUS the sensitivity scaling Step 3 applies.
+    // rssi_sens > 0 only when the RSSI threshold sits above the -95 dBm
+    // default (high sensitivity): the RSSI gate is wide open there, so the
+    // shape gate scales UP (+1 unit per 2 sensitivity points) to compensate.
+    // Sensitive mode opts out of scaling by design — the user explicitly
+    // chose maximum weak-signal sensitivity, and scaling would partially
+    // cancel the relaxation.
+    // Overflow-safe: base <= 200 (settings clamp), rssi_sens/2 <= ~15.
+    const uint8_t base = effective_spectrum_margin();
+    const int32_t rssi_sens = -(config_.rssi_threshold_dbm + 95);
+    return (!config_.sensitive_mode && rssi_sens > 0)
+        ? static_cast<uint8_t>(base + rssi_sens / 2)
+        : base;
 }
 
 bool DroneScanner::apply_shape_filters(
@@ -1935,23 +1960,21 @@ bool DroneScanner::apply_shape_filters(
     const int32_t rssi_sens = -(config_.rssi_threshold_dbm + 95);
 
     // Step 3: Peak must be significantly above noise floor
-    // Sensitive mode relaxes the margin by 2 (min 1) via
-    // effective_spectrum_margin() — the SAME reduction the sweep candidate
-    // gate applies. Previously the reduction was nullified here (this step
-    // re-checked the full config margin), so peaks with margin 3-4 passed
-    // CFAR and were then rejected — the sensitive relaxation was dead code.
-    // Non-sensitive mode scales the margin UP at high RSSI sensitivity
-    // (+1 unit per 2 sensitivity points above the -95 dBm default): the RSSI
-    // gate is wide open there, so shape filters must work harder.
-    // At sens=75 (default): effective_margin = spectrum_margin (no change).
-    // At sens=87 (rssi_sens=12): effective_margin = spectrum_margin + 6.
+    // Gate value comes from shape_gate_margin() — the single source of truth
+    // combining the sensitive-mode relaxation (Mar-2, via
+    // effective_spectrum_margin()) with the high-sensitivity scaling below.
+    // The SAME full gate is applied by the sweep fixed-threshold candidate
+    // gate, the normal-mode secondary candidate gate, and the TBD narrowband
+    // guard's width elevation anchor. Previously the sensitive reduction was
+    // nullified here (this step re-checked the full config margin), so peaks
+    // with margin 3-4 passed CFAR and were then rejected — the sensitive
+    // relaxation was dead code.
+    // At sens=75 (default): gate = spectrum_margin (no change).
+    // At sens=87 (rssi_sens=12): gate = spectrum_margin + 6.
     // In sensitive mode the scaling is NOT applied — the user explicitly opts
     // for maximum weak-signal sensitivity, and the scaling would partially
     // cancel the relaxation.
-    const uint8_t base_margin = effective_spectrum_margin();
-    const uint8_t effective_margin = (!config_.sensitive_mode && rssi_sens > 0)
-        ? static_cast<uint8_t>(base_margin + rssi_sens / 2)
-        : base_margin;
+    const uint8_t effective_margin = shape_gate_margin();
     if (peak_margin < effective_margin) return false;
 
     // Step 4: Count elevated bins around peak (signal width)
@@ -2202,11 +2225,27 @@ bool DroneScanner::tbd_peak_is_narrowband(
     const uint8_t raw_peak = data[peak_idx];
     if (raw_peak <= noise_floor) return false;
 
-    // Same elevated threshold as apply_shape_filters Step 4 (non-bypass path).
-    // peak_margin/3 in uint8 arithmetic: raw_peak > noise_floor guarantees a
-    // positive margin, and raw_peak <= 255 caps the sum well below 256+.
+    // MAR-anchored elevated threshold (Step 4 parity for the TBD domain).
+    // apply_shape_filters measures width at noise_floor + peak_margin/3, but
+    // its Step 3 gate (peak_margin >= shape_gate_margin) guarantees the /3
+    // elevation is ALWAYS >= gate/3 in that chain. TBD sees peaks BELOW the
+    // gate (peak_margin < gate), where peak_margin/3 sinks to 1-3 units
+    // (~0.2-0.6 dB) — inside the noise fluctuation band above the
+    // 25th-percentile shelf — so flanking noise bins inflated the measured
+    // width and MaxW falsely rejected exactly the weak targets TBD exists to
+    // find (the noise shelf was absorbed into the width measurement).
+    // Anchoring the elevation at the full Step 3 gate —
+    // max(peak_margin, shape_gate_margin)/3 — restores the design point Step 4
+    // was tuned for (Mar=20 -> 6 units = 1.2 dB above the shelf) for every TBD
+    // peak, while keeping the EXACT Step 4 threshold for peaks above the
+    // gate (strong-but-sharpness-rejected signals keep their narrower /3
+    // elevation, so MaxW stays as strict as the single-frame chain).
+    // uint16 arithmetic: noise_floor (<=255) + 255/3 cannot wrap.
     const uint8_t peak_margin = raw_peak - noise_floor;
-    const uint8_t elevated_threshold = noise_floor + static_cast<uint8_t>(peak_margin / 3);
+    const uint8_t eff_margin = shape_gate_margin();
+    const uint8_t width_margin = (peak_margin > eff_margin) ? peak_margin : eff_margin;
+    const uint16_t elevated_threshold =
+        static_cast<uint16_t>(noise_floor) + static_cast<uint16_t>(width_margin / 3);
 
     const size_t upper_limit = data_size - edge_skip;
 
@@ -2367,13 +2406,13 @@ void DroneScanner::process_spectrum_sweep(
     // Feed waterfall history for sweep mode (runs without mutex — scanner thread stopped)
     waterfall_history_.push(spectrum.db.data());
 
-    // Sensitive mode: reduce the spectrum margin by 2 (min 1) for maximum
-    // weak-signal detection — single source of truth via
-    // effective_spectrum_margin(); apply_shape_filters Step 3 applies the
-    // identical reduction in BOTH scan modes, so the relaxation is no longer
-    // nullified downstream.
-    // Default margin=5 (~1 dB above noise); sensitive: margin=3 (~0.6 dB).
-    const uint8_t cfg_margin = effective_spectrum_margin();
+    // Candidate gate uses the FULL Step 3 margin (shape_gate_margin): the
+    // sensitive-mode relaxation AND the high-sensitivity scaling, identical to
+    // apply_shape_filters Step 3 in BOTH scan modes. Single source of truth —
+    // no candidate is collected that Step 3 would only reject, and every peak
+    // the gate admits is guaranteed the same Step 4 width threshold.
+    // Default margin=20 (~4 dB above noise); sensitive: 18 (~3.6 dB).
+    const uint8_t cfg_margin = shape_gate_margin();
 
     // Step 1: Compute noise floor (25th percentile of usable bins).
     // Shared for all peaks in this frame — computed once.

@@ -1502,12 +1502,30 @@ private:
     /**
      * @brief Spectrum margin with the sensitive-mode relaxation applied
      * @return spectrum_margin, reduced by 2 (min 1) when sensitive_mode is on
-     * @note Single source of truth, shared by process_spectrum_sweep() candidate
-     *       gating and apply_shape_filters() Step 3 (both scan modes). Previously
-     *       the reduction existed only in the sweep candidate gate and was
+     * @note Single source of truth for the sensitive-mode BASE margin. This is
+     *       the relaxation layer only — the full Step 3 gate (including the
+     *       high-sensitivity scaling) is shape_gate_margin(). Previously the
+     *       reduction existed only in the sweep candidate gate and was
      *       nullified by Step 3, which re-checked the full margin.
      */
     [[nodiscard]] uint8_t effective_spectrum_margin() const noexcept;
+
+    /**
+     * @brief FULL apply_shape_filters Step 3 gate margin (single source of truth)
+     * @return effective_spectrum_margin(), scaled UP by rssi_sens/2 when NOT in
+     *         sensitive mode and the RSSI threshold is above the -95 dBm
+     *         default (high sensitivity): the RSSI gate is wide open there, so
+     *         shape filters work harder. Sensitive mode opts out of scaling by
+     *         design (the user explicitly chose max weak-signal sensitivity).
+     * @note Shared by apply_shape_filters() Step 3, the normal-mode secondary
+     *       candidate gate, the sweep fixed-threshold candidate gate, and the
+     *       TBD narrowband guard's width elevation anchor. Keeping all four on
+     *       this one value guarantees that any peak which would pass Step 3 is
+     *       measured by Step 4 at its exact threshold, and every peak below
+     *       the gate (the TBD domain) gets the same elevation floor.
+     * @note Overflow-safe: base <= 200 (settings clamp), scaling <= +15.
+     */
+    [[nodiscard]] uint8_t shape_gate_margin() const noexcept;
 
     /**
      * @brief Shared spectrum shape analysis with configurable edge skip.
@@ -1596,6 +1614,15 @@ private:
      *       ignoring the user's MaxW setting with bypass OFF. This guard
      *       re-applies the MaxW width semantics (apply_shape_filters Steps
      *       4+6) on the current frame so every detection honors MaxW.
+     * @note MAR anchoring: the elevation above the noise shelf is
+     *       max(peak_margin, shape_gate_margin())/3 — NOT bare peak_margin/3.
+     *       Single-frame Step 3 guarantees peak_margin >= shape_gate_margin()
+     *       before Step 4 measures width, but TBD peaks sit BELOW that gate,
+     *       where peak_margin/3 (1-3 units) sinks into the noise fluctuation
+     *       band and inflates width -> MaxW false-rejects weak targets. The
+     *       gate anchor keeps the elevation at the reference the user tunes
+     *       (Mar=20 -> 6 units = 1.2 dB above the shelf) and preserves the
+     *       exact Step 4 threshold for peaks above the gate.
      * @note Stack: ~16 bytes. Flash: ~64 bytes.
      */
     [[nodiscard]] bool tbd_peak_is_narrowband(
@@ -1815,7 +1842,10 @@ private:
      *       confirms a signal, this caches the TBD detection for tracking.
      */
     static constexpr uint8_t TBD_MIN_FRAMES = 3;
-    static constexpr uint8_t TBD_THRESHOLD_MARGIN = 10;  // Half of spectrum margin (dB)
+    // TBD_THRESHOLD_MARGIN removed (was 10, "half of spectrum margin") — dead
+    // constant from the original TBD design. The multi-frame confirm gate uses
+    // the RSSI threshold (Sens), and the narrowband guard's width elevation is
+    // anchored to shape_gate_margin() inside tbd_peak_is_narrowband().
 
     // No gain cache — use get_current_total_gain() directly to avoid stale values.
 };
