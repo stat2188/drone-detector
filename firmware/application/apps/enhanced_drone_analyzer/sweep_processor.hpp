@@ -28,19 +28,38 @@ public:
      * @brief Process one FFT frame into a composite pixel buffer.
      * @param spectrum       256-bin FFT power values from baseband
      * @param composite      Output pixel buffer (COMPOSITE_SIZE bytes)
-     * @param pixel_index    In/out: current pixel position
-     * @param pixel_max      In/out: running max power for current pixel
-     * @param bins_hz_acc    In/out: accumulated Hz since last pixel boundary (integer remainder prevents drift)
-     * @param pixel_step_hz  Hz per pixel
-     * @param f_center       FFT slice center frequency (Hz, f_min + SLICE_BW/2)
+     * @param pixel_index    In/out: progress position (scan-head marker +
+     *                       line_full completion bookkeeping). Advanced by the
+     *                       internal accumulator, NOT by data placement.
+     * @param pixel_max      Unused since true-position painting (kept for API
+     *                       stability; the old sequential flush used it).
+     * @param bins_hz_acc    In/out: accumulated Hz remainder (integer remainder
+     *                       prevents drift) driving pixel_index.
+     * @param pixel_step_hz  Hz per pixel on the window scale (range / 240)
+     * @param f_center       FFT slice center frequency (Hz)
      * @param exception_radius_hz Exclusion radius around exception frequencies
      * @param exceptions     Exception frequency array
      * @param num_exceptions Number of valid exception entries
-     * @param effective_bin_size Hz contributed per FFT bin to the accumulator.
-     *        Must equal step_hz / 236 (236 = 240 total bins - 2 end skip - 2 DC spike)
-     *        so that each slice contributes exactly step_hz of unique frequency coverage.
-     *        DC spike bins are skipped entirely (no Hz, no power) to prevent dead pixels.
+     * @param effective_bin_size Hz contributed per FFT bin to the progress
+     *        accumulator. Must equal step_hz / 236 (236 = 240 total bins - 2
+     *        end skip - 2 DC spike) so each slice advances the accumulator by
+     *        exactly step_hz. DC spike bins are skipped (no Hz, no power).
+     * @param f_min          Window lower bound (Hz) — linear scale anchor
+     * @param f_max          Window upper bound (Hz) — linear scale anchor
      * @return Updated pixel_index
+     * @note DATA PLACEMENT — TRUE POSITION, not sequential: every bin is
+     *       written at composite[(freq - f_min) * 240 / range] — the exact
+     *       pixel its RF frequency occupies on the linear window scale, i.e.
+     *       the same mapping the band title (f_min..f_max) and every tracked
+     *       drone's frequency use. The previous sequential placement squeezed
+     *       each slice's ~20 MHz of RF content into its step_hz pixel slot
+     *       (~2.4x compression at the gapless 8.83 MHz step), drawing peaks at
+     *       columns that did not match the tracked frequency, and duplicating
+     *       every signal once per overlapping slice (ghost peaks).
+     * @note Overlapping slices (gapless step < slice RF span) now write the
+     *       SAME column — max-hold (composite[px] = max(old, power)) makes
+     *       them reinforce instead of ghosting, and the 1.8 MHz DC notch of
+     *       slice k is covered by slices k-1/k+1. Stack: ~16 bytes.
      */
     static uint16_t process_frame(
         const ChannelSpectrum& spectrum,
@@ -53,7 +72,9 @@ public:
         FreqHz exception_radius_hz,
         const FreqHz* exceptions,
         uint8_t num_exceptions,
-        FreqHz effective_bin_size
+        FreqHz effective_bin_size,
+        FreqHz f_min,
+        FreqHz f_max
     ) noexcept;
 
     /**

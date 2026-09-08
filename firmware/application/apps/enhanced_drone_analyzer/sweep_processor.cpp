@@ -34,25 +34,16 @@ uint16_t SweepProcessor::process_frame(
     FreqHz exception_radius_hz,
     const FreqHz* exceptions,
     uint8_t num_exceptions,
-    FreqHz effective_bin_size
+    FreqHz effective_bin_size,
+    FreqHz f_min,
+    FreqHz f_max
 ) noexcept {
-    if (pixel_step_hz == 0 || effective_bin_size == 0) {
+    if (pixel_step_hz == 0 || effective_bin_size == 0 || f_max <= f_min) {
         return pixel_index;
     }
+    const FreqHz range = f_max - f_min;
 
-    // Iterate bins in frequency-ascending order for correct sweep composite:
-    //   bin 0..117   → fft_bin 2..119   (upper sideband, f_center - 9.69 to -0.55 MHz)
-    //   bin 118..119 → fft_bin 134..135 (DC spike — SKIPPED, no Hz, no power)
-    //   bin 120..237 → fft_bin 136..253 (lower sideband, f_center + 0.78 to +10.39 MHz)
-    //   bin 238..239 skipped (end of slice)
-    //
-    // ACCUMULATION: each of the 236 signal-carrying bins contributes
-    // effective_bin_size (= step_hz / 236). DC spike bins (118-119) are
-    // skipped entirely — they contribute neither Hz nor power. This prevents
-    // the "dead pixel" artifact where a pixel boundary cross during DC spike
-    // processing wrote pixel_max = 0 into the composite.
     for (uint8_t bin = 0; bin < SWEEP_PIXELS_PER_SLICE; ++bin) {
-        if (pixel_index >= COMPOSITE_SIZE) break;
         if (bin >= UPPER_PIXEL_END) continue;
 
         const uint8_t fft_bin = (bin < 118)
@@ -66,22 +57,47 @@ uint16_t SweepProcessor::process_frame(
             continue;
         }
 
-        const uint8_t power = spectrum.db[fft_bin];
-        if (power > pixel_max) pixel_max = power;
-
+        // PROGRESS ACCUMULATOR — drives the scan-head marker and the
+        // line_full completion check only. Each of the 236 signal bins
+        // contributes effective_bin_size (= step_hz / 236), so a slice
+        // advances pixel_index by exactly step_hz / pixel_step_hz pixels,
+        // identical to the pre-true-position pacing.
         bins_hz_acc += effective_bin_size;
-
         while (bins_hz_acc >= pixel_step_hz && pixel_index < COMPOSITE_SIZE) {
-            const FreqHz pixel_freq = DroneScanner::fft_bin_to_freq(f_center, fft_bin);
-            if (!is_exception_freq(pixel_freq, exception_radius_hz, exceptions, num_exceptions)) {
-                composite[pixel_index] = pixel_max;
-            }
             ++pixel_index;
-            pixel_max = 0;
             bins_hz_acc -= pixel_step_hz;
+        }
+
+        // TRUE-POSITION PAINTING: write this bin's power at the pixel its
+        // REAL RF frequency occupies on the linear window scale — the same
+        // mapping as the band title and the tracked drones' frequencies.
+        // Sequential slot placement drew each slice compressed ~2.4x and
+        // duplicated signals across overlapping slices (drawn peaks did not
+        // match tracked frequencies).
+        const FreqHz freq = DroneScanner::fft_bin_to_freq(f_center, fft_bin);
+        if (freq == 0 || freq < f_min || freq >= f_max) continue;
+        if (is_exception_freq(freq, exception_radius_hz, exceptions, num_exceptions)) {
+            continue;
+        }
+
+        // 64-bit intermediate: (freq - f_min) up to ~5 GHz x 240 overflows
+        // uint32_t. One UMULL + UDIV per bin on the UI thread — the old code
+        // already called fft_bin_to_freq() per bin, same cost class.
+        const uint16_t px = static_cast<uint16_t>(
+            (static_cast<uint64_t>(freq - f_min) * COMPOSITE_SIZE) / range);
+        if (px >= COMPOSITE_SIZE) continue;
+
+        const uint8_t power = spectrum.db[fft_bin];
+        // Max-hold: overlapping slices cover the same column up to
+        // ceil(slice_RF_span / step) + 1 times per pass — keep the strongest.
+        if (power > composite[px]) {
+            composite[px] = power;
         }
     }
 
+    // Legacy sequential-flush state: obsolete with true-position painting
+    // (each bin targets its own column; no per-pixel running max exists).
+    pixel_max = 0;
     return pixel_index;
 }
 

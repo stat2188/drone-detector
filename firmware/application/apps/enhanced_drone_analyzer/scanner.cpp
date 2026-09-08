@@ -835,13 +835,15 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             // rejected by MaxW single-frame was re-confirmed after 3 frames
             // and tracked as a drone — the user's MaxW setting was silently
             // ignored with bypass OFF. Re-enforce the MaxW width semantics on
-            // the current frame: wideband targets must stay rejected.
+            // the multi-frame ENVELOPE (union of bin positions across the
+            // waterfall window): wideband targets must stay rejected even
+            // when an individual frame catches a narrow slice.
             // FIX: Use tbd_noise_floor (computed from current frame) instead of
             // shape_result.noise_floor (0 when shape analysis found nothing).
             if (tbd_rssi > rssi_threshold &&
                 tbd_peak_is_narrowband(
-                    spectrum.db.data(), FFT_BIN_COUNT, tbd_peak_bin,
-                    tbd_noise_floor, FFT_EDGE_SKIP, /*has_dc_gap=*/true)) {
+                    tbd_peak_bin, FFT_BIN_COUNT,
+                    tbd_noise_floor, FFT_EDGE_SKIP)) {
                 signal_detected = true;
                 signal_present_ = true;
                 effective_rssi = tbd_rssi;
@@ -1771,7 +1773,9 @@ bool DroneScanner::analyze_spectrum_shape_multi(
 
     if (config_.cfar_mode != CFARMode::OFF) {
         // Find ALL CFAR-passing peaks (up to MAX_SHAPE_DETECTIONS)
-        CFARPeak cfar_peaks[MAX_SHAPE_DETECTIONS];
+        // Zero-initialized: find_peaks() fills only the first peak_count
+        // entries; {} removes the uninitialized-read hazard on refactor.
+        CFARPeak cfar_peaks[MAX_SHAPE_DETECTIONS]{};
         const uint8_t effective_threshold = config_.adaptive_cfar_enabled
             ? adaptive_threshold_.get_optimal_threshold()
             : config_.cfar_threshold_x10;
@@ -1805,16 +1809,48 @@ bool DroneScanner::analyze_spectrum_shape_multi(
                 config_.cfar_threshold_x10);
         }
 
-        // Try shape filters on each CFAR peak independently
+        // Try shape filters on each CFAR peak independently.
+        // EMISSION DEDUP: peaks are sorted strongest-first; the first passing
+        // crest of an emission records its whole SignalExtent, and any later
+        // candidate INSIDE an accepted extent is the SAME emitter (a ripple
+        // crest of the WiFi/BT top that Step 6b measured as one wide band) —
+        // skipped instead of spawning a duplicate detection. Two extents of
+        // contiguous >= cont_level runs can never overlap, so a bin-inside-
+        // extent test is an exact same-emission test. Legit separate
+        // transmitters (deep null between them, e.g. FPV video + audio
+        // subcarrier) live in different extents and both survive.
+        // Stack: accepted[] = 48 bytes.
+        SignalExtent accepted[MAX_SHAPE_DETECTIONS]{};
+        size_t accepted_count = 0;
         for (size_t i = 0; i < peak_count && out_result.count < MAX_SHAPE_DETECTIONS; ++i) {
+            // Hoist to size_t once: CFARPeak::bin is uint8_t; every consumer
+            // below compares against size_t extents (no sign-compare noise).
+            const size_t peak_bin = cfar_peaks[i].bin;
+
+            // Same-emission fast path: skip before running the filter chain.
+            bool duplicate = false;
+            for (size_t e = 0; e < accepted_count; ++e) {
+                if (peak_bin >= accepted[e].left
+                    && peak_bin <= accepted[e].right) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (duplicate) continue;
+
+            SignalExtent det_extent{};
             int32_t peak_rssi = RSSI_MIN_DBM;
             if (apply_shape_filters(
-                    spectrum.db.data(), cfar_peaks[i].bin, cfar_peaks[i].power,
-                    noise_floor, peak_rssi, FFT_EDGE_SKIP, /*has_dc_gap=*/true, total_gain)) {
+                    spectrum.db.data(), peak_bin, cfar_peaks[i].power,
+                    noise_floor, peak_rssi, FFT_EDGE_SKIP, /*has_dc_gap=*/true, total_gain,
+                    &det_extent)) {
+                if (accepted_count < MAX_SHAPE_DETECTIONS) {
+                    accepted[accepted_count++] = det_extent;
+                }
                 ShapeDetection& det = out_result.detections[out_result.count];
-                det.frequency = normal_bin_to_freq(center_freq, cfar_peaks[i].bin, spectrum.sampling_rate);
+                det.frequency = normal_bin_to_freq(center_freq, peak_bin, spectrum.sampling_rate);
                 det.rssi = peak_rssi;
-                det.bin_index = static_cast<uint16_t>(cfar_peaks[i].bin);
+                det.bin_index = static_cast<uint16_t>(peak_bin);
                 det.peak_power = cfar_peaks[i].power;
                 out_result.count++;
             }
@@ -1856,11 +1892,32 @@ bool DroneScanner::analyze_spectrum_shape_multi(
             }
         }
 
+        // EMISSION DEDUP (same as the CFAR branch): the ±5 probes sample the
+        // SAME flat top as the global max — without dedup, one wideband
+        // emission was re-measured up to 3 times per frame and each probe
+        // that survived the per-peak width threshold became its own detection.
+        SignalExtent accepted[MAX_SHAPE_DETECTIONS]{};
+        size_t accepted_count = 0;
         for (size_t i = 0; i < cand_count && out_result.count < MAX_SHAPE_DETECTIONS; ++i) {
+            bool duplicate = false;
+            for (size_t e = 0; e < accepted_count; ++e) {
+                if (candidates[i].bin >= accepted[e].left
+                    && candidates[i].bin <= accepted[e].right) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (duplicate) continue;
+
+            SignalExtent det_extent{};
             int32_t peak_rssi = RSSI_MIN_DBM;
             if (apply_shape_filters(
                     spectrum.db.data(), candidates[i].bin, candidates[i].power,
-                    noise_floor, peak_rssi, FFT_EDGE_SKIP, /*has_dc_gap=*/true, total_gain)) {
+                    noise_floor, peak_rssi, FFT_EDGE_SKIP, /*has_dc_gap=*/true, total_gain,
+                    &det_extent)) {
+                if (accepted_count < MAX_SHAPE_DETECTIONS) {
+                    accepted[accepted_count++] = det_extent;
+                }
                 ShapeDetection& det = out_result.detections[out_result.count];
                 det.frequency = normal_bin_to_freq(center_freq, candidates[i].bin, spectrum.sampling_rate);
                 det.rssi = peak_rssi;
@@ -1929,9 +1986,30 @@ bool DroneScanner::apply_shape_filters(
     int32_t& out_rssi,
     size_t edge_skip,
     bool has_dc_gap,
-    int32_t total_gain
+    int32_t total_gain,
+    SignalExtent* out_extent
 ) const noexcept {
-    const uint8_t peak_margin = raw_peak - noise_floor;
+    // Buffer length derived from the buffer type — hoisted above the guards:
+    // the Step 4 walk and emission_extent() index bins against it.
+    // Upper bound: FFT_BIN_COUNT for raw spectrum, COMPOSITE_SIZE for LG buffer.
+    const size_t data_size = has_dc_gap ? FFT_BIN_COUNT : COMPOSITE_SIZE;
+
+    // FAIL-CLOSED GUARD: raw_peak <= noise_floor would underflow the uint8
+    // peak_margin below (wraps to ~250, silently passing the Step 3 gate).
+    // Every current call site pre-validates (CFAR peaks sit above noise; the
+    // non-CFAR fallback checks max_val <= noise_floor; analyze_spectrum_
+    // shape_lg checks raw_peak <= noise_floor) — this guard makes the
+    // contract explicit instead of relying on caller discipline.
+    if (raw_peak <= noise_floor) return false;
+
+    // FAIL-CLOSED GUARD: same validation contract as tbd_peak_is_narrowband.
+    // peak_idx >= data_size reads out of bounds in the Step 4 width walk;
+    // edge_skip >= data_size/2 would underflow upper_limit (data_size -
+    // edge_skip). Legit constants: FFT_EDGE_SKIP=10, FFT_EDGE_SKIP_NARROW=6,
+    // LG_EDGE_SKIP_PX=4 — all far below FFT_BIN_COUNT/2=128, COMPOSITE/2=120.
+    if (peak_idx >= data_size || edge_skip >= data_size / 2) return false;
+
+    const uint8_t peak_margin = static_cast<uint8_t>(raw_peak - noise_floor);
 
     // VERY STRONG SIGNAL BYPASS (opt-in via config_.shape_bypass_enabled):
     // When enabled AND peak_margin > 80 (~16 dB above noise, e.g. drone
@@ -1988,8 +2066,6 @@ bool DroneScanner::apply_shape_filters(
     const uint8_t elevated_divisor = very_strong ? 2 : 3;
     const uint8_t elevated_threshold = noise_floor + (peak_margin / elevated_divisor);
 
-    // Upper bound: FFT_BIN_COUNT for raw spectrum, COMPOSITE_SIZE for LG buffer
-    const size_t data_size = has_dc_gap ? FFT_BIN_COUNT : COMPOSITE_SIZE;
     const size_t upper_limit = data_size - edge_skip;
 
     // Width expansion: extend left/right while bins are above elevated_threshold.
@@ -2032,6 +2108,32 @@ bool DroneScanner::apply_shape_filters(
     // value from Settings is authoritative at any signal strength.
     if (!very_strong || peak_margin <= EXTREME_SIGNAL_MARGIN) {
         if (signal_width > config_.spectrum_max_width) return false;
+
+        // Step 6b: EMISSION EXTENT (the real MaxW semantics).
+        // signal_width (Step 4) is the FRAGMENT above the peak-relative /3
+        // threshold; emission_extent() is the WHOLE emission the fragment
+        // belongs to. On a flat WiFi/BT top with peak-dip-peak ripple the
+        // per-peak threshold fragmented one emitter into N narrow pieces that
+        // each passed a minimal MaxW — the emission was re-measured per crest
+        // and MaxW was effectively dead on wideband signals. The extent uses
+        // hysteresis segmentation anchored at the Step 3 GATE: shallow dips
+        // (above noise + gate/3) no longer split the emission; only dips
+        // reaching the noise shelf do (legit video+audio nulls still split).
+        // Anchoring at the gate also removes the strong-signal inversion
+        // where a taller crest raised its own /3 threshold and measured
+        // NARROWER than a weak one.
+        const SignalExtent emission = emission_extent(
+            [data](size_t i) noexcept { return data[i]; },
+            peak_idx, data_size, noise_floor, edge_skip, has_dc_gap);
+        if (emission.width() > config_.spectrum_max_width) return false;
+        if (out_extent != nullptr) {
+            *out_extent = emission;
+        }
+    } else if (out_extent != nullptr) {
+        // Extreme-signal bypass: width checks skipped by explicit user opt-in.
+        // Degenerate peak-only extent — dedup consumers must not
+        // over-suppress bypassed signals.
+        *out_extent = SignalExtent{peak_idx, peak_idx};
     }
 
     // Step 7: Peak sharpness (enforce inverted-V shape)
@@ -2202,28 +2304,33 @@ bool DroneScanner::apply_shape_filters(
 // ============================================================================
 
 bool DroneScanner::tbd_peak_is_narrowband(
-    const uint8_t* data,
+    size_t peak_bin,
     size_t data_size,
-    size_t peak_idx,
     uint8_t noise_floor,
-    size_t edge_skip,
-    bool has_dc_gap
+    size_t edge_skip
 ) const noexcept {
     // TBD confirms signals purely by multi-frame power integration and NEVER
     // runs apply_shape_filters(). Consequently a persistent WiFi/BT flat-top
     // that MaxW rejected in the single-frame chain was re-confirmed after
     // TBD_MIN_FRAMES frames and tracked as a drone — the MaxW setting was
     // silently ignored (bypass OFF or ON made no difference). This guard
-    // re-applies the exact MaxW width semantics of apply_shape_filters()
-    // Steps 4+6 around the TBD-confirmed bin on the CURRENT frame: if the
-    // contiguous elevated width exceeds spectrum_max_width, the target is
-    // wideband and must stay rejected.
-    // Stack: 16 bytes (safe on 4KB task stack). Flash: ~64 bytes.
-    if (peak_idx >= data_size || edge_skip >= data_size / 2) return false;
-    if (peak_idx < edge_skip || peak_idx >= data_size - edge_skip) return false;
+    // re-applies the MaxW width semantics around the TBD-confirmed bin: if
+    // the emission's elevated extent exceeds spectrum_max_width, the target
+    // is wideband and must stay rejected.
+    //
+    // ENVELOPE, not current frame: width is measured over the OR-image of the
+    // whole WaterfallHistory window (get_max_across_frames — the union of all
+    // bin positions the emission occupied across frames). A bursty wideband
+    // emitter (WiFi beacons/packets) spans a wide union even when each frame
+    // catches a narrow slice; measuring the current frame only let it through
+    // on "narrow-looking" frames. TBD now looks at where the signal started
+    // and where subsequent peaks re-appeared across the window.
+    // Stack: ~20 bytes. Flash: ~80 bytes.
+    if (peak_bin >= data_size || edge_skip >= data_size / 2) return false;
+    if (peak_bin < edge_skip || peak_bin >= data_size - edge_skip) return false;
 
-    const uint8_t raw_peak = data[peak_idx];
-    if (raw_peak <= noise_floor) return false;
+    const uint8_t envelope_peak = waterfall_history_.get_max_across_frames(peak_bin);
+    if (envelope_peak <= noise_floor) return false;
 
     // MAR-anchored elevated threshold (Step 4 parity for the TBD domain).
     // apply_shape_filters measures width at noise_floor + peak_margin/3, but
@@ -2237,11 +2344,11 @@ bool DroneScanner::tbd_peak_is_narrowband(
     // Anchoring the elevation at the full Step 3 gate —
     // max(peak_margin, shape_gate_margin)/3 — restores the design point Step 4
     // was tuned for (Mar=20 -> 6 units = 1.2 dB above the shelf) for every TBD
-    // peak, while keeping the EXACT Step 4 threshold for peaks above the
-    // gate (strong-but-sharpness-rejected signals keep their narrower /3
-    // elevation, so MaxW stays as strict as the single-frame chain).
+    // peak. The envelope is a max over frames, so noise inflation stays in
+    // the same fluctuation band (max of 8 frames of ~2-unit sigma stays
+    // below the gate/3 elevation).
     // uint16 arithmetic: noise_floor (<=255) + 255/3 cannot wrap.
-    const uint8_t peak_margin = raw_peak - noise_floor;
+    const uint8_t peak_margin = envelope_peak - noise_floor;
     const uint8_t eff_margin = shape_gate_margin();
     const uint8_t width_margin = (peak_margin > eff_margin) ? peak_margin : eff_margin;
     const uint16_t elevated_threshold =
@@ -2249,19 +2356,19 @@ bool DroneScanner::tbd_peak_is_narrowband(
 
     const size_t upper_limit = data_size - edge_skip;
 
-    size_t left = peak_idx;
+    size_t left = peak_bin;
     while (left > edge_skip) {
         const size_t prev = left - 1;
-        if (has_dc_gap && prev >= FFT_DC_SPIKE_START && prev < FFT_DC_SPIKE_END) break;
-        if (data[prev] < elevated_threshold) break;
+        if (prev >= FFT_DC_SPIKE_START && prev < FFT_DC_SPIKE_END) break;
+        if (waterfall_history_.get_max_across_frames(prev) < elevated_threshold) break;
         --left;
     }
 
-    size_t right = peak_idx;
+    size_t right = peak_bin;
     while (right < upper_limit - 1) {
         const size_t next = right + 1;
-        if (has_dc_gap && next >= FFT_DC_SPIKE_START && next < FFT_DC_SPIKE_END) break;
-        if (data[next] < elevated_threshold) break;
+        if (next >= FFT_DC_SPIKE_START && next < FFT_DC_SPIKE_END) break;
+        if (waterfall_history_.get_max_across_frames(next) < elevated_threshold) break;
         ++right;
     }
 
@@ -2496,16 +2603,21 @@ void DroneScanner::process_spectrum_sweep(
         for (size_t i = 0; i < cand_count && peak_count < MAX_SWEEP_PEAKS; ++i) {
             bool suppressed = false;
             for (size_t j = 0; j < peak_count; ++j) {
-                const size_t bin_diff = (candidates[i].bin > cfar_peaks[j].bin)
-                    ? (candidates[i].bin - cfar_peaks[j].bin)
-                    : (cfar_peaks[j].bin - candidates[i].bin);
+                const size_t peak_bin_j = static_cast<size_t>(cfar_peaks[j].bin);
+                const size_t bin_diff = (candidates[i].bin > peak_bin_j)
+                    ? (candidates[i].bin - peak_bin_j)
+                    : (peak_bin_j - candidates[i].bin);
                 if (bin_diff < CFAR_MIN_PEAK_SEPARATION) {
                     suppressed = true;
                     break;
                 }
             }
             if (!suppressed) {
-                cfar_peaks[peak_count++] = {candidates[i].bin, candidates[i].power};
+                // uint8_t bin: candidates[] bins < FFT_BIN_COUNT (256) by
+                // construction (loop bounds above) — cast never truncates.
+                cfar_peaks[peak_count++] = {
+                    static_cast<uint8_t>(candidates[i].bin),
+                    candidates[i].power};
             }
         }
     }
@@ -2594,14 +2706,17 @@ void DroneScanner::process_spectrum_sweep(
 
             // NARROWBAND GUARD (MaxW): mirror of the normal-mode TBD guard.
             // TBD must never resurrect a wideband flat-top (WiFi/BT) that the
-            // single-frame shape chain (MaxW step of apply_shape_filters)
-            // already rejected — enforce MaxW on the LG buffer too.
-            const size_t tbd_peak_pixel = fft_bin_to_lg_pixel(tbd_peak_bin);
+            // single-frame shape chain (MaxW steps of apply_shape_filters)
+            // already rejected — enforce MaxW on the multi-frame ENVELOPE.
+            // RAW BIN space, not LG pixels: bin size is identical in both
+            // scan modes (DB_CAPTURE_RATE_HZ == SWEEP_SLICE_BW), so MaxW bins
+            // mean the same bandwidth as in DB scan. noise_floor here is the
+            // 25th percentile of the raw usable bins (Step 1 above) — the
+            // same reference the envelope is compared against.
             if (tbd_rssi > config_.rssi_threshold_dbm &&
-                tbd_peak_pixel < COMPOSITE_SIZE &&
                 tbd_peak_is_narrowband(
-                    lg_buffer, COMPOSITE_SIZE, tbd_peak_pixel, noise_floor,
-                    LG_EDGE_SKIP_PX, /*has_dc_gap=*/false)) {
+                    tbd_peak_bin, FFT_BIN_COUNT,
+                    noise_floor, FFT_EDGE_SKIP_NARROW)) {
                 const FreqHz tbd_freq = fft_bin_to_freq(center_freq, tbd_peak_bin);
                 apply_sweep_tracking(
                     tbd_freq, tbd_rssi, center_freq, f_min, f_max

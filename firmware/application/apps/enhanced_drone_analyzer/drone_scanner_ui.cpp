@@ -1539,13 +1539,21 @@ bool DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) 
     // stale, so it MUST NOT be written into the composite AND it must NOT
     // advance bins_hz_acc either.
     //
-    // ACCUMULATION: each of 236 signal-carrying bins contributes effective_bin_size
-    // = step_hz / 236 (not SWEEP_BIN_SIZE = 78,125 Hz). DC spike bins are skipped
-    // entirely — no Hz, no power. This ensures each slice adds exactly step_hz
-    // of unique frequency coverage to the accumulator, preventing the ~2x
-    // inflation caused by overlapping slices (step_hz < SWEEP_SLICE_BW).
-    // The composite then fills at the correct rate: after range / step_hz
-    // slices the accumulator reaches range Hz = 240 × pixel_step_hz.
+    // PROGRESS ACCUMULATOR: each of 236 signal-carrying bins contributes
+    // effective_bin_size = step_hz / 236, so each slice advances pixel_index
+    // by exactly step_hz / pixel_step_hz pixels — scan-head pacing and the
+    // line_full completion check are unchanged.
+    //
+    // DATA PLACEMENT (true-position): each bin is written at the pixel its
+    // REAL RF frequency maps to on the linear window scale,
+    // px = (freq - f_min) * 240 / range — the SAME mapping as the band title
+    // (f_min..f_max) and every tracked drone's frequency. The old sequential
+    // placement squeezed each slice's ~20 MHz of content into its step_hz
+    // pixel slot (~2.4x compression at the gapless 8.83 MHz step), so drawn
+    // peaks sat at columns that did not correspond to the tracked frequency,
+    // and every signal was duplicated once per overlapping slice (ghost
+    // peaks). Max-hold on the target column makes overlapping slices
+    // reinforce; the DC notch of slice k is covered by slices k-1/k+1.
     if (settle_frames_remaining_ > 0) {
         --settle_frames_remaining_;
         return false;
@@ -1562,7 +1570,9 @@ bool DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) 
         exception_radius_hz,
         exceptions,
         EXCEPTIONS_PER_WINDOW,
-        effective_bin_size
+        effective_bin_size,
+        f_min,
+        f_max
     );
     return true;
 }

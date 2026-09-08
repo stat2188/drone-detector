@@ -255,7 +255,13 @@ struct SweepZoneRuntime {
  *       SRAM cost: 2 bytes per peak (8 peaks = 16 bytes on stack).
  */
 struct CFARPeak {
-    size_t bin;      ///< FFT bin index (0-255)
+    // uint8_t, NOT size_t: the bin space is FFT_BIN_COUNT (256) — a uint8_t
+    // holds every legal bin, so the struct packs to 2 bytes with no padding.
+    // The old size_t field padded CFARPeak to 8 bytes, quadrupling the stack
+    // footprint of every CFARPeak array while the doc comments claimed 2
+    // bytes/peak. find_peaks() callers pass bin_count <= FFT_BIN_COUNT, so
+    // the size_t -> uint8_t narrowing at collection sites never truncates.
+    uint8_t bin;     ///< FFT bin index (0-255)
     uint8_t power;   ///< Peak power (0-255)
 };
 
@@ -631,7 +637,10 @@ public:
             if (detect(spectrum, bin_count, i, mode, ref_cells, guard_cells,
                        threshold_x10, alpha, beta, gamma, os_k_percent, vi_threshold_x10)) {
                 if (candidate_count < CFAR_MAX_CONCURRENT_PEAKS * 2) {
-                    candidates[candidate_count++] = {i, spectrum[i]};
+                    // uint8_t bin: i < limit <= bin_count <= FFT_BIN_COUNT
+                    // (256) at every call site — cast never truncates.
+                    candidates[candidate_count++] =
+                        {static_cast<uint8_t>(i), spectrum[i]};
                 }
             }
         }
@@ -1488,7 +1497,8 @@ private:
      *       this method finds ALL CFAR peaks and runs shape filters on each independently.
      *       Critical for detecting multiple FPV transmitters in the same 20 MHz FFT frame.
      *       Uses CFARDetector::find_peaks() (multi-peak) instead of find_peak_cfar() (single).
-     * @note Stack: ~48 bytes (ShapeDetectionResult) + ~64 bytes (CFARPeak candidates) = ~112 bytes
+     * @note Stack: ~48 bytes (ShapeDetectionResult) + ~12 bytes (CFARPeak
+     *       candidates, 6 × 2 B) = ~60 bytes
      * @note center_freq MUST be the frequency passed by the caller, NOT current_frequency_.
      *       The scanner thread mutates current_frequency_ concurrently — reading it from
      *       the UI thread causes a torn 64-bit read (non-atomic on Cortex-M4F).
@@ -1572,6 +1582,107 @@ private:
         int32_t total_gain
     ) noexcept;
 
+    // ------------------------------------------------------------------------
+    // EMISSION EXTENT — hysteresis segmentation (where the signal STARTS and
+    // ENDS). Diamond fix for MaxW fragmentation: a wideband emission with a
+    // peak-dip-peak ripple (WiFi/BT OFDM, overlapping channels) is ONE
+    // emission, not N narrow signals.
+    // ------------------------------------------------------------------------
+
+    /**
+     * @brief Contiguous extent of the RF emission containing a peak.
+     * @note Inclusive bin range [left, right]. width() == 1 for a degenerate
+     *       (peak-only) extent.
+     */
+    struct SignalExtent {
+        size_t left;
+        size_t right;
+        [[nodiscard]] size_t width() const noexcept { return right - left + 1; }
+    };
+
+    /**
+     * @brief Measure the FULL emission extent around a peak (two-level
+     *        hysteresis segmentation over one frame or one envelope image).
+     * @tparam BinFn Callable size_t -> uint8_t (bin power accessor). Non-virtual,
+     *         inlined — zero-overhead abstraction. Pass a frame reader
+     *         ([data](size_t i){ return data[i]; }) or a multi-frame
+     *         OR-envelope reader for TBD.
+     * @param peak_idx    Candidate peak bin
+     * @param noise_floor 25th-percentile noise shelf of the same data
+     * @param edge_skip   Edge bins to skip (FFT_EDGE_SKIP / FFT_EDGE_SKIP_NARROW)
+     * @param has_dc_gap  true = DC spike bins (120-135) are a hard boundary —
+     *                    the walk NEVER bridges them (ADC offset energy)
+     * @return Extent [left, right]: expansion continues while bins >=
+     *         noise_floor + gate/3 (shallow dips — "небольшой спад" — do NOT
+     *         split the emission; only dips reaching the noise shelf do), then
+     *         hysteresis trim removes outer shoulders that never reached
+     *         noise_floor + gate (noise fluctuation, not emission).
+     * @note Anchoring the continuation level at the GATE (not the peak's own
+     *       margin/3) fixes the inversion where a STRONGER WiFi crest measured
+     *       NARROWER: the per-peak /3 threshold let shallow ripples cut the
+     *       fragment, and each fragment passed a minimal MaxW independently.
+     * @pre bin_value(peak_idx) - noise_floor >= shape_gate_margin() when called
+     *      from apply_shape_filters (Step 3 guarantees this) — the trim loops
+     *      are bounded by peak_idx and never extend the extent past the peak.
+     * @note Stack: ~24 bytes. Flash: ~120 bytes. No allocation, no float, O(n).
+     */
+    template <typename BinFn>
+    [[nodiscard]] SignalExtent emission_extent(
+        BinFn&& bin_value,
+        size_t peak_idx,
+        size_t data_size,
+        uint8_t noise_floor,
+        size_t edge_skip,
+        bool has_dc_gap
+    ) const noexcept {
+        // Defense-in-depth guard (mirror of tbd_peak_is_narrowband). Callers
+        // (apply_shape_filters Step 6b) guarantee validity, but data_size <=
+        // edge_skip would underflow upper_limit to SIZE_MAX and free-run the
+        // right walk out of bounds; peak_idx >= data_size would read past the
+        // buffer on the first right-walk step. Degenerate extent: width()==1 —
+        // passes any MaxW check and dedup records only the peak bin itself,
+        // so the fallback cannot over-suppress neighbouring emissions.
+        if (data_size <= edge_skip || peak_idx >= data_size) {
+            return SignalExtent{peak_idx, peak_idx};
+        }
+
+        const uint8_t gate = shape_gate_margin();
+        // uint16 arithmetic: noise_floor (<=255) + gate (<=215) cannot wrap.
+        const uint16_t start_level = static_cast<uint16_t>(noise_floor) + gate;
+        // Elevation floor: continuation threshold must stay >= 1 unit above
+        // the shelf. Current clamps guarantee gate >= 3 (settings_manager.cpp
+        // "spectrum_margin" 5..200; drone_settings.cpp field {5,200}; sensitive
+        // mode 3..198), so gate/3 >= 1 — the floor is defense-in-depth only:
+        // if a future clamp ever admitted gate < 3, gate/3 == 0 would make
+        // cont_level == noise_floor and the extent walk would free-run across
+        // the noise shelf, rejecting everything narrower than the frame.
+        const uint8_t cont_elevation = (gate >= 3) ? static_cast<uint8_t>(gate / 3) : 1;
+        const uint16_t cont_level =
+            static_cast<uint16_t>(noise_floor) + cont_elevation;
+        const size_t upper_limit = data_size - edge_skip;
+
+        SignalExtent ext{peak_idx, peak_idx};
+        while (ext.left > edge_skip) {
+            const size_t prev = ext.left - 1;
+            if (has_dc_gap && prev >= FFT_DC_SPIKE_START && prev < FFT_DC_SPIKE_END) break;
+            if (bin_value(prev) < cont_level) break;
+            --ext.left;
+        }
+        while (ext.right < upper_limit - 1) {
+            const size_t next = ext.right + 1;
+            if (has_dc_gap && next >= FFT_DC_SPIKE_START && next < FFT_DC_SPIKE_END) break;
+            if (bin_value(next) < cont_level) break;
+            ++ext.right;
+        }
+        // Hysteresis trim: an emission exists only where at least one bin
+        // reached the full Step 3 gate. Outer shoulders that stayed between
+        // cont_level and start_level are noise shelf — trim them. Bounded:
+        // the peak itself is >= start_level (see @pre).
+        while (ext.left < peak_idx && bin_value(ext.left) < start_level) ++ext.left;
+        while (ext.right > peak_idx && bin_value(ext.right) < start_level) --ext.right;
+        return ext;
+    }
+
     /**
      * @brief Shared 11-step spectrum shape filter chain (Steps 3-11).
      * @param data         Power data buffer (spectrum.db.data() or lg_buffer)
@@ -1582,10 +1693,19 @@ private:
      * @param edge_skip    Number of edge bins/pixels to skip
      * @param has_dc_gap   true = skip FFT DC spike bins (120-135); false = LG buffer (no DC gap)
      * @param total_gain   Current hardware gain for RSSI conversion
+     * @param out_extent   Optional. When non-null and the function returns true,
+     *                     receives the SignalExtent of the WHOLE emission around
+     *                     the peak (Step 6b). Callers use it for emission dedup:
+     *                     multiple crests of one wideband emitter must yield ONE
+     *                     detection, not N. When the extreme-signal bypass skips
+     *                     Step 6/6b, a degenerate peak-only extent is written
+     *                     instead (dedup must not over-suppress bypassed signals).
      * @return true if signal passes all shape filters
      * @note Stack: ~0 bytes (all state via parameters).
      * @note Shared by analyze_spectrum_shape_impl() (raw FFT) and
-     *       analyze_spectrum_shape_lg() (LG reordered buffer).
+     *       analyze_spectrum_shape_lg() (LG reordered buffer) — ALL MaxW
+     *       semantics, including the Step 6b emission-extent check, are
+     *       therefore identical in DB mode and sweep mode by construction.
      */
     [[nodiscard]] bool apply_shape_filters(
         const uint8_t* data,
@@ -1595,43 +1715,52 @@ private:
         int32_t& out_rssi,
         size_t edge_skip,
         bool has_dc_gap,
-        int32_t total_gain
+        int32_t total_gain,
+        SignalExtent* out_extent = nullptr
     ) const noexcept;
 
     /**
      * @brief MaxW guard for Track-Before-Detect (TBD) confirmation.
-     * @param data        Power data buffer (spectrum.db.data() or lg_buffer)
-     * @param data_size   Buffer length (FFT_BIN_COUNT or COMPOSITE_SIZE)
-     * @param peak_idx    Index of the TBD-confirmed bin/pixel
-     * @param noise_floor Computed noise floor (25th percentile)
-     * @param edge_skip   Number of edge bins/pixels to skip
-     * @param has_dc_gap  true = skip FFT DC spike bins (120-135); false = LG buffer
-     * @return true only if the contiguous elevated width around the peak does
-     *         NOT exceed config_.spectrum_max_width
+     * @param peak_bin    TBD-confirmed FFT bin (raw 256-bin space)
+     * @param data_size   Bin space length (FFT_BIN_COUNT)
+     * @param noise_floor Noise floor of the CURRENT frame (25th percentile)
+     * @param edge_skip   Edge bins to skip (FFT_EDGE_SKIP normal / NARROW sweep)
+     * @return true only if the contiguous elevated width of the emission
+     *         around the peak does NOT exceed config_.spectrum_max_width
      * @note TBD integrates power only and never runs apply_shape_filters(),
      *       so a persistent WiFi/BT flat-top rejected by MaxW single-frame was
      *       re-confirmed 3 frames later and tracked as a drone — silently
      *       ignoring the user's MaxW setting with bypass OFF. This guard
-     *       re-applies the MaxW width semantics (apply_shape_filters Steps
-     *       4+6) on the current frame so every detection honors MaxW.
-     * @note MAR anchoring: the elevation above the noise shelf is
-     *       max(peak_margin, shape_gate_margin())/3 — NOT bare peak_margin/3.
-     *       Single-frame Step 3 guarantees peak_margin >= shape_gate_margin()
-     *       before Step 4 measures width, but TBD peaks sit BELOW that gate,
-     *       where peak_margin/3 (1-3 units) sinks into the noise fluctuation
-     *       band and inflates width -> MaxW false-rejects weak targets. The
-     *       gate anchor keeps the elevation at the reference the user tunes
-     *       (Mar=20 -> 6 units = 1.2 dB above the shelf) and preserves the
-     *       exact Step 4 threshold for peaks above the gate.
-     * @note Stack: ~16 bytes. Flash: ~64 bytes.
+     *       re-applies the MaxW width semantics so every detection honors MaxW.
+     * @note ENVELOPE width (OR over the whole WaterfallHistory integration
+     *       window), NOT current-frame width: a bursty wideband emitter
+     *       (WiFi beacons/packets) occupies a wide union of bins across frames
+     *       even when each individual frame catches a narrow slice. The old
+     *       current-frame check let such emitters through on "narrow-looking"
+     *       frames — TBD never looked at where the signal started and where
+     *       subsequent peaks re-appeared across the window. Measuring the
+     *       envelope closes that escape hatch: narrow stable targets keep a
+     *       narrow envelope, wideband emitters do not. Envelope values are a
+     *       max over frames, so noise inflation stays inside the same
+     *       fluctuation band the MAR anchoring was tuned for (max over 8 frames
+     *       of ~2-unit noise sigma stays below the gate/3 elevation).
+     * @note MAR anchoring preserved: elevation above the noise shelf is
+     *       max(envelope_peak_margin, shape_gate_margin())/3 — TBD peaks sit
+     *       below the gate, where bare peak_margin/3 (1-3 units) sinks into
+     *       the noise fluctuation band and MaxW falsely rejects weak targets.
+     * @note Both TBD call sites (DB scan and process_spectrum_sweep) measure
+     *       width in RAW BIN space: bin size is identical in both modes
+     *       (DB_CAPTURE_RATE_HZ == SWEEP_SLICE_BW, static_assert in
+     *       constants.hpp), so MaxW bins mean the same bandwidth everywhere.
+     *       The former LG-pixel variant measured the same physical width in a
+     *       different unit — unified here.
+     * @note Stack: ~20 bytes. Flash: ~80 bytes.
      */
     [[nodiscard]] bool tbd_peak_is_narrowband(
-        const uint8_t* data,
+        size_t peak_bin,
         size_t data_size,
-        size_t peak_idx,
         uint8_t noise_floor,
-        size_t edge_skip,
-        bool has_dc_gap
+        size_t edge_skip
     ) const noexcept;
 
     /**
@@ -1657,8 +1786,13 @@ private:
     /**
      * @brief Convert 256-bin FFT index to 240-pixel Looking Glass index.
      * @param bin FFT bin index (0-255)
-     * @return Pixel index (0-239), or COMPOSITE_SIZE (sentinel) if bin maps to
-     *         DC spike (bins 120-135, no valid pixel).
+     * @return Pixel index (0-239), or COMPOSITE_SIZE (sentinel) for DC spike
+     *         bins 120-133 (no valid pixel).
+     * @note Bins 134-135 (DC-spike tail) DO map to pixels 0-1 — consistent
+     *       with reorder_frame(), which fills LG pixels 0-1 from db[134-135].
+     *       Harmless today: every peak source (CFAR find_peaks, the
+     *       fixed-threshold fallback, TBD bin scan) skips all DC bins
+     *       120-135, so no caller ever passes 134/135 here.
      * @note Lower sideband (bins 134-255): pixel = bin - 134  →  pixels 0-121
      * @note Upper sideband (bins 0-119):   pixel = bin + 118  →  pixels 118-237
      * @note Edge bins (0-5, 250-255) still produce valid pixel indices; edge
