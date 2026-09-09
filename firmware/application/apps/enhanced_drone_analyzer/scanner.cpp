@@ -2112,19 +2112,16 @@ bool DroneScanner::apply_shape_filters(
         // Step 6b: EMISSION EXTENT (the real MaxW semantics).
         // signal_width (Step 4) is the FRAGMENT above the peak-relative /3
         // threshold; emission_extent() is the WHOLE emission the fragment
-        // belongs to. On a flat WiFi/BT top with peak-dip-peak ripple the
-        // per-peak threshold fragmented one emitter into N narrow pieces that
-        // each passed a minimal MaxW — the emission was re-measured per crest
-        // and MaxW was effectively dead on wideband signals. The extent uses
-        // hysteresis segmentation anchored at the Step 3 GATE: shallow dips
-        // (above noise + gate/3) no longer split the emission; only dips
-        // reaching the noise shelf do (legit video+audio nulls still split).
-        // Anchoring at the gate also removes the strong-signal inversion
-        // where a taller crest raised its own /3 threshold and measured
-        // NARROWER than a weak one.
+        // belongs to, measured at the HALF-POWER level (peak − 6 dB, floored
+        // at gate/3): shallow dips no longer split the emission; only dips
+        // deeper than −6 dB do (legit video+audio nulls still split). The
+        // −6 dB band is amplitude-stable in MHz, so MaxW maps to real
+        // bandwidth: analog FM video (8-18 MHz) measures 100-140 bins and
+        // passes MaxW=200 at ANY range, while WiFi rejection shifts to the
+        // sharpness gate (flat OFDM tops ≈ 100-115 < 120) + valley depth.
         const SignalExtent emission = emission_extent(
             [data](size_t i) noexcept { return data[i]; },
-            peak_idx, data_size, noise_floor, edge_skip, has_dc_gap);
+            peak_idx, data_size, noise_floor, peak_margin, edge_skip, has_dc_gap);
         if (emission.width() > config_.spectrum_max_width) return false;
         if (out_extent != nullptr) {
             *out_extent = emission;
@@ -2332,27 +2329,30 @@ bool DroneScanner::tbd_peak_is_narrowband(
     const uint8_t envelope_peak = waterfall_history_.get_max_across_frames(peak_bin);
     if (envelope_peak <= noise_floor) return false;
 
-    // MAR-anchored elevated threshold (Step 4 parity for the TBD domain).
-    // apply_shape_filters measures width at noise_floor + peak_margin/3, but
-    // its Step 3 gate (peak_margin >= shape_gate_margin) guarantees the /3
-    // elevation is ALWAYS >= gate/3 in that chain. TBD sees peaks BELOW the
-    // gate (peak_margin < gate), where peak_margin/3 sinks to 1-3 units
-    // (~0.2-0.6 dB) — inside the noise fluctuation band above the
-    // 25th-percentile shelf — so flanking noise bins inflated the measured
-    // width and MaxW falsely rejected exactly the weak targets TBD exists to
-    // find (the noise shelf was absorbed into the width measurement).
-    // Anchoring the elevation at the full Step 3 gate —
-    // max(peak_margin, shape_gate_margin)/3 — restores the design point Step 4
-    // was tuned for (Mar=20 -> 6 units = 1.2 dB above the shelf) for every TBD
-    // peak. The envelope is a max over frames, so noise inflation stays in
-    // the same fluctuation band (max of 8 frames of ~2-unit sigma stays
-    // below the gate/3 elevation).
-    // uint16 arithmetic: noise_floor (<=255) + 255/3 cannot wrap.
+    // MAR-anchored elevated threshold (Step 6b parity for the TBD domain).
+    // apply_shape_filters measures the emission extent at the HALF-POWER
+    // level (noise_floor + peak_margin/2 = peak − 6 dB), floored at gate/3.
+    // TBD sees peaks BELOW the gate (peak_margin < gate), where a bare
+    // peak_margin/2 sinks to 1-2 units (~0.2-0.4 dB) — inside the noise
+    // fluctuation band above the 25th-percentile shelf — so flanking noise
+    // bins would inflate the measured width and MaxW falsely reject exactly
+    // the weak targets TBD exists to find. Anchoring the elevation at
+    // max(peak_margin, shape_gate_margin)/2 keeps the floor above the
+    // fluctuation band for every TBD peak. The envelope is a max over
+    // frames, so noise inflation stays in the same band (max of 8 frames of
+    // ~2-unit sigma stays below the gate/2 elevation).
+    // uint16 arithmetic: noise_floor (<=255) + 255/2 cannot wrap.
     const uint8_t peak_margin = envelope_peak - noise_floor;
     const uint8_t eff_margin = shape_gate_margin();
     const uint8_t width_margin = (peak_margin > eff_margin) ? peak_margin : eff_margin;
+    // HALF-POWER parity with apply_shape_filters Step 6b: the width threshold
+    // is peak − 6 dB (max(peak_margin, gate)/2 above the shelf), so MaxW bins
+    // mean the same bandwidth in the TBD domain as in the single-frame chain.
+    // The floor at gate/2 keeps the elevation above the noise fluctuation
+    // band (max over 8 frames of ~2-unit sigma stays below gate/2 = 10 units
+    // at the default Mar=20).
     const uint16_t elevated_threshold =
-        static_cast<uint16_t>(noise_floor) + static_cast<uint16_t>(width_margin / 3);
+        static_cast<uint16_t>(noise_floor) + static_cast<uint16_t>(width_margin / 2);
 
     const size_t upper_limit = data_size - edge_skip;
 

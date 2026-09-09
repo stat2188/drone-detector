@@ -1607,23 +1607,34 @@ private:
      *         inlined — zero-overhead abstraction. Pass a frame reader
      *         ([data](size_t i){ return data[i]; }) or a multi-frame
      *         OR-envelope reader for TBD.
-     * @param peak_idx    Candidate peak bin
-     * @param noise_floor 25th-percentile noise shelf of the same data
-     * @param edge_skip   Edge bins to skip (FFT_EDGE_SKIP / FFT_EDGE_SKIP_NARROW)
-     * @param has_dc_gap  true = DC spike bins (120-135) are a hard boundary —
-     *                    the walk NEVER bridges them (ADC offset energy)
-     * @return Extent [left, right]: expansion continues while bins >=
-     *         noise_floor + gate/3 (shallow dips — "небольшой спад" — do NOT
-     *         split the emission; only dips reaching the noise shelf do), then
-     *         hysteresis trim removes outer shoulders that never reached
-     *         noise_floor + gate (noise fluctuation, not emission).
-     * @note Anchoring the continuation level at the GATE (not the peak's own
-     *       margin/3) fixes the inversion where a STRONGER WiFi crest measured
-     *       NARROWER: the per-peak /3 threshold let shallow ripples cut the
-     *       fragment, and each fragment passed a minimal MaxW independently.
-     * @pre bin_value(peak_idx) - noise_floor >= shape_gate_margin() when called
-     *      from apply_shape_filters (Step 3 guarantees this) — the trim loops
-     *      are bounded by peak_idx and never extend the extent past the peak.
+     * @param peak_idx     Candidate peak bin
+     * @param noise_floor  25th-percentile noise shelf of the same data
+     * @param peak_margin  Elevation of the peak above noise_floor in the SAME
+     *                     data (bin_value(peak_idx) - noise_floor). Drives the
+     *                     half-power continuation anchor.
+     * @param edge_skip    Edge bins to skip (FFT_EDGE_SKIP / FFT_EDGE_SKIP_NARROW)
+     * @param has_dc_gap   true = DC spike bins (120-135) are a hard boundary —
+     *                     the walk NEVER bridges them (ADC offset energy)
+     * @return Extent [left, right]: expansion continues while bins >= the
+     *         HALF-POWER level noise_floor + max(peak_margin/2, gate/3)
+     *         (peak − 6 dB, floored above the noise fluctuation band) — shallow
+     *         dips do NOT split the emission; only dips deeper than −6 dB do.
+     *         Hysteresis trim then removes outer shoulders that never reached
+     *         noise_floor + max(gate, peak_margin/2).
+     * @note HALF-POWER ANCHOR: the −6 dB band of an analog FM video carrier is
+     *       ~constant in MHz across its usable range, so MaxW maps to REAL
+     *       bandwidth (8-18 MHz FPV = 102-230 bins at 78.125 kHz/bin). The old
+     *       gate/3 anchor (+1.3 dB over the shelf) made the extent balloon to
+     *       the full 18 MHz FPV channel at close range (≈230 bins) while a
+     *       WiFi 20 MHz top measured ≈236 bins — the two were
+     *       indistinguishable by width at ANY MaxW setting. At −6 dB the FPV
+     *       video band measures 100-140 bins (passes MaxW=200) and WiFi
+     *       rejection shifts to the sharpness gate (flat OFDM fragments,
+     *       sharpness ≈ 100-115 < 120) + valley + opt-in flatness.
+     * @pre peak_margin == bin_value(peak_idx) - noise_floor and
+     *      peak_margin >= shape_gate_margin() when called from
+     *      apply_shape_filters (Step 3 guarantees this) — the trim loops are
+     *      bounded by peak_idx and never extend the extent past the peak.
      * @note Stack: ~24 bytes. Flash: ~120 bytes. No allocation, no float, O(n).
      */
     template <typename BinFn>
@@ -1632,6 +1643,7 @@ private:
         size_t peak_idx,
         size_t data_size,
         uint8_t noise_floor,
+        uint8_t peak_margin,
         size_t edge_skip,
         bool has_dc_gap
     ) const noexcept {
@@ -1647,16 +1659,20 @@ private:
         }
 
         const uint8_t gate = shape_gate_margin();
-        // uint16 arithmetic: noise_floor (<=255) + gate (<=215) cannot wrap.
-        const uint16_t start_level = static_cast<uint16_t>(noise_floor) + gate;
-        // Elevation floor: continuation threshold must stay >= 1 unit above
-        // the shelf. Current clamps guarantee gate >= 3 (settings_manager.cpp
-        // "spectrum_margin" 5..200; drone_settings.cpp field {5,200}; sensitive
-        // mode 3..198), so gate/3 >= 1 — the floor is defense-in-depth only:
-        // if a future clamp ever admitted gate < 3, gate/3 == 0 would make
-        // cont_level == noise_floor and the extent walk would free-run across
-        // the noise shelf, rejecting everything narrower than the frame.
-        const uint8_t cont_elevation = (gate >= 3) ? static_cast<uint8_t>(gate / 3) : 1;
+        // Trim level: the emission must reach max(gate, −6 dB). For weak peaks
+        // (peak_margin ≈ gate) this is the Step 3 gate — unchanged legacy
+        // behavior; for strong peaks the −6 dB band IS the emission.
+        // uint16 arithmetic: noise_floor (<=255) + max(peak_margin, gate)
+        // (<=255) cannot wrap.
+        const uint16_t start_level = static_cast<uint16_t>(noise_floor)
+            + ((peak_margin > gate) ? peak_margin : gate);
+        // HALF-POWER continuation anchor: peak − 6 dB, floored at gate/3 so
+        // weak peaks never sink into the noise fluctuation band (clamps
+        // guarantee gate >= 3, so gate/3 >= 1 — the floor is
+        // defense-in-depth only).
+        const uint8_t half_power = static_cast<uint8_t>(peak_margin / 2);
+        const uint8_t gate_floor = (gate >= 3) ? static_cast<uint8_t>(gate / 3) : 1;
+        const uint8_t cont_elevation = (half_power > gate_floor) ? half_power : gate_floor;
         const uint16_t cont_level =
             static_cast<uint16_t>(noise_floor) + cont_elevation;
         const size_t upper_limit = data_size - edge_skip;
@@ -1675,9 +1691,9 @@ private:
             ++ext.right;
         }
         // Hysteresis trim: an emission exists only where at least one bin
-        // reached the full Step 3 gate. Outer shoulders that stayed between
-        // cont_level and start_level are noise shelf — trim them. Bounded:
-        // the peak itself is >= start_level (see @pre).
+        // reached the trim level max(gate, −6 dB). Outer shoulders that stayed
+        // between cont_level and start_level are noise shelf — trim them.
+        // Bounded: the peak itself is >= start_level (see @pre).
         while (ext.left < peak_idx && bin_value(ext.left) < start_level) ++ext.left;
         while (ext.right > peak_idx && bin_value(ext.right) < start_level) --ext.right;
         return ext;

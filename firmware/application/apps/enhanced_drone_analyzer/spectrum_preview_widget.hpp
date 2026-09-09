@@ -27,14 +27,16 @@ public:
         uint8_t symmetry) noexcept;
 
 private:
+    // Initializers mirror the ANALOG FPV defaults in constants.hpp; runtime
+    // values always arrive via set_params() from DroneSettingsView.
     uint8_t margin_{20};
-    uint8_t min_width_{5};
+    uint8_t min_width_{9};
     uint8_t max_width_{200};
-    uint8_t sharpness_{130};
+    uint8_t sharpness_{120};
     uint8_t peak_ratio_{0};
     uint8_t valley_depth_{80};
-    uint8_t flatness_{30};
-    uint8_t symmetry_{50};
+    uint8_t flatness_{0};
+    uint8_t symmetry_{0};
 
     static ui::Color amplitude_color(int32_t h, int32_t max_h) noexcept;
 };

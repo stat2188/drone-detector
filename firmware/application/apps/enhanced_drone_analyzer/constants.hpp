@@ -878,32 +878,52 @@ constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 9;
 /**
  * @brief Default maximum signal width in bins (1-255)
  * @note Signals wider than this are rejected as flat-topped U/I noise
- * @note 40 bins ≈ 3.1 MHz (ANALOG FPV DEFAULT) — targets the video-carrier
- *       core of an analog FM FPV channel (the dominant energy is far narrower
- *       than the full ~18 MHz channel slot at the widths measured by the
- *       elevated-threshold logic). Aggressively rejects WiFi 20 MHz OFDM
- *       (~256 bins), BT and microwave flat-tops at ANY SNR level
- * @note 230 bins = ~18 MHz (previous default) — accepted full-channel FPV but
- *       also let medium-width flat noise through at low SNR
- * @note Even wider flat noise is additionally caught by the flatness + valley
- *       depth filters independently of max width
+ * @note 200 bins ≈ 15.6 MHz (ANALOG FPV DEFAULT, Step-6b emission-extent
+ *       semantics): the extent is measured at the HALF-POWER level (peak − 6 dB,
+ *       floored at noise + Mar/3). The −6 dB band of an analog FM video carrier
+ *       is ~constant in MHz across its usable range — 8-14 MHz = 100-180 bins —
+ *       so 200 accepts real FPV video at ANY range. The previous default of 40
+ *       bins (≈3.1 MHz), tuned for the old crest-fragment semantics, rejected
+ *       REAL FPV video at any range where the video skirt rose above the extent
+ *       threshold — analog FPV detection was structurally dead. WiFi 20 MHz
+ *       OFDM at −6 dB still measures ≈200-236 bins (rejected at the MaxW=200
+ *       boundary and by the sharpness gate: flat OFDM tops sit at sharpness
+ *       100-115 < 120). Residual medium-width flat noise is caught
+ *       independently by the sharpness (Step 7), valley (Step 9) and
+ *       opt-in flatness (Step 10) filters.
+ * @note 40 bins ≈ 3.1 MHz (previous default) — was tuned for the OLD
+ *       crest-fragment width semantics; under the emission-extent semantics it
+ *       rejected wide analog FPV. Revert only if the primary threat is
+ *       narrowband (ELRS/FrSky control links) and WiFi rejection must be
+ *       maximally aggressive
+ * @note 230 bins = ~18 MHz — full FPV channel slot; lets borderline flat noise
+ *       through at low SNR (only 6 usable bins of margin remain)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 40;
+constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 200;
 
 /**
  * @brief Default minimum peak sharpness ratio (50-250)
  * @note sharpness = (peak_margin * 100) / avg_margin
  * @note Inverted-V peaks have sharpness > 200; flat U/I shapes have sharpness ~ 100
  * @note 50 = no sharpness filtering (accept all shapes)
- * @note 150 (ANALOG FPV DEFAULT) — accepts the dominant video carrier
- *       (single dominant peak, sharpness 150-250) while firmly rejecting
- *       flat WiFi/BT tops (sharpness ≈ 100-110). Dual-peak analog FM shapes
- *       (sharpness ~80-120 at medium range) are the trade-off: they lose
- *       sharpness filtering in exchange for the tighter max_width=40 +
- *       margin=20 gates doing the FP rejection instead
- * @note Previous default was 75 (accepted flat noise shapes)
+ * @note 120 (ANALOG FPV DEFAULT) — analog FM video is NOT a needle-sharp
+ *       inverted-V: the FM video spectrum is a quasi-flat block with a
+ *       dominant carrier peak, sharpness ≈ 100-130 at medium range (the
+ *       measured width is taken at noise + margin/3, where the whole video
+ *       skirt is elevated, so avg_margin tracks the peak closely). The
+ *       previous default of 150 rejected real FPV video in exactly the
+ *       medium-SNR band where detection matters, accepting only far-field
+ *       crest-fragment shapes (sharpness 150-250). WiFi/BT flat tops sit at
+ *       sharpness ≈ 100-110 — 120 keeps a working separation margin.
+ *       On WiFi-dense sites raise to 140-160 (accepts only far-field FPV
+ *       crest shapes, rejects everything flat). Dual-peak analog FM shapes
+ *       (video + audio subcarrier, sharpness 80-120 at medium range) trade
+ *       sharpness filtering for the max_width=200 + margin=20 + valley=80
+ *       gates doing the FP rejection instead
+ * @note Previous default was 75 (accepted flat noise shapes), then 150
+ *       (rejected medium-range analog FPV)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 150;
+constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 120;
 
 /**
  * @brief Default peak-to-width ratio threshold (0-255)

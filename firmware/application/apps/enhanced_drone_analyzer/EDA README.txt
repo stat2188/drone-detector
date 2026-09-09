@@ -747,13 +747,20 @@ Each step can independently reject a detection.
     → Rejects single-bin noise spikes
 
   Step 3: Maximum Width
-    signal_width must be below spectrum_max_width (default 40 bins ≈ 3.1 MHz)
-    → Rejects flat U/I noise (WiFi, BT)
+    signal_width (Step-4 fragment) AND the WHOLE emission extent (Step 6b,
+    hysteresis segmentation at the HALF-POWER level: peak − 6 dB, floored at
+    noise + margin/3) must both be below spectrum_max_width
+    (default 200 bins ≈ 15.6 MHz)
+    → Rejects WiFi 20 MHz OFDM (extent ≈ 236 usable bins) and BT flat-tops.
+    CAUTION: values below ~100 bins (7.8 MHz) reject analog FPV video
+    carriers (8-18 MHz) — the emission extent measures the FULL video band,
+    not the crest fragment
 
   Step 4: Peak Sharpness
     sharpness = (peak_margin * 100) / avg_margin
-    Must exceed spectrum_peak_sharpness (default 150)
-    → Rejects flat-top signals, accepts dual-peak FPV
+    Must exceed spectrum_peak_sharpness (default 120)
+    → Rejects flat-top signals (WiFi ≈ 100-110), accepts analog FM video
+      (quasi-flat carrier block, ≈ 100-130 at medium range)
 
   Step 5: Peak-to-Width Ratio
     ratio = (peak_margin * 10) / signal_width
@@ -1120,8 +1127,11 @@ FFT Bin Layout:
 Spectrum Shape Defaults:
   DEFAULT_SPECTRUM_MARGIN         = 20    (≈4 dB, analog FPV)
   DEFAULT_SPECTRUM_MIN_WIDTH      = 9     (≈700 kHz, analog FPV)
-  DEFAULT_SPECTRUM_MAX_WIDTH      = 40    (≈3.1 MHz, analog FPV)
-  DEFAULT_SPECTRUM_PEAK_SHARPNESS = 150
+  DEFAULT_SPECTRUM_MAX_WIDTH      = 200   (≈15.6 MHz, analog FPV — Step-6b
+                                           emission extent; 40 rejected real
+                                           FM video carriers 8-18 MHz)
+  DEFAULT_SPECTRUM_PEAK_SHARPNESS = 120   (analog FM video ≈ 100-130,
+                                           WiFi flat-top ≈ 100-110)
   DEFAULT_SPECTRUM_PEAK_RATIO     = 0     (disabled)
   DEFAULT_SPECTRUM_VALLEY_DEPTH   = 80
   DEFAULT_SPECTRUM_FLATNESS       = 0     (disabled, analog FPV)

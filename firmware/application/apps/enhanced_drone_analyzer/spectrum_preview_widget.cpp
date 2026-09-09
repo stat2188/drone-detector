@@ -6,9 +6,12 @@
 
 namespace drone_analyzer {
 
-// Scaling factor: maps parameter range (0-255) to pixel space.
-// For a 240px-wide widget: max_width_=200 -> 200*240/512 ~ 94px (~39% width).
-constexpr int PARAM_TO_PX = 512;
+// True bin scale: the preview spans the 240-pixel sweep composite
+// (COMPOSITE_SIZE = the full FFT window, ~20 MHz / 236 signal bins).
+// Width settings are BINS — they map 1:1 onto the same fraction of the
+// preview width, so the drawn shape and the mn/mx markers move in real MHz
+// (1 bin = 78.125 kHz; e.g. MaxW=200 -> ~83% of the preview width).
+constexpr int PREVIEW_BIN_SPAN = 240;
 
 // Color gradient segments for amplitude_color(): green->yellow->red across 768 steps.
 constexpr uint32_t COLOR_SEGMENTS = 3u;
@@ -85,9 +88,11 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
     painter.draw_hline({x0, floor_y}, w, ui::Color::darker_grey());
 
     // --- Peak shape: controlled by MaxW (base width), Sharpness, Flatness, Valley, Symmetry ---
-    // MaxW sets the base half-width. Rat does NOT affect the peak shape.
-    int half_px = static_cast<int>(max_width_);
-    half_px = std::max(5, std::min(w / 3, half_px * w / PARAM_TO_PX));
+    // MaxW sets the base half-width at TRUE BIN SCALE: the preview spans the
+    // 240-bin composite window, so MaxW bins occupy MaxW/240 of the preview
+    // width (half on each side of the carrier). Rat does NOT affect the peak.
+    int half_px = static_cast<int>(max_width_) * w / (2 * PREVIEW_BIN_SPAN);
+    half_px = std::max(2, std::min(w / 2 - 2, half_px));
 
     // Valley floor height (pixels above baseline). Maps 0-200 to 0-50% of peak_h.
     int valley_px = static_cast<int>(valley_depth_) * peak_h / 400;
@@ -152,10 +157,12 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
     }
 
     // --- Width markers: red = min_width, grey = max_width ---
-    // These markers show the ABSOLUTE width boundaries. MaxW markers do NOT
-    // respond to Rat — they only move when MaxW changes.
-    const int min_px = static_cast<int>(min_width_) * w / PARAM_TO_PX;
-    const int max_px = std::max(5, std::min(w / 3, static_cast<int>(max_width_) * w / PARAM_TO_PX));
+    // TRUE BIN SCALE half-widths (bins/240 of the preview span): the markers
+    // move in real MHz — 1 bin = 78.125 kHz. MaxW markers do NOT respond to
+    // Rat — they only move when MaxW changes.
+    const int min_px = static_cast<int>(min_width_) * w / (2 * PREVIEW_BIN_SPAN);
+    const int max_px = std::max(2, std::min(w / 2 - 2,
+        static_cast<int>(max_width_) * w / (2 * PREVIEW_BIN_SPAN)));
 
     for (int side = -1; side <= 1; side += 2) {
         const int ml = center + side * min_px;
