@@ -150,7 +150,12 @@ static void parse_settings_line(
         s.scan_sensitivity = static_cast<uint8_t>(sens > 100 ? 100 : (sens < 0 ? 0 : sens));
         s.alert_rssi_threshold_dbm = -20 - s.scan_sensitivity;
     } else if (key_matches("rssi_threshold_db")) {
-        s.alert_rssi_threshold_dbm = parse_signed_int();
+        const int32_t v = parse_signed_int();
+        // Clamp like the threat_*_db keys: a hand-edited/corrupt file must not
+        // inject an out-of-range gate that would cascade garbage through the
+        // threat-ladder reachability invariant and persist on the next save.
+        s.alert_rssi_threshold_dbm =
+            (v < RSSI_MIN_DBM) ? RSSI_MIN_DBM : (v > RSSI_MAX_DBM) ? RSSI_MAX_DBM : v;
         // Derive scan_sensitivity to stay in sync with threshold
         const int32_t sens = -20 - s.alert_rssi_threshold_dbm;
         s.scan_sensitivity = static_cast<uint8_t>(sens > 100 ? 100 : (sens < 0 ? 0 : sens));

@@ -117,9 +117,11 @@ private:
     SettingsStruct settings_;
     bool settings_dirty_;
 
-    // LOW-auto-follow offset: LOW tracks the detection gate (Sens) by this delta,
-    // preserving the user's manual LOW preference across sensitivity changes.
-    int32_t rssi_low_offset_db_{0};
+    // Last detection gate (Sens) in dBm seen by normalize_threat_ladder().
+    // Used to translate the WHOLE threat ladder by the gate delta when the
+    // user changes Sensitivity, so all shelves move coherently and the
+    // tuned gaps between shelves are preserved.
+    int32_t prev_gate_dbm_{RSSI_DETECTION_THRESHOLD_DBM};
 
     void apply_settings_to_ui() noexcept;
     void update_preview() noexcept;

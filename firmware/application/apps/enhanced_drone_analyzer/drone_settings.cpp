@@ -42,7 +42,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         {{UI_POS_X(0), UI_POS_Y(16)}, "Lo:", Color::white()},
         {{UI_POS_X(8), UI_POS_Y(16)}, "Md:", Color::white()},
         {{UI_POS_X(16), UI_POS_Y(16)}, "Hi:", Color::white()},
-        {{UI_POS_X(24), UI_POS_Y(16)}, "Cr:", Color::white()},
+        {{UI_POS_X(23), UI_POS_Y(16)}, "Cr:", Color::white()},
         {{UI_POS_X(0), UI_POS_Y(7)}, "Mrg:", Color::white()},
     })
     , field_scan_interval_({UI_POS_X(1), UI_POS_Y(2)}, 4, {10, 1000}, 10, ' ')
@@ -82,10 +82,13 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , button_save_({UI_POS_X(15), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(14), 20}, "SAVE")
     , check_shape_bypass_({UI_POS_X(9), UI_POS_Y(7)}, 5, "Byp", false)
     , check_median_enabled_({UI_POS_X(15), UI_POS_Y(7)}, 4, "Md+", false)
-    , field_threat_low_({UI_POS_X(3), UI_POS_Y(16)}, 3, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
-    , field_threat_medium_({UI_POS_X(11), UI_POS_Y(16)}, 3, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
-    , field_threat_high_({UI_POS_X(19), UI_POS_Y(16)}, 3, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
-    , field_threat_critical_({UI_POS_X(27), UI_POS_Y(16)}, 3, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
+    // Threat shelf fields: length 4 — the range includes 4-glyph values
+    // ("-120"); a 3-char field would paint outside its rect and leave stale
+    // digits ("990" ghosts) when a 4-glyph value is replaced by a 3-glyph one.
+    , field_threat_low_({UI_POS_X(3), UI_POS_Y(16)}, 4, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
+    , field_threat_medium_({UI_POS_X(11), UI_POS_Y(16)}, 4, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
+    , field_threat_high_({UI_POS_X(19), UI_POS_Y(16)}, 4, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
+    , field_threat_critical_({UI_POS_X(26), UI_POS_Y(16)}, 4, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
     , field_cfar_mode_({UI_POS_X(4), UI_POS_Y(0)}, 7, {
         {"OFF", static_cast<int32_t>(CFARMode::OFF)},
         {"CA", static_cast<int32_t>(CFARMode::CA)},
@@ -505,6 +508,12 @@ void DroneSettingsView::focus() {
 // ============================================================================
 
 void DroneSettingsView::apply_settings_to_ui() noexcept {
+    // Sync the gate tracker BEFORE any set_value() can fire the Sens on_change
+    // callback (e.g. the DEFAULTS button path, where callbacks are already
+    // attached): this makes the ladder-translation delta zero for a pure
+    // reload, so loaded/default shelf values are never spuriously shifted.
+    prev_gate_dbm_ = settings_.alert_rssi_threshold_dbm;
+
     field_scan_interval_.set_value(settings_.scan_interval_ms);
     {
         const int32_t sens = -(settings_.alert_rssi_threshold_dbm + 20);
@@ -551,13 +560,9 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     field_threat_high_.set_value(settings_.threat_high_dbm, false);
     field_threat_critical_.set_value(settings_.threat_critical_dbm, false);
 
-    // Track the LOW-vs-gate offset from the current settings so the safety-net
-    // normalize(4) below preserves the user's loaded/manual LOW preference
-    // instead of overwriting it with the default gap.
-    rssi_low_offset_db_ = settings_.threat_low_dbm - settings_.alert_rssi_threshold_dbm;
-
     // Safety net: enforce the LOW-reachability invariant on any loaded/old config,
-    // without disturbing the user's ordering choices (edited_field=4).
+    // without disturbing the user's ordering choices (edited_field=4; the gate
+    // tracker was synced above, so the translation delta is zero here).
     normalize_threat_ladder(4);
 
     // Set initial visibility based on spectrum detection state
@@ -608,19 +613,26 @@ void DroneSettingsView::set_shape_filter_visibility(bool visible) noexcept {
 // or sensitivity edit:
 //   (1) low <= medium <= high <= critical
 //   (2) medium > detection_threshold + RSSI_MIN_MEDIUM_ABOVE_DETECTION_DB
-//   (3) LOW auto-follows the detection gate (low = gate + rssi_low_offset_db_)
+//   (3) On a Sens change, the WHOLE ladder is translated by the gate delta
+//       (prev_gate_dbm_ -> settings_.alert_rssi_threshold_dbm)
 //
 // Invariant (2) is the LOW-reachability guarantee: a signal that just passes
 // the detection gate (threshold + 2 dB hysteresis) must still have room to
 // classify as LOW. If detection is raised up to/beyond medium, every detected
 // signal would classify MEDIUM+ and LOW would never appear on screen.
 //
+// Invariant (3) makes all four threat shelves ("полки") move COHERENTLY when
+// the user changes Sensitivity: every shelf shifts by the same delta, so the
+// user-tuned gaps between shelves are preserved. (The previous design dragged
+// only LOW along the gate via a stored offset — with factory defaults that
+// offset was zero, so visibly only Lo moved, and it tracked the raw gate.)
+//
 // @param edited_field 0=low, 1=medium, 2=high, 3=critical, 4=detection (Sens).
 //                     Used to prioritize the field the user just touched, while
 //                     neighboring thresholds are auto-adjusted to keep order.
-//                     When detection (Sens) changes, LOW auto-follows the gate
-//                     (low = gate + rssi_low_offset_db_) keeping the LOW band
-//                     reachable; the offset preserves the user's manual LOW edit.
+//                     On Sens edits (4), translation is anchored to the gate
+//                     delta recorded in prev_gate_dbm_; prev_gate_dbm_ is
+//                     refreshed at the end of the call.
 void DroneSettingsView::normalize_threat_ladder(uint8_t edited_field) noexcept {
     // Priority order: the edited field's value wins; neighbors are pushed up
     // or down only to satisfy ordering relative to it.
@@ -629,17 +641,26 @@ void DroneSettingsView::normalize_threat_ladder(uint8_t edited_field) noexcept {
     int32_t high = settings_.threat_high_dbm;
     int32_t critical = settings_.threat_critical_dbm;
 
-    // When the detection gate (Sens) changes, drag LOW along so the LOW band
-    // stays reachable at any sensitivity: low = gate + user-preserved offset.
+    // When the detection gate (Sens) changes, translate the ENTIRE ladder by
+    // the gate delta so all shelves move together. clip() is monotone, so a
+    // uniform shift + clamp can never invert the low<=medium<=high<=critical
+    // ordering. Stack: ~48 bytes total for this function.
     if (edited_field == 4) {
-        low = clip(settings_.alert_rssi_threshold_dbm + rssi_low_offset_db_,
-                   RSSI_MIN_DBM, RSSI_MAX_DBM);
+        const int32_t gate_delta =
+            settings_.alert_rssi_threshold_dbm - prev_gate_dbm_;
+        if (gate_delta != 0) {
+            low = clip(low + gate_delta, RSSI_MIN_DBM, RSSI_MAX_DBM);
+            medium = clip(medium + gate_delta, RSSI_MIN_DBM, RSSI_MAX_DBM);
+            high = clip(high + gate_delta, RSSI_MIN_DBM, RSSI_MAX_DBM);
+            critical = clip(critical + gate_delta, RSSI_MIN_DBM, RSSI_MAX_DBM);
+        }
     }
 
     // Median-clamp: restore ordering, preserving the edited value.
     switch (edited_field) {
-        case 4:  // Detection (Sens) edited: LOW followed the gate above; never
-                 // push the upper ladder up — cap LOW at medium instead (the
+        case 4:  // Detection (Sens) edited: the whole ladder was translated
+                 // above; uniform shift + monotone clamp preserves order, but
+                 // cap LOW at medium as a belt-and-braces guard (the
                  // LOW-reachability invariant below still guards the gap).
             if (low > medium) low = medium;
             break;
@@ -684,9 +705,11 @@ void DroneSettingsView::normalize_threat_ladder(uint8_t edited_field) noexcept {
     high = clip(high, RSSI_MIN_DBM, RSSI_MAX_DBM);
     critical = clip(critical, RSSI_MIN_DBM, RSSI_MAX_DBM);
 
-    // Track the LOW-vs-gate offset so future Sens edits can drag LOW along
-    // while preserving the user's manual LOW preference.
-    rssi_low_offset_db_ = low - settings_.alert_rssi_threshold_dbm;
+    // Track the gate so the next Sens edit translates the ladder by the true
+    // delta (encoder steps fire one on_change per click).
+    if (edited_field == 4) {
+        prev_gate_dbm_ = settings_.alert_rssi_threshold_dbm;
+    }
 
     settings_.threat_low_dbm = low;
     settings_.threat_medium_dbm = medium;
