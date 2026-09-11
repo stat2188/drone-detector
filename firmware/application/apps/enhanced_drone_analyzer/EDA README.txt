@@ -391,10 +391,12 @@ Sweep Architecture:
   └──────────────────────────────────────────────────────┘
 
   ┌──────────────────────────────────────────────────────┐
-  │  Looking Glass Bin Reordering:                        │
-  │    FFT bins 134-253 → screen pixels 0-119 (lower SB)  │
-  │    FFT bins 2-119   → screen pixels 120-238 (upper SB)│
-  │    Bins 119-136     → DC spike (skipped, no Hz)       │
+  │  Shape Analysis (RAW FFT bins, both modes):          │
+  │    RF-monotonic 256-bin axis; DC spike (120-135) is  │
+  │    a hard measurement boundary. MaxW/valley/         │
+  │    flatness/symmetry identical to DB scan.           │
+  │    Former LG 240-px reorder removed: its wrap seam   │
+  │    merged band-edge emissions into one "wide" peak.  │
   └──────────────────────────────────────────────────────┘
 
   ┌──────────────────────────────────────────────────────┐
@@ -939,7 +941,6 @@ Key BSS Structures:
   spectrum_buffer_    — ChannelSpectrum (256 bytes)
   refresh_drones_[16] — TrackedDrone array (2,560 bytes)
   sweep_[4]           — SweepWindow array (~1,200 bytes)
-  lg_frame_buf_[240]  — Looking Glass reorder buffer
   auto_gain_control_  — AutoGainControl (~16 bytes)
 
 Stack-Heavy Functions (monitored):

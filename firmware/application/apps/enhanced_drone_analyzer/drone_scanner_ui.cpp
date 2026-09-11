@@ -1231,13 +1231,10 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         // f_center may have already been incremented from the previous frame's step.
         const FreqHz fft_freq = (last_tuned_freq_ != 0) ? last_tuned_freq_ : win.f_center;
 
-        // Create per-frame Looking Glass reordered view (continuous 240-pixel line).
-        // Used by shape analysis (no DC gap corruption) and passed to scanner.
-        // Pattern matching uses raw FFT directly (consistent with saved patterns).
-        SweepProcessor::reorder_frame(spectrum, lg_frame_buf_);
-
-        // Pass sweep range boundaries to prevent false positives outside the range
-        scanner_ptr_->process_spectrum_sweep(spectrum, lg_frame_buf_, fft_freq, win.f_min, win.f_max);
+        // Pass sweep range boundaries to prevent false positives outside the range.
+        // Shape analysis runs on RAW FFT bins inside the scanner (RF-monotonic,
+        // DC gap = hard measurement boundary) — never on display-mapped buffers.
+        scanner_ptr_->process_spectrum_sweep(spectrum, fft_freq, win.f_min, win.f_max);
 
         // AGC for sweep mode — applies optimal gains to each frame's spectrum
         apply_agc(spectrum.db.data());

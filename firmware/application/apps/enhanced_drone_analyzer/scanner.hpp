@@ -1222,18 +1222,21 @@ public:
     /**
      * @brief Lightweight spectrum processing for sweep mode
      * @param spectrum Channel spectrum data (256 bins)
-     * @param lg_buffer 240-pixel Looking Glass reordered buffer (from reorder_frame)
      * @param center_freq Current slice center frequency
      * @param f_min Minimum frequency of sweep range (0 = no range check)
      * @param f_max Maximum frequency of sweep range (0 = no range check)
-     * @note Peak detection runs on raw FFT bins (CFAR or fixed threshold).
-     *       Shape analysis runs on LG-reordered buffer (continuous, no DC gap).
+     * @note Peak detection (CFAR or fixed threshold) AND shape analysis both
+     *       run on RAW FFT bins. The former LG-reordered-buffer shape path was
+     *       removed: its wrap seam placed the two band edges adjacent, merging
+     *       edge emissions and corrupting width/valley/flatness/symmetry. Raw
+     *       bins are RF-monotonic and treat the DC spike (bins 120-135) as a
+     *       hard measurement boundary — in lockstep with DB scan
+     *       (analyze_spectrum_shape_impl).
      * @note Called from UI thread during sweep (scanner thread stopped, no mutex)
      * @note Implementation in scanner.cpp — delegates tracking to apply_sweep_tracking()
      */
     void process_spectrum_sweep(
         const ChannelSpectrum& spectrum,
-        const uint8_t* lg_buffer,
         FreqHz center_freq,
         FreqHz f_min = 0,
         FreqHz f_max = 0
@@ -1556,32 +1559,6 @@ private:
         int32_t total_gain
     ) noexcept;
 
-    /**
-     * @brief Shape analysis on Looking Glass reordered buffer (240 pixels, no DC gap).
-     * @param lg_buffer  240-pixel Looking Glass buffer (from SweepProcessor::reorder_frame())
-     * @param peak_pixel Pixel index of detected peak (0-239)
-     * @param noise_floor 25th percentile noise floor (computed from raw FFT usable bins)
-     * @param out_rssi   Output: RSSI in dBm if signal detected
-     * @param total_gain Current hardware gain for RSSI conversion
-     * @return true if drone-like signal detected
-     * @note Operates on the same continuous line the user sees on screen.
-     *       No DC gap to corrupt width/sharpness/valley/flatness/symmetry.
-     * @note Edge skip: 4 pixels from each end.
-     *       LG pixel layout: px 0-119 = bins 134-253 (lower sideband),
-     *       px 120-237 = bins 2-119 (upper sideband), px 238-239 = 0 (DC).
-     *       Left skip (px 0-3) = bins 134-137 (near DC).
-     *       Right skip (px 236-239) = bins 118-119 + zero padding.
-     *       Filter rolloff bins (0-5, 250-255) map to px 116-123 (crossover);
-     *       they have attenuated power and naturally terminate width expansion.
-     */
-    [[nodiscard]] bool analyze_spectrum_shape_lg(
-        const uint8_t* lg_buffer,
-        size_t peak_pixel,
-        uint8_t noise_floor,
-        int32_t& out_rssi,
-        int32_t total_gain
-    ) noexcept;
-
     // ------------------------------------------------------------------------
     // EMISSION EXTENT — hysteresis segmentation (where the signal STARTS and
     // ENDS). Diamond fix for MaxW fragmentation: a wideband emission with a
@@ -1701,13 +1678,16 @@ private:
 
     /**
      * @brief Shared 11-step spectrum shape filter chain (Steps 3-11).
-     * @param data         Power data buffer (spectrum.db.data() or lg_buffer)
+     * @param data         Power data buffer (spectrum.db.data())
      * @param peak_idx     Index of detected peak
      * @param raw_peak     Raw power value at peak
      * @param noise_floor  Computed noise floor (25th percentile)
      * @param out_rssi     Output: RSSI in dBm if signal passes all filters
-     * @param edge_skip    Number of edge bins/pixels to skip
-     * @param has_dc_gap   true = skip FFT DC spike bins (120-135); false = LG buffer (no DC gap)
+     * @param edge_skip    Number of edge bins to skip
+     * @param has_dc_gap   true = skip FFT DC spike bins (120-135). All current
+     *                     callers pass true (raw FFT space); the flag is
+     *                     retained so the generic chain may measure any raw
+     *                     buffer with or without a DC region.
      * @param total_gain   Current hardware gain for RSSI conversion
      * @param out_extent   Optional. When non-null and the function returns true,
      *                     receives the SignalExtent of the WHOLE emission around
@@ -1718,10 +1698,10 @@ private:
      *                     instead (dedup must not over-suppress bypassed signals).
      * @return true if signal passes all shape filters
      * @note Stack: ~0 bytes (all state via parameters).
-     * @note Shared by analyze_spectrum_shape_impl() (raw FFT) and
-     *       analyze_spectrum_shape_lg() (LG reordered buffer) — ALL MaxW
-     *       semantics, including the Step 6b emission-extent check, are
-     *       therefore identical in DB mode and sweep mode by construction.
+     * @note Shared by analyze_spectrum_shape_impl() (DB scan) and
+     *       process_spectrum_sweep() (sweep) — ALL MaxW semantics,
+     *       including the Step 6b emission-extent check, are therefore
+     *       identical in both modes by construction.
      */
     [[nodiscard]] bool apply_shape_filters(
         const uint8_t* data,
@@ -1798,31 +1778,6 @@ private:
         FreqHz f_min,
         FreqHz f_max
     ) noexcept;
-
-    /**
-     * @brief Convert 256-bin FFT index to 240-pixel Looking Glass index.
-     * @param bin FFT bin index (0-255)
-     * @return Pixel index (0-239), or COMPOSITE_SIZE (sentinel) for DC spike
-     *         bins 120-133 (no valid pixel).
-     * @note Bins 134-135 (DC-spike tail) DO map to pixels 0-1 — consistent
-     *       with reorder_frame(), which fills LG pixels 0-1 from db[134-135].
-     *       Harmless today: every peak source (CFAR find_peaks, the
-     *       fixed-threshold fallback, TBD bin scan) skips all DC bins
-     *       120-135, so no caller ever passes 134/135 here.
-     * @note Lower sideband (bins 134-255): pixel = bin - 134  →  pixels 0-121
-     * @note Upper sideband (bins 0-119):   pixel = bin + 118  →  pixels 118-237
-     * @note Edge bins (0-5, 250-255) still produce valid pixel indices; edge
-     *       filtering is handled separately by analyze_spectrum_shape_lg().
-     */
-    static size_t fft_bin_to_lg_pixel(size_t bin) noexcept {
-        if (bin >= SWEEP_FFT_MAP_START) {
-            return bin - SWEEP_FFT_MAP_START;  // bins 134-255 → pixels 0-121
-        }
-        if (bin < FFT_DC_SPIKE_START) {
-            return bin + static_cast<size_t>(SWEEP_FFT_MAP_CROSSOVER - 2);  // bins 0-119 → pixels 118-237
-        }
-        return COMPOSITE_SIZE;  // DC spike (bins 120-135) — invalid
-    }
 
     /**
      * @brief Internal: Trigger alert callback if set

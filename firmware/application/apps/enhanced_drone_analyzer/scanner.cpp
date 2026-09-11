@@ -11,14 +11,6 @@
 namespace drone_analyzer {
 
 /**
- * @brief Looking Glass edge skip (pixels) used by analyze_spectrum_shape_lg()
- *        and by the TBD narrowband guard in process_spectrum_sweep().
- * @note File-scope so both call sites share one definition (was a function
- *       local — duplicated magic number if the guard re-declared it).
- */
-constexpr size_t LG_EDGE_SKIP_PX = 4;
-
-/**
  * @brief Convert a spectrum.db uint8_t value to calibrated dBm (with cached gain)
  * @param value Raw spectrum.db value (0-255, from baseband)
  * @param total_gain LNA + VGA + (RF_AMP enabled ? RF_AMP_GAIN_DB : 0) in dB
@@ -1931,23 +1923,6 @@ bool DroneScanner::analyze_spectrum_shape_multi(
     return out_result.count > 0;
 }
 
-bool DroneScanner::analyze_spectrum_shape_lg(
-    const uint8_t* lg_buffer,
-    size_t peak_pixel,
-    uint8_t noise_floor,
-    int32_t& out_rssi,
-    int32_t total_gain
-) noexcept {
-    if (peak_pixel >= COMPOSITE_SIZE) return false;
-
-    const uint8_t raw_peak = lg_buffer[peak_pixel];
-    if (raw_peak <= noise_floor) return false;
-
-    return apply_shape_filters(
-        lg_buffer, peak_pixel, raw_peak, noise_floor,
-        out_rssi, LG_EDGE_SKIP_PX, /*has_dc_gap=*/false, total_gain);
-}
-
 uint8_t DroneScanner::effective_spectrum_margin() const noexcept {
     // Single source of truth for the sensitive-mode margin relaxation (BASE).
     // The FULL Step 3 gate — including the high-sensitivity scaling — is
@@ -1997,16 +1972,16 @@ bool DroneScanner::apply_shape_filters(
     // FAIL-CLOSED GUARD: raw_peak <= noise_floor would underflow the uint8
     // peak_margin below (wraps to ~250, silently passing the Step 3 gate).
     // Every current call site pre-validates (CFAR peaks sit above noise; the
-    // non-CFAR fallback checks max_val <= noise_floor; analyze_spectrum_
-    // shape_lg checks raw_peak <= noise_floor) — this guard makes the
+    // non-CFAR fallback checks max_val <= noise_floor; the sweep fixed-threshold
+    // gate admits only bins >= noise_floor + margin) — this guard makes the
     // contract explicit instead of relying on caller discipline.
     if (raw_peak <= noise_floor) return false;
 
     // FAIL-CLOSED GUARD: same validation contract as tbd_peak_is_narrowband.
     // peak_idx >= data_size reads out of bounds in the Step 4 width walk;
     // edge_skip >= data_size/2 would underflow upper_limit (data_size -
-    // edge_skip). Legit constants: FFT_EDGE_SKIP=10, FFT_EDGE_SKIP_NARROW=6,
-    // LG_EDGE_SKIP_PX=4 — all far below FFT_BIN_COUNT/2=128, COMPOSITE/2=120.
+    // edge_skip). Legit constants: FFT_EDGE_SKIP=10, FFT_EDGE_SKIP_NARROW=6 —
+    // all far below FFT_BIN_COUNT/2=128 and COMPOSITE_SIZE/2=120.
     if (peak_idx >= data_size || edge_skip >= data_size / 2) return false;
 
     const uint8_t peak_margin = static_cast<uint8_t>(raw_peak - noise_floor);
@@ -2469,7 +2444,6 @@ void DroneScanner::apply_sweep_tracking(
 
 void DroneScanner::process_spectrum_sweep(
     const ChannelSpectrum& spectrum,
-    const uint8_t* lg_buffer,
     FreqHz center_freq,
     FreqHz f_min,
     FreqHz f_max
@@ -2642,15 +2616,27 @@ void DroneScanner::process_spectrum_sweep(
     for (size_t p = 0; p < peak_count; ++p) {
         const size_t peak_index = cfar_peaks[p].bin;
 
-        // Skip peaks on DC spike (bins 120-135) — no real signal energy
-        const size_t peak_pixel = fft_bin_to_lg_pixel(peak_index);
-        if (peak_pixel >= COMPOSITE_SIZE) continue;
+        // Skip peaks on DC spike (bins 120-135) — no real signal energy.
+        // Defensive: both candidate sources already exclude DC bins.
+        if (peak_index >= FFT_DC_SPIKE_START && peak_index < FFT_DC_SPIKE_END) {
+            continue;
+        }
 
         FreqHz peak_freq = fft_bin_to_freq(center_freq, peak_index);
 
-        // Shape analysis on LG-reordered buffer (continuous, no DC gap).
+        // Shape analysis on RAW FFT bins (RF-monotonic axis, DC gap as a hard
+        // measurement boundary). Formerly ran on the LG-reordered 240-px line,
+        // whose wrap seam mapped the two band edges ADJACENT — two emitters at
+        // opposite band edges merged into one "wide" peak, and edge-adjacent
+        // signals got distorted width/valley/flatness/symmetry. Raw bins use
+        // the SAME filter chain as DB scan (analyze_spectrum_shape_impl ->
+        // apply_shape_filters, has_dc_gap=true), so MaxW semantics are
+        // identical in both modes by construction. Edge skip matches the
+        // candidate-collection region (FFT_EDGE_SKIP_NARROW = 6 bins).
         int32_t shape_rssi = RSSI_MIN_DBM;
-        if (!analyze_spectrum_shape_lg(lg_buffer, peak_pixel, noise_floor, shape_rssi, total_gain)) {
+        if (!analyze_spectrum_shape_impl(
+                spectrum, peak_index, cfar_peaks[p].power,
+                noise_floor, shape_rssi, FFT_EDGE_SKIP_NARROW, total_gain)) {
             continue;  // This peak rejected by shape filter — try next peak
         }
         any_peak_passed_shape = true;

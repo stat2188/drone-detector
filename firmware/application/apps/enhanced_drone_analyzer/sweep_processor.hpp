@@ -21,7 +21,6 @@ namespace drone_analyzer {
  */
 class SweepProcessor {
 public:
-    static constexpr uint8_t UPPER_OFFSET = SWEEP_FFT_MAP_CROSSOVER - 2;
     static constexpr uint8_t UPPER_PIXEL_END = SWEEP_PIXELS_PER_SLICE - 2;
 
     /**
@@ -75,25 +74,6 @@ public:
         FreqHz effective_bin_size,
         FreqHz f_min,
         FreqHz f_max
-    ) noexcept;
-
-    /**
-     * @brief Reorder a single FFT frame into Looking Glass pixel order.
-     * @param spectrum    256-bin FFT power values from baseband
-     * @param lg_buffer   Output buffer (COMPOSITE_SIZE bytes = 240 pixels)
-     * @note Produces the Looking Glass display mapping:
-     *       Pixels 0..119 = FFT bins 134..253 (lower sideband, above center)
-     *       Pixels 120..237 = FFT bins 2..119 (upper sideband, below center)
-     *       This is the per-frame LG view used for shape analysis — continuous
-     *       frequency ordering that matches the Looking Glass display.
-     * @note Pixels 238-239 are zeroed (map to DC spike bins 120-121).
-     * @note Stack: ~0 bytes (writes to caller buffer). Flash: <100 bytes.
-     * @note process_frame() uses a DIFFERENT mapping (frequency-ascending) for
-     *       the sweep composite — this function is NOT used for composite data.
-     */
-    static void reorder_frame(
-        const ChannelSpectrum& spectrum,
-        uint8_t* lg_buffer
     ) noexcept;
 
 private:

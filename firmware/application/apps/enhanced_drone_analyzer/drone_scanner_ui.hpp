@@ -228,14 +228,6 @@ private:
     TrackedDrone refresh_drones_[MAX_DISPLAYED_DRONES]{};  // BSS, not stack (saves 2,304B stack)
     char refresh_status_buf_[MAX_TEXT_LENGTH]{};
 
-    // Per-frame Looking Glass reordered buffer for sweep mode shape analysis.
-    // Created by SweepProcessor::reorder_frame() and passed to scanner's
-    // process_spectrum_sweep(lg_buffer) overload. Eliminates the DC gap
-    // corruption by operating on the same continuous 240-pixel line the
-    // user sees on screen. 240 bytes BSS, shared across all sweep windows.
-    // Total sweep-related SRAM: sweep_[4] (~1,200B) + lg_frame_buf_ (240B) = ~1,440B
-    uint8_t lg_frame_buf_[COMPOSITE_SIZE]{};
-
     /**
      * @brief RF frontend automatic gain controller.
      * @note Analyzes each spectrum frame for saturation/dead bins and adjusts

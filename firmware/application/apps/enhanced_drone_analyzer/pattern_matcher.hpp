@@ -59,7 +59,10 @@ public:
     /**
      * @brief Normalize 240-pixel Looking Glass buffer to 16-bin waveform.
      * @param lg_buffer_240 Looking Glass reordered spectrum (240 pixels, continuous,
-     *                       no DC gap — produced by SweepProcessor::reorder_frame())
+     *                       no DC gap). NOTE: the former in-app producer
+     *                       (SweepProcessor::reorder_frame) was removed — the
+     *                       sweep pipeline analyzes RAW FFT bins; this helper is
+     *                       retained solely for pattern-format compatibility.
      * @param wave_16       Output 16-bin normalized waveform (same format as normalize())
      * @note Skips first/last 4 pixels (filter rolloff). No DC gap to skip — the
      *       Looking Glass reordering already eliminated it.
