@@ -105,9 +105,12 @@ public:
     [[nodiscard]] ErrorCode shutdown() noexcept;
     
     /**
-     * @brief Tune to frequency with PLL lock verification
+     * @brief Tune to frequency and wait for PLL settle
      * @param frequency Target frequency in Hz
-     * @param max_retries Maximum retry attempts (default: 3)
+     * @param max_retries Reserved for retry logic — currently IGNORED.
+     * @note PLL "verification" is a settle-delay placeholder:
+     *       check_pll_lock_internal() only reports the flag that was set
+     *       after the 5 ms settle delay; no hardware PLL lock bits are read.
      * @return ErrorCode::SUCCESS if tuned, error code otherwise
      */
     [[nodiscard]] ErrorCode tune_to_frequency(

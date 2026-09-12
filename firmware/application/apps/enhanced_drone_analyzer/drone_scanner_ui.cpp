@@ -117,7 +117,11 @@ void DroneScannerUI::unregister_handlers() noexcept {
 }
 
 // ============================================================================
-// Atomic 64-bit frequency access — prevents torn reads on Cortex-M4
+// Frequency snapshot access. current_frequency_ is a 32-bit field — aligned
+// 32-bit loads/stores are single-instruction and cannot tear on Cortex-M4,
+// so chSysLock() here is only a conservative barrier, not a correctness
+// requirement. All callers run on the UI thread (message handlers, sweep
+// enter/exit, keypad lambdas) — no cross-thread access exists today.
 // ============================================================================
 void DroneScannerUI::set_current_frequency_safe(FreqHz freq) noexcept {
     chSysLock();

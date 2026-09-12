@@ -524,6 +524,37 @@ void LiveDateTime::set_seconds_enabled(bool new_value) {
 
 /* BigFrequency **********************************************************/
 
+namespace {
+
+// 7-segment glyph bitmaps (bit s selects segments[s]). constexpr => Flash.
+// The old per-instance arrays consumed ~67 B of SRAM for every widget.
+constexpr uint8_t segment_font[11] = {
+    0b00111111,  // 0: ABCDEF
+    0b00000110,  // 1: AB
+    0b01011011,  // 2: ABDEG
+    0b01001111,  // 3: ABCDG
+    0b01100110,  // 4: BCFG
+    0b01101101,  // 5: ACDFG
+    0b01111101,  // 6: ACDEFG
+    0b00000111,  // 7: ABC
+    0b01111111,  // 8: ABCDEFG
+    0b01101111,  // 9: ABCDFG
+    0b01000000   // -: G
+};
+
+// Segment rectangles relative to a digit slot origin (slot box is 32x52).
+constexpr Rect segments[7] = {
+    {{4, 0}, {20, 4}},
+    {{24, 4}, {4, 20}},
+    {{24, 28}, {4, 20}},
+    {{4, 48}, {20, 4}},
+    {{0, 28}, {4, 20}},
+    {{0, 4}, {4, 20}},
+    {{4, 24}, {20, 4}},
+};
+
+}  // namespace
+
 BigFrequency::BigFrequency(
     Rect parent_rect,
     rf::Frequency frequency)
@@ -532,73 +563,159 @@ BigFrequency::BigFrequency(
 }
 
 void BigFrequency::set(const rf::Frequency frequency) {
+    // No visual change -> skip the widget invalidation entirely. Called
+    // from 60 Hz UI loops; only the changed digits need a repaint.
+    if (frequency == _frequency) return;
+
     _frequency = frequency;
     set_dirty();
 }
 
-void BigFrequency::paint(Painter& painter) {
-    uint32_t i, digit_def;
-    std::array<char, 7> digits;
-    char digit;
-    Point digit_pos;
-    ui::Color segment_color;
-
-    const auto rect = screen_rect();
-
-    // Erase
-    painter.fill_rectangle(
-        {{0, rect.location().y()}, {screen_width, 52}},
-        Theme::getInstance()->bg_darkest->background);
-
-    // Prepare digits
-    if (!_frequency) {
-        digits.fill(10);  // ----.---
-        digit_pos = {0, rect.location().y()};
-    } else {
-        _frequency /= 1000;  // GMMM.KKK(uuu)
-
-        for (i = 0; i < 7; i++) {
-            digits[6 - i] = _frequency % 10;
-            _frequency /= 10;
-        }
-
-        // Remove leading zeros
-        for (i = 0; i < 3; i++) {
-            if (!digits[i])
-                digits[i] = 16;  // "Don't draw" code
-            else
-                break;
-        }
-
-        digit_pos = {(Coord)(240 - ((7 * digit_width) + 8) - (i * digit_width)) / 2, rect.location().y()};
+void BigFrequency::prepare_digits(
+    rf::Frequency frequency,
+    std::array<uint8_t, SLOT_COUNT>& digits,
+    uint8_t& leading_blank) const noexcept {
+    if (!frequency) {
+        // "--------" placeholder.
+        digits.fill(GLYPH_DASH);
+        leading_blank = 0;
+        return;
     }
 
-    segment_color = style().foreground;
+    frequency /= 1000;  // Hz -> kHz: display format is GMMM.KKK(uuu)
 
-    // Draw
-    for (i = 0; i < 7; i++) {
-        digit = digits[i];
+    for (uint8_t i = 0; i < SLOT_COUNT; ++i) {
+        digits[SLOT_COUNT - 1U - i] = static_cast<uint8_t>(frequency % 10);
+        frequency /= 10;
+    }
 
-        if (digit < 16) {
-            digit_def = segment_font[(uint8_t)digit];
-
-            for (size_t s = 0; s < 7; s++) {
-                if (digit_def & 1)
-                    painter.fill_rectangle({digit_pos + segments[s].location(), segments[s].size()}, segment_color);
-                digit_def >>= 1;
-            }
-        }
-
-        if (i == 3) {
-            // Dot
-            painter.fill_rectangle({digit_pos + Point(34, 48), {4, 4}}, segment_color);
-            digit_pos += {(digit_width + 8), 0};
-        } else {
-            digit_pos += {digit_width, 0};
-        }
+    // Suppress leading zeros among the GHz / top MHz slots (indices 0..2).
+    leading_blank = 0;
+    for (uint8_t i = 0; i < LEADING_BLANK_MAX; ++i) {
+        if (digits[i] != 0) break;
+        digits[i] = GLYPH_BLANK;
+        ++leading_blank;
     }
 }
 
+Coord BigFrequency::slot_x(uint8_t slot, uint8_t leading_blank) noexcept {
+    // Left edge of the whole 7-slot block ("GMMM.KKK"); the trailing
+    // dot_gap belongs to the dot after slot 3.
+    const Coord block_left = static_cast<Coord>(
+        (screen_width - ((SLOT_COUNT * digit_width) + dot_gap) -
+         (leading_blank * digit_width)) /
+        2);
+
+    Coord x = block_left + static_cast<Coord>(slot) * digit_width;
+    if (slot > dot_slot) x += dot_gap;
+    return x;
+}
+
+Dim BigFrequency::slot_width(uint8_t slot) noexcept {
+    return (slot == dot_slot) ? (digit_width + dot_gap) : digit_width;
+}
+
+void BigFrequency::paint_slot(
+    Painter& painter,
+    Coord x,
+    Coord y,
+    uint8_t glyph,
+    bool draw_dot,
+    Color foreground) const noexcept {
+    if (glyph < GLYPH_BLANK) {
+        uint8_t segment_def = segment_font[glyph];
+        for (uint8_t s = 0; s < 7; ++s) {
+            if (segment_def & 1U) {
+                painter.fill_rectangle(
+                    {{x + segments[s].location().x(), y + segments[s].location().y()},
+                     segments[s].size()},
+                    foreground);
+            }
+            segment_def >>= 1U;
+        }
+    }
+
+    if (draw_dot) {
+        painter.fill_rectangle(
+            {{x + dot_offset_x, y + dot_offset_y}, {dot_size, dot_size}},
+            foreground);
+    }
+}
+
+void BigFrequency::erase_slot(
+    Painter& painter,
+    Coord x,
+    Coord y,
+    Dim width,
+    Color background) const noexcept {
+    painter.fill_rectangle(
+        {{x, y}, {width, display_height}},
+        background);
+}
+
+void BigFrequency::on_show() {
+    // Framework hook (Painter::paint_widget -> visible(true)): fires exactly
+    // when the widget re-enters the paint traversal after a period of not
+    // being painted (a covering view was pushed on top, the widget was
+    // detached, ...). Whatever this widget last drew may have been
+    // overwritten meanwhile, so the render cache can no longer be trusted
+    // for slots whose glyph has not changed.
+    reset_render_cache();
+}
+
+void BigFrequency::reset_render_cache() noexcept {
+    // Sentinel state: the next paint() is forced down the full-redraw path,
+    // which erases the whole strip before drawing every slot.
+    rendered_glyphs_.fill(GLYPH_UNKNOWN);
+    rendered_leading_blank_ = LEADING_BLANK_MAX + 1;
+    rendered_foreground_ = Color{};
+    rendered_background_ = Color{};
+    set_dirty();  // guaranteed repaint inside the same traversal pass
+}
+
+void BigFrequency::paint(Painter& painter) {
+    // Prepare the glyphs to display for the current frequency.
+    std::array<uint8_t, SLOT_COUNT> digits{};
+    uint8_t leading_blank = 0;
+    prepare_digits(_frequency, digits, leading_blank);
+
+    const Color foreground = style().foreground;
+    const Color background = Theme::getInstance()->bg_darkest->background;
+    const Coord y = screen_rect().location().y();
+
+    const bool full_redraw =
+        (leading_blank != rendered_leading_blank_) ||
+        (foreground.v != rendered_foreground_.v) ||
+        (background.v != rendered_background_.v);  // theme switch guard
+
+    if (full_redraw) {
+        // Full strip erase + all slots (block shift or color change).
+        painter.fill_rectangle(
+            {0, y, screen_width, display_height},
+            background);
+
+        for (uint8_t slot = 0; slot < SLOT_COUNT; ++slot) {
+            paint_slot(painter, slot_x(slot, leading_blank), y, digits[slot],
+                       slot == dot_slot, foreground);
+            rendered_glyphs_[slot] = digits[slot];
+        }
+    } else {
+        // Hot path: erase and redraw only the digit slots that changed.
+        for (uint8_t slot = 0; slot < SLOT_COUNT; ++slot) {
+            if (digits[slot] == rendered_glyphs_[slot]) continue;
+
+            const Coord x = slot_x(slot, leading_blank);
+            erase_slot(painter, x, y, slot_width(slot), background);
+            paint_slot(painter, x, y, digits[slot], slot == dot_slot, foreground);
+
+            rendered_glyphs_[slot] = digits[slot];
+        }
+    }
+
+    rendered_leading_blank_ = leading_blank;
+    rendered_foreground_ = foreground;
+    rendered_background_ = background;
+}
 /* ProgressBar ***********************************************************/
 
 ProgressBar::ProgressBar(

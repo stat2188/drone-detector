@@ -37,6 +37,7 @@
 
 #include "ui/ui_font_fixed_5x8.hpp"
 
+#include <array>
 #include <functional>
 #include <memory>
 #include <string>
@@ -288,38 +289,81 @@ class BigFrequency : public Widget {
    public:
     BigFrequency(Rect parent_rect, rf::Frequency frequency);
 
+    /**
+     * @brief Set the frequency to display.
+     * @note No-op when the value is unchanged (avoids pointless widget
+     *       invalidation inside 60 Hz update loops).
+     */
     void set(const rf::Frequency frequency);
 
     void paint(Painter& painter) override;
 
+    /**
+     * @brief Invalidate the incremental render cache when the widget
+     *        becomes visible again.
+     * @note Fired by Painter::paint_widget() via visible(true) whenever the
+     *       widget re-enters the paint traversal after not being painted
+     *       (e.g. a covering view was pushed on top, or the widget was
+     *       detached). The screen pixels under the widget cannot be trusted
+     *       anymore, so the cache is reset to force a full-redraw paint().
+     */
+    void on_show() override;
+
    private:
+    // Glyph codes for one 7-segment slot (layout: "GMMM.KKK").
+    static constexpr uint8_t GLYPH_DASH = 10;       // '-' (G segment only)
+    static constexpr uint8_t GLYPH_BLANK = 16;      // slot suppressed (leading zero)
+    static constexpr uint8_t GLYPH_UNKNOWN = 0xFF;  // slot never rendered yet
+    static constexpr uint8_t SLOT_COUNT = 7;
+    static constexpr uint8_t LEADING_BLANK_MAX = 3;  // only G/M/M may blank out
+    static constexpr Dim digit_width = 32;           // 7-seg box width
+    static constexpr Dim dot_gap = 8;                // extra width reserved for the dot
+    static constexpr Dim display_height = 52;
+    static constexpr uint8_t dot_slot = 3;           // dot is drawn after this slot
+    static constexpr Dim dot_offset_x = 34;
+    static constexpr Dim dot_offset_y = 48;
+    static constexpr Dim dot_size = 4;
+
+    void prepare_digits(
+        rf::Frequency frequency,
+        std::array<uint8_t, SLOT_COUNT>& digits,
+        uint8_t& leading_blank) const noexcept;
+
+    static Coord slot_x(uint8_t slot, uint8_t leading_blank) noexcept;
+    static Dim slot_width(uint8_t slot) noexcept;
+
+    void paint_slot(
+        Painter& painter,
+        Coord x,
+        Coord y,
+        uint8_t glyph,
+        bool draw_dot,
+        Color foreground) const noexcept;
+
+    void erase_slot(
+        Painter& painter,
+        Coord x,
+        Coord y,
+        Dim width,
+        Color background) const noexcept;
+
+    void reset_render_cache() noexcept;
+
     rf::Frequency _frequency;
-    rf::Frequency _previous_frequency{~0LL};
 
-    static constexpr Dim digit_width = 32;
-
-    const uint8_t segment_font[11] = {
-        0b00111111,  // 0: ABCDEF
-        0b00000110,  // 1: AB
-        0b01011011,  // 2: ABDEG
-        0b01001111,  // 3: ABCDG
-        0b01100110,  // 4: BCFG
-        0b01101101,  // 5: ACDFG
-        0b01111101,  // 6: ACDEFG
-        0b00000111,  // 7: ABC
-        0b01111111,  // 8: ABCDEFG
-        0b01101111,  // 9: ABCDFG
-        0b01000000   // -: G
-    };
-
-    const Rect segments[7] = {
-        {{4, 0}, {20, 4}},
-        {{24, 4}, {4, 20}},
-        {{24, 28}, {4, 20}},
-        {{4, 48}, {20, 4}},
-        {{0, 28}, {4, 20}},
-        {{0, 4}, {4, 20}},
-        {{4, 24}, {20, 4}}};
+    // Last-rendered state: one glyph code per slot plus the block offset
+    // (leading-blank count) and color. paint() redraws only slots whose
+    // glyph actually changed since the previous render.
+    std::array<uint8_t, SLOT_COUNT> rendered_glyphs_{{
+        GLYPH_UNKNOWN, GLYPH_UNKNOWN, GLYPH_UNKNOWN,
+        GLYPH_UNKNOWN, GLYPH_UNKNOWN, GLYPH_UNKNOWN,
+        GLYPH_UNKNOWN}};
+    // LEADING_BLANK_MAX + 1 is unreachable for a real render => the first
+    // paint always takes the full-redraw path (safe against stale pixels).
+    uint8_t rendered_leading_blank_{LEADING_BLANK_MAX + 1};
+    Color rendered_foreground_{};
+    Color rendered_background_{};
+    // SRAM: 7 x glyph + 1 x blank-count + 3 x Color(2 B) = 14 bytes total.
 };
 
 class ProgressBar : public Widget {

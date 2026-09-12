@@ -120,31 +120,45 @@ ErrorCode HardwareController::tune_to_frequency(
         return validate_result;
     }
 
-    MutexLock<LockOrder::STATE_MUTEX> lock(mutex_);
+    // Critical section 1: apply the tune. The mutex MUST NOT be held while
+    // sleeping: a 5 ms sleep under STATE_MUTEX would block every other
+    // contender (start/stop streaming, gain/RSSI access...) for the whole
+    // settle delay on every frequency hop of the scan cycle.
+    {
+        MutexLock<LockOrder::STATE_MUTEX> lock(mutex_);
 
-    if (state_ != HardwareState::READY && state_ != HardwareState::STREAMING) {
-        last_error_ = ErrorCode::HARDWARE_NOT_INITIALIZED;
-        return ErrorCode::HARDWARE_NOT_INITIALIZED;
-    }
+        if (state_ != HardwareState::READY && state_ != HardwareState::STREAMING) {
+            last_error_ = ErrorCode::HARDWARE_NOT_INITIALIZED;
+            return ErrorCode::HARDWARE_NOT_INITIALIZED;
+        }
 
-    state_ = HardwareState::TUNING;
+        state_ = HardwareState::TUNING;
 
-    // Tune to frequency
-    ErrorCode tune_result = tune_internal(frequency);
-    if (tune_result != ErrorCode::SUCCESS) {
-        state_ = HardwareState::ERROR;
-        last_error_ = tune_result;
-        return tune_result;
-    }
+        // Tune to frequency
+        ErrorCode tune_result = tune_internal(frequency);
+        if (tune_result != ErrorCode::SUCCESS) {
+            state_ = HardwareState::ERROR;
+            last_error_ = tune_result;
+            return tune_result;
+        }
+    }  // STATE_MUTEX released
 
-    // Wait for PLL stabilization
+    // Wait for PLL stabilization. Pure hardware timing OUTSIDE the mutex —
+    // no shared state is touched here. The only runtime caller is the
+    // scanner thread (DroneScanner::perform_scan_cycle), so no concurrent
+    // tuner can interleave between the two critical sections.
     chThdSleepMilliseconds(5);
 
-    current_frequency_ = frequency;
-    pll_locked_.set();
-    state_ = streaming_active_.test() ? HardwareState::STREAMING : HardwareState::READY;
-    last_error_ = ErrorCode::SUCCESS;
-    return ErrorCode::SUCCESS;
+    // Critical section 2: publish the result.
+    {
+        MutexLock<LockOrder::STATE_MUTEX> lock(mutex_);
+
+        current_frequency_ = frequency;
+        pll_locked_.set();
+        state_ = streaming_active_.test() ? HardwareState::STREAMING : HardwareState::READY;
+        last_error_ = ErrorCode::SUCCESS;
+        return ErrorCode::SUCCESS;
+    }
 }
 
 ErrorCode HardwareController::tune_internal(FreqHz frequency) noexcept {
