@@ -1636,18 +1636,22 @@ private:
         }
 
         const uint8_t gate = shape_gate_margin();
-        // Trim level: the emission must reach max(gate, −6 dB). For weak peaks
-        // (peak_margin ≈ gate) this is the Step 3 gate — unchanged legacy
+        // Trim level: the emission must reach max(gate, −6 dB) = the
+        // HALF-POWER start of the hysteresis pair (cont_level <= start_level
+        // always: gate > gate/3). For weak peaks (peak_margin ≈ gate)
+        // half_power < gate, so this is the Step 3 gate — unchanged legacy
         // behavior; for strong peaks the −6 dB band IS the emission.
-        // uint16 arithmetic: noise_floor (<=255) + max(peak_margin, gate)
-        // (<=255) cannot wrap.
+        // uint16 arithmetic: noise_floor (<=255) + max(peak_margin/2, gate)
+        // (<=200) cannot wrap.
+        const uint8_t half_power = static_cast<uint8_t>(peak_margin / 2);
         const uint16_t start_level = static_cast<uint16_t>(noise_floor)
-            + ((peak_margin > gate) ? peak_margin : gate);
+            + ((half_power > gate) ? half_power : gate);
         // HALF-POWER continuation anchor: peak − 6 dB, floored at gate/3 so
         // weak peaks never sink into the noise fluctuation band (clamps
         // guarantee gate >= 3, so gate/3 >= 1 — the floor is
-        // defense-in-depth only).
-        const uint8_t half_power = static_cast<uint8_t>(peak_margin / 2);
+        // defense-in-depth only). half_power is hoisted above (shared with
+        // start_level — the hysteresis pair is built from ONE half-power
+        // anchor, guaranteeing cont_level <= start_level).
         const uint8_t gate_floor = (gate >= 3) ? static_cast<uint8_t>(gate / 3) : 1;
         const uint8_t cont_elevation = (half_power > gate_floor) ? half_power : gate_floor;
         const uint16_t cont_level =
