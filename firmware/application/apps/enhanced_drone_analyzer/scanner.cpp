@@ -183,6 +183,7 @@ ScanStatistics::ScanStatistics() noexcept
     , successful_cycles(0)
     , failed_cycles(0)
     , drones_detected(0)
+    , drones_evicted(0)
     , max_rssi_dbm(RSSI_NOISE_FLOOR_DBM) {
 }
 
@@ -191,6 +192,7 @@ void ScanStatistics::reset() noexcept {
     successful_cycles = 0;
     failed_cycles = 0;
     drones_detected = 0;
+    drones_evicted = 0;
     max_rssi_dbm = RSSI_NOISE_FLOOR_DBM;
 }
 
@@ -1029,10 +1031,10 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             if (is_exception_frequency(det_freq)) continue;
 
             // Track secondary detection directly (no confirm count needed —
-            // shape analysis already validated the signal)
-            if (tracked_count_ < MAX_TRACKED_DRONES) {
-                (void)update_tracked_drone_internal(det_freq, det_rssi, now);
-            }
+            // shape analysis already validated the signal). The full-tracker
+            // case is handled inside add_tracked_drone_internal(): the weakest
+            // resident is evicted when the candidate outranks it.
+            (void)update_tracked_drone_internal(det_freq, det_rssi, now);
         }
     }
 
@@ -1126,9 +1128,12 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
             reset_noise_count(frequency);
         }
     } else {
-        // New drone — add and alert for its initial threat
-        const size_t new_index = tracked_count_;
-        ErrorCode add_result = add_tracked_drone_internal(frequency, rssi, timestamp);
+        // New drone — add (when the tracker is full, the weakest resident is
+        // evicted to make room for this stronger signal) and alert for its
+        // actual threat level.
+        size_t new_index = SIZE_MAX;
+        ErrorCode add_result = add_tracked_drone_internal(
+            frequency, rssi, timestamp, &new_index);
         if (add_result != ErrorCode::SUCCESS) {
             return add_result;
         }
@@ -1283,23 +1288,55 @@ ErrorCode DroneScanner::get_current_drone_type(char* buffer, size_t buffer_size)
 ErrorCode DroneScanner::add_tracked_drone_internal(
     FreqHz frequency_hz,
     RssiValue rssi_dbm,
-    SystemTime timestamp_ms
+    SystemTime timestamp_ms,
+    size_t* out_index,
+    bool init_sweep_mode,
+    bool classify_drone_type
 ) noexcept {
-    if (tracked_count_ >= MAX_TRACKED_DRONES) {
+    if (out_index != nullptr) {
+        *out_index = SIZE_MAX;
+    }
+
+    // Pick the write slot: free tail while space remains; otherwise the
+    // weakest resident (lowest threat/RSSI/freshness) — but ONLY when the new
+    // detection strictly outranks it. This is the "weak signals are displaced
+    // by strong signals" rule; a weak one-off blip never displaces a confirmed
+    // drone. find_add_slot_internal() returns SIZE_MAX when nothing qualifies.
+    const size_t slot = find_add_slot_internal(rssi_dbm, timestamp_ms);
+    if (slot == SIZE_MAX) {
         return ErrorCode::BUFFER_FULL;
     }
 
-    DroneType type = determine_drone_type_internal(frequency_hz);
+    const bool evicting = (slot < tracked_count_);
 
-    tracked_drones_[tracked_count_] = TrackedDrone(frequency_hz, type, ThreatLevel::NONE);
-    tracked_drones_[tracked_count_].created_time_ = timestamp_ms;
-    tracked_drones_[tracked_count_].last_increase_time_ = timestamp_ms;
-    tracked_drones_[tracked_count_].update_rssi(rssi_dbm, timestamp_ms, ThreatThresholds{
+    DroneType type = classify_drone_type
+        ? determine_drone_type_internal(frequency_hz)
+        : DroneType::UNKNOWN;
+
+    tracked_drones_[slot] = TrackedDrone(frequency_hz, type, ThreatLevel::NONE);
+    TrackedDrone& drone = tracked_drones_[slot];
+    drone.created_time_ = timestamp_ms;
+    drone.last_increase_time_ = timestamp_ms;
+    if (init_sweep_mode) {
+        // Sweep mode: classify threat from the DIRECT RSSI — rssi_history_ is
+        // contaminated by mixed-frequency samples from other sweep windows.
+        drone.sweep_mode_active_ = true;
+    }
+    drone.update_rssi(rssi_dbm, timestamp_ms, ThreatThresholds{
         config_.threat_low_dbm, config_.threat_medium_dbm,
         config_.threat_high_dbm, config_.threat_critical_dbm});
 
-    tracked_count_++;
+    if (!evicting) {
+        tracked_count_++;
+    }
     statistics_.drones_detected++;
+    if (evicting) {
+        statistics_.drones_evicted++;
+    }
+
+    if (out_index != nullptr) {
+        *out_index = slot;
+    }
 
     // NOTE: Do NOT call trigger_alert() here.
     // update_rssi() set the initial threat level inside the drone.
@@ -1329,11 +1366,40 @@ size_t DroneScanner::get_tracked_drones(
         return 0;
     }
     
-    size_t copy_count = tracked_count_ < max_count ? tracked_count_ : max_count;
-    
-    for (size_t i = 0; i < copy_count; ++i) {
+    // SELECT-TOP-N BY PRIORITY: the tracker array is insertion-ordered (new
+    // detections append at the tail, evictions replace in place) — NOT
+    // priority-ordered. Copying the first N slots would silently drop a
+    // CRITICAL / strong signal that lives at array index 20..24, keeping weak
+    // insertion-era entries forever on the render list.
+    //
+    // Selection uses the SAME key as eviction and the render sort:
+    //   1) threat_level desc, 2) rssi desc, 3) last_seen desc,
+    //   4) update_count desc. No reordering of the persistent array, so
+    //   index-based frequency lookups stay valid; only the copies are ranked.
+    //
+    // Stack: bool[MAX_TRACKED_DRONES] = 25 B + scalars (fits the <512 B cap).
+    // Complexity: O(select_n × tracked_count_) <= 12 × 25 = 300 compares.
+    bool selected[MAX_TRACKED_DRONES] = {};
+    const size_t select_n = tracked_count_ < max_count ? tracked_count_ : max_count;
+    size_t out_count = 0;
+
+    for (size_t rank = 0; rank < select_n; ++rank) {
+        size_t best = SIZE_MAX;
+        for (size_t i = 0; i < tracked_count_; ++i) {
+            if (selected[i]) {
+                continue;
+            }
+            if (best == SIZE_MAX || has_higher_priority(tracked_drones_[i], tracked_drones_[best])) {
+                best = i;
+            }
+        }
+        if (best == SIZE_MAX) {
+            break;  // safety — cannot happen while out_count < tracked_count_
+        }
+        selected[best] = true;
+
         // BUGFIX (trend flicker / '-' reset): advance the trend hysteresis on
-        // the PERSISTENT tracked_drones_[i] object BEFORE copying.
+        // the PERSISTENT tracked_drones_[best] object BEFORE copying.
         //
         // get_movement_trend() is const but mutates mutable hysteresis state
         // (cached_trend_ / trend_hold_count_). It is only ever invoked from
@@ -1355,11 +1421,12 @@ size_t DroneScanner::get_tracked_drones(
         // sentinel gap the UI holds the last real trend ('<' / '>' / '~').
         // Stack: ~8 bytes. Runs under DATA_MUTEX (UI thread; scanner thread is
         // stopped in sweep mode and locks the same mutex in normal mode).
-        (void)tracked_drones_[i].get_movement_trend();
-        drones[i] = tracked_drones_[i];
+        (void)tracked_drones_[best].get_movement_trend();
+        drones[out_count] = tracked_drones_[best];
+        ++out_count;
     }
-    
-    return copy_count;
+
+    return out_count;
 }
 
 ScannerState DroneScanner::get_state() const noexcept {
@@ -2401,30 +2468,27 @@ void DroneScanner::apply_sweep_tracking(
             } else {
                 mahalanobis_detector_.update_statistics(stats, peak_rssi, center_freq, peak_freq);
             }
-        } else if (tracked_count_ < MAX_TRACKED_DRONES) {
-            const size_t new_idx = tracked_count_;
-            tracked_drones_[new_idx] = TrackedDrone(peak_freq, DroneType::UNKNOWN, ThreatLevel::NONE);
-            auto& drone = tracked_drones_[new_idx];
-            drone.created_time_ = chTimeNow();
-            drone.last_increase_time_ = chTimeNow();
-            // First detection: always mark as increasing to prevent immediate decay
-            drone.rssi_increased_ = true;
-            drone.sweep_cycles_missed_ = 0;
-            drone.last_seen_time_ = chTimeNow();
-            // Set sweep mode BEFORE update_rssi() so threat classification
-            // uses the direct RSSI (not contaminated rssi_history_).
-            drone.sweep_mode_active_ = true;
-            drone.update_rssi(peak_rssi, chTimeNow(), ThreatThresholds{
-                config_.threat_low_dbm, config_.threat_medium_dbm,
-                config_.threat_high_dbm, config_.threat_critical_dbm});
-            drone.update_cycle_peak(peak_rssi);
-            drone.get_mahalanobis_stats().last_tuned_frequency = peak_freq;
-            tracked_count_++;
-            statistics_.drones_detected++;
-            if (drone.threat_level > ThreatLevel::NONE) {
-                trigger_alert(drone.threat_level);
+        } else {
+            // Create the drone — or, when the tracker is full, EVICT the
+            // weakest resident for it (see add_tracked_drone_internal()).
+            const SystemTime now_sweep = chTimeNow();
+            size_t out_idx = SIZE_MAX;
+            const ErrorCode add_err = add_tracked_drone_internal(
+                peak_freq, peak_rssi, now_sweep, &out_idx,
+                /*init_sweep_mode=*/true, /*classify_drone_type=*/false);
+            if (add_err == ErrorCode::SUCCESS) {
+                TrackedDrone& drone = tracked_drones_[out_idx];
+                // First detection: always mark as increasing to prevent immediate decay
+                drone.rssi_increased_ = true;
+                drone.sweep_cycles_missed_ = 0;
+                drone.last_seen_time_ = now_sweep;
+                drone.update_cycle_peak(peak_rssi);
+                drone.get_mahalanobis_stats().last_tuned_frequency = peak_freq;
+                if (drone.threat_level > ThreatLevel::NONE) {
+                    trigger_alert(drone.threat_level);
+                }
+                drone_created_here = true;
             }
-            drone_created_here = true;
         }
     }
 

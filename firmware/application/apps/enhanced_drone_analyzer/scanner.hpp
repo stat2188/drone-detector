@@ -164,6 +164,7 @@ struct ScanStatistics {
     uint32_t successful_cycles;
     uint32_t failed_cycles;
     uint32_t drones_detected;
+    uint32_t drones_evicted;   ///< Times a weaker tracked drone was displaced by a stronger/fresher detection
     int32_t max_rssi_dbm;
 
     /**
@@ -1434,17 +1435,150 @@ private:
     ) noexcept;
 
     /**
-     * @brief Internal: Add new tracked drone
+     * @brief Internal: True when drone `a` strictly outranks drone `b` in
+     *        keep-order priority (used by eviction and render-list selection).
+     * @note Priority keys (all integer, no FP):
+     *       1) threat_level descending (CRITICAL first, NONE last) — "угрозы"
+     *       2) rssi descending (stronger signal first)           — "сильные сигналы"
+     *       3) last_seen descending (fresher detection first)
+     *       4) update_count descending (more-confirmed entry wins ties)
+     * @note A NONE-threat entry can never outrank a LOW+ entry, so a weak
+     *       one-off signal can never displace a confirmed threat.
+     */
+    [[nodiscard]] static bool has_higher_priority(
+        const TrackedDrone& a,
+        const TrackedDrone& b) noexcept {
+        const uint8_t ta = static_cast<uint8_t>(a.threat_level);
+        const uint8_t tb = static_cast<uint8_t>(b.threat_level);
+        if (ta != tb) {
+            return ta > tb;
+        }
+        if (a.rssi != b.rssi) {
+            return a.rssi > b.rssi;
+        }
+        if (a.last_seen != b.last_seen) {
+            return a.last_seen > b.last_seen;
+        }
+        return a.update_count > b.update_count;
+    }
+
+    /**
+     * @brief Internal: Compare a NOT-YET-CREATED drone candidate against an
+     *        existing tracked drone. Same priority keys as
+     *        has_higher_priority(); on a full tie the existing entry wins
+     *        (a fresh detection has update_count 0, the resident is confirmed).
+     * @param cand_threat_rank Threat rank of the candidate (0..4)
+     * @param cand_rssi Candidate RSSI (dBm)
+     * @param cand_time Candidate detection time (ms)
+     * @param drone Existing tracked drone
+     * @return +1 candidate outranks drone, -1 drone outranks candidate, 0 tie.
+     */
+    [[nodiscard]] static int compare_candidate_to_drone(
+        uint8_t cand_threat_rank,
+        RssiValue cand_rssi,
+        SystemTime cand_time,
+        const TrackedDrone& drone) noexcept {
+        const uint8_t drone_threat = static_cast<uint8_t>(drone.threat_level);
+        if (cand_threat_rank != drone_threat) {
+            return (cand_threat_rank > drone_threat) ? 1 : -1;
+        }
+        if (cand_rssi != drone.rssi) {
+            return (cand_rssi > drone.rssi) ? 1 : -1;
+        }
+        if (cand_time != drone.last_seen) {
+            return (cand_time > drone.last_seen) ? 1 : -1;
+        }
+        return (drone.update_count > 0) ? -1 : 0;
+    }
+
+    /**
+     * @brief Internal: Map an RSSI value onto a threat rank using the active
+     *        config thresholds (mirrors TrackedDrone::update_rssi()).
+     * @param rssi_dbm RSSI value (dBm)
+     * @return ThreatLevel value as uint8_t (0..4)
+     */
+    [[nodiscard]] uint8_t classify_threat_rank(RssiValue rssi_dbm) const noexcept {
+        if (rssi_dbm >= config_.threat_critical_dbm) {
+            return static_cast<uint8_t>(ThreatLevel::CRITICAL);
+        }
+        if (rssi_dbm >= config_.threat_high_dbm) {
+            return static_cast<uint8_t>(ThreatLevel::HIGH);
+        }
+        if (rssi_dbm >= config_.threat_medium_dbm) {
+            return static_cast<uint8_t>(ThreatLevel::MEDIUM);
+        }
+        if (rssi_dbm >= config_.threat_low_dbm) {
+            return static_cast<uint8_t>(ThreatLevel::LOW);
+        }
+        return static_cast<uint8_t>(ThreatLevel::NONE);
+    }
+
+    /**
+     * @brief Internal: Pick the tracker slot where a NEW drone should be
+     *        written, EVICTING the weakest resident when the tracker is full.
+     * @param rssi_dbm Candidate RSSI (dBm)
+     * @param timestamp_ms Candidate detection time (ms)
+     * @return Write index, or SIZE_MAX when the candidate is invalid, or the
+     *         tracker is full AND every resident outranks the candidate
+     *         (nothing eligible to evict → caller returns BUFFER_FULL).
+     * @pre Caller must hold DATA_MUTEX, or have exclusive tracker access.
+     * @note Stack: ~24 bytes. O(n), n <= MAX_TRACKED_DRONES. No heap.
+     */
+    [[nodiscard]] size_t find_add_slot_internal(
+        RssiValue rssi_dbm,
+        SystemTime timestamp_ms) const noexcept {
+        if (rssi_dbm < RSSI_MIN_DBM) {
+            return SIZE_MAX;
+        }
+        if (tracked_count_ < MAX_TRACKED_DRONES) {
+            return tracked_count_;  // free slot at the tail — no eviction needed
+        }
+        const uint8_t cand_threat = classify_threat_rank(rssi_dbm);
+        size_t weakest = SIZE_MAX;
+        for (size_t i = 0; i < tracked_count_; ++i) {
+            if (weakest == SIZE_MAX
+                || !has_higher_priority(tracked_drones_[i], tracked_drones_[weakest])) {
+                weakest = i;
+            }
+        }
+        if (weakest == SIZE_MAX) {
+            return SIZE_MAX;
+        }
+        return (compare_candidate_to_drone(
+                    cand_threat, rssi_dbm, timestamp_ms, tracked_drones_[weakest]) > 0)
+            ? weakest
+            : SIZE_MAX;
+    }
+
+    /**
+     * @brief Internal: Add new tracked drone. When the tracker is full, the
+     *        weakest resident (lowest threat/RSSI/freshness) is EVICTED to
+     *        make room — but only if the candidate strictly outranks it.
      * @param frequency_hz Frequency of detected signal (Hz)
      * @param rssi_dbm RSSI value (dBm)
      * @param timestamp_ms Timestamp of detection (ms)
-     * @return ErrorCode::SUCCESS if added, error code otherwise
+     * @param out_index Optional output: index where the drone was written
+     *                  (set on SUCCESS only). May differ from the previous
+     *                  tracked_count_ when the weakest resident was evicted.
+     * @param init_sweep_mode When true, mark the drone sweep_mode_active_
+     *                        BEFORE update_rssi() so threat classification
+     *                        uses the direct RSSI (not the contaminated
+     *                        rssi_history_). Sweep-mode creations only.
+     * @param classify_drone_type When true, look up the drone type from the
+     *                            frequency database (DB-scan creations).
+     *                            Sweep-mode creations keep DroneType::UNKNOWN.
+     * @return ErrorCode::SUCCESS if added; ErrorCode::BUFFER_FULL when full
+     *         and the candidate does not outrank the weakest resident
+     *         (a weak one-off detection never displaces a confirmed drone).
      * @pre Mutex must be held (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorCode add_tracked_drone_internal(
         FreqHz frequency_hz,
         RssiValue rssi_dbm,
-        SystemTime timestamp_ms
+        SystemTime timestamp_ms,
+        size_t* out_index = nullptr,
+        bool init_sweep_mode = false,
+        bool classify_drone_type = true
     ) noexcept;
 
     /**

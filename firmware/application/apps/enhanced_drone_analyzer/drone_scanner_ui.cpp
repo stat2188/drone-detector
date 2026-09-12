@@ -765,13 +765,29 @@ void DroneScannerUI::refresh_ui() noexcept {
                 refresh_display_data_.drones[i] = DisplayDroneEntry(refresh_drones_[i]);
             }
 
-            // Sort by threat level descending (CRITICAL first, NONE last).
-            // Full sort needed — scanner array is detection-ordered, not threat-ordered.
+            // Sort by COMPOSITE priority descending — threat level first (CRITICAL
+            // → HIGH → MEDIUM → LOW → NONE), then RSSI (stronger first), then
+            // freshness (newer last_seen first). This is the "render list by
+            // strong signals AND threats" rule: equal-threat entries are ranked
+            // by signal strength, and a drone whose threat just rose climbs to
+            // its logical position on the next 100 ms refresh ("поднятие
+            // угрозы в списке"). get_tracked_drones() already returns priority
+            // order, so this mostly stabilizes; the sort is retained as a
+            // defense against out-of-order buffers.
             for (size_t i = 1; i < count; ++i) {
                 const DisplayDroneEntry key = refresh_display_data_.drones[i];
                 size_t j = i;
-                while (j > 0 && refresh_display_data_.drones[j - 1].threat < key.threat) {
-                    refresh_display_data_.drones[j] = refresh_display_data_.drones[j - 1];
+                while (j > 0) {
+                    const DisplayDroneEntry& prev = refresh_display_data_.drones[j - 1];
+                    const bool key_outranks_prev =
+                        (key.threat > prev.threat)
+                        || (key.threat == prev.threat && key.rssi > prev.rssi)
+                        || (key.threat == prev.threat && key.rssi == prev.rssi &&
+                            key.last_seen > prev.last_seen);
+                    if (!key_outranks_prev) {
+                        break;
+                    }
+                    refresh_display_data_.drones[j] = prev;
                     --j;
                 }
                 refresh_display_data_.drones[j] = key;
