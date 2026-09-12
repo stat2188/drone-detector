@@ -570,7 +570,9 @@ struct DisplayDroneEntry {
     char type_name[16];         // 16 bytes
     uint32_t display_color;     // 4 bytes (RGBA)
     MovementTrend trend;        // 1 byte (uint8_t)
-    // Total: 48 bytes (no vtable, POD type)
+    int16_t last_rssi;          // 2 bytes — latest RSSI sample (render-sort key,
+                                // matches TrackedDrone::last_rssi_)
+    // Total: 48 bytes (no vtable, POD type; int16 fills existing padding)
     
     /**
      * @brief Default constructor

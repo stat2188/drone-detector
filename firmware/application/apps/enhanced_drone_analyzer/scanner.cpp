@@ -1332,6 +1332,9 @@ ErrorCode DroneScanner::add_tracked_drone_internal(
     statistics_.drones_detected++;
     if (evicting) {
         statistics_.drones_evicted++;
+        // Sticky notification for the UI slow tick: a displacement that leaves
+        // tracked_count_ unchanged would otherwise be invisible to the operator.
+        eviction_pending_ = true;
     }
 
     if (out_index != nullptr) {
@@ -1616,6 +1619,15 @@ size_t DroneScanner::get_tracked_count() const noexcept {
         return tracked_count_;  // Atomic word-read fallback on Cortex-M4
     }
     return tracked_count_;
+}
+
+bool DroneScanner::get_and_clear_eviction_pending() noexcept {
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    if (!eviction_pending_) {
+        return false;
+    }
+    eviction_pending_ = false;
+    return true;
 }
 
 void DroneScanner::clear_tracked_drones() noexcept {
@@ -2488,6 +2500,15 @@ void DroneScanner::apply_sweep_tracking(
                     trigger_alert(drone.threat_level);
                 }
                 drone_created_here = true;
+            } else if (add_err == ErrorCode::BUFFER_FULL) {
+                // Tracker is full AND the candidate cannot legally displace the
+                // weakest resident (weak signal, or a protected victim — HIGH+
+                // or the currently-locked drone, see can_evict_internal()).
+                // Drop the peak WITHOUT falling through to
+                // update_tracked_drone_internal(): we already know no drone
+                // lies within the match radius, so that call would re-run the
+                // same O(n) scan and add attempt only to fail again.
+                return;
             }
         }
     }

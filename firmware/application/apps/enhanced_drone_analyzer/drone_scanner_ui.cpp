@@ -766,14 +766,16 @@ void DroneScannerUI::refresh_ui() noexcept {
             }
 
             // Sort by COMPOSITE priority descending — threat level first (CRITICAL
-            // → HIGH → MEDIUM → LOW → NONE), then RSSI (stronger first), then
-            // freshness (newer last_seen first). This is the "render list by
-            // strong signals AND threats" rule: equal-threat entries are ranked
-            // by signal strength, and a drone whose threat just rose climbs to
-            // its logical position on the next 100 ms refresh ("поднятие
-            // угрозы в списке"). get_tracked_drones() already returns priority
-            // order, so this mostly stabilizes; the sort is retained as a
-            // defense against out-of-order buffers.
+            // → HIGH → MEDIUM → LOW → NONE), then RECENT signal strength (latest
+            // sample, stronger first), then freshness (newer last_seen first,
+            // wrap-safe). The key EXACTLY matches the scanner's eviction and
+            // top-N selector (recent_strength()/has_higher_priority()): equal-
+            // threat rows rank by current signal, and a drone whose threat just
+            // rose climbs to its logical position on the next 100 ms refresh
+            // ("поднятие угрозы в списке"). get_tracked_drones() already returns
+            // priority order, so this mostly stabilizes; the sort is retained as
+            // a defense against out-of-order buffers and MUST use the same key
+            // so it never undoes the scanner's ranking.
             for (size_t i = 1; i < count; ++i) {
                 const DisplayDroneEntry key = refresh_display_data_.drones[i];
                 size_t j = i;
@@ -781,9 +783,10 @@ void DroneScannerUI::refresh_ui() noexcept {
                     const DisplayDroneEntry& prev = refresh_display_data_.drones[j - 1];
                     const bool key_outranks_prev =
                         (key.threat > prev.threat)
-                        || (key.threat == prev.threat && key.rssi > prev.rssi)
-                        || (key.threat == prev.threat && key.rssi == prev.rssi &&
-                            key.last_seen > prev.last_seen);
+                        || (key.threat == prev.threat && key.last_rssi > prev.last_rssi)
+                        || (key.threat == prev.threat && key.last_rssi == prev.last_rssi &&
+                            key.last_seen != prev.last_seen &&
+                            (key.last_seen - prev.last_seen) < 0x80000000u);
                     if (!key_outranks_prev) {
                         break;
                     }
@@ -821,8 +824,16 @@ void DroneScannerUI::refresh_ui() noexcept {
                 case ScannerState::TRACKING:
                     // Show TOTAL tracked count, not the display-capped count —
                     // more drones can be tracked than fit on screen rows.
-                    snprintf(refresh_status_buf_, sizeof(refresh_status_buf_), "Track %lu (%lu)",
-                             (unsigned long)scanner_ptr_->get_tracked_count(), (unsigned long)db_entry_count_);
+                    if (scanner_ptr_->get_and_clear_eviction_pending()) {
+                        // A tracked drone was just displaced by a stronger/
+                        // fresher detection — tracked_count_ did NOT change, so
+                        // without this hint the operator would not see it.
+                        snprintf(refresh_status_buf_, sizeof(refresh_status_buf_), "Evict %lu (%lu)",
+                                 (unsigned long)scanner_ptr_->get_tracked_count(), (unsigned long)db_entry_count_);
+                    } else {
+                        snprintf(refresh_status_buf_, sizeof(refresh_status_buf_), "Track %lu (%lu)",
+                                 (unsigned long)scanner_ptr_->get_tracked_count(), (unsigned long)db_entry_count_);
+                    }
                     drone_display_.set_status_text(refresh_status_buf_);
                     break;
                 case ScannerState::PAUSED:

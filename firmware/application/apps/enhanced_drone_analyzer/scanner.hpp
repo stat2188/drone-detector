@@ -902,10 +902,38 @@ public:
      */
     [[nodiscard]] FreqHz get_spectrum_frequency() noexcept;
 
+    /** @brief Copy the top-N tracked drones by keep-order priority
+     *         (threat desc -> recent strength desc -> freshness desc ->
+     *         update_count desc — same key as eviction and the render sort).
+     *  @param drones    Pre-allocated output buffer (caller-owned, fixed size).
+     *  @param max_count Capacity of `drones`. May be < MAX_TRACKED_DRONES; only
+     *                   the highest-priority max_count entries are copied.
+     *  @return Number of entries written to drones[0..n-1] (<= max_count, <=
+     *          tracked_count_). Entries are RANKED, not index-aligned with the
+     *          persistent array — consumers must NOT assume drones[i] maps
+     *          back to tracked_drones_[i] (evictions replace in place, so
+     *          insertion order is not preserved).
+     *  @pre Caller holds DATA_MUTEX. Side effect: advances the trend hysteresis
+     *       on the persistent originals BEFORE copying (see get_movement_trend
+     *       hysteresis docs — evaluating on a copy would reset cached_trend_).
+     *  @note Stack: bool[MAX_TRACKED_DRONES] = 25 B + locals (<512 B cap).
+     *        O(select_n x tracked_count_) <= 12 x 25 compares. No heap.
+     */
     [[nodiscard]] size_t get_tracked_drones(
         TrackedDrone* drones,
         size_t max_count
     ) const noexcept;
+
+    /** @brief Consume-and-reset the "a resident was evicted" notification.
+     *  @return true when at least one tracked drone was EVICTED (displaced by
+     *          a stronger/fresher detection) since the previous call.
+     *  @note The UI polls this on the 100 ms slow tick: when true the status
+     *        row briefly shows "Evict", so a displacement that does not change
+     *        tracked_count_ is still visible to the operator.
+     *  @pre Caller holds DATA_MUTEX (same lock as the tracker mutation paths).
+     *  @note Stack: 0 B, no heap.
+     */
+    [[nodiscard]] bool get_and_clear_eviction_pending() noexcept;
 
     /**
      * @brief Get scanner state
@@ -1434,13 +1462,36 @@ private:
         FreqHz radius_hz
     ) noexcept;
 
+    /** @brief Internal: "Current strength" of a drone for priority ordering.
+     *  @note Uses last_rssi_ (latest sample), NOT the monotonic display peak
+     *        (rssi). TrackedDrone::update_rssi() only RAISES rssi and never
+     *        recomputes it, so a one-time strong spike would otherwise rank a
+     *        currently-silent drone above every live signal forever, shield it
+     *        from eviction, and skew the top-N render selection. last_rssi_
+     *        carries the most recent sample and is refreshed on every
+     *        detection; the constructors seed it with RSSI_NOISE_FLOOR_DBM.
+     *  @note Stack: 0 B. No heap, no FP (int16_t -> int32_t widening).
+     */
+    [[nodiscard]] static RssiValue recent_strength(const TrackedDrone& d) noexcept {
+        return static_cast<RssiValue>(d.last_rssi_);
+    }
+
+    /** @brief Internal: Wrap-safe "a is fresher than b" for chTimeNow() clocks.
+     *  @note Direct `a > b` inverts when the 32-bit ms clock wraps (~49.7 days
+     *        of uptime); the subtraction-plus-half-range test does not.
+     */
+    [[nodiscard]] static bool is_fresher(SystemTime a, SystemTime b) noexcept {
+        return (a - b) < 0x80000000u;
+    }
+
     /**
      * @brief Internal: True when drone `a` strictly outranks drone `b` in
      *        keep-order priority (used by eviction and render-list selection).
-     * @note Priority keys (all integer, no FP):
+     * @note Priority keys (all integer, no FP, wrap-safe freshness):
      *       1) threat_level descending (CRITICAL first, NONE last) — "угрозы"
-     *       2) rssi descending (stronger signal first)           — "сильные сигналы"
-     *       3) last_seen descending (fresher detection first)
+     *       2) recent_strength() descending (latest sample, self-decaying) —
+     *          "сильные сигналы"
+     *       3) last_seen descending (fresher detection first, wrap-safe)
      *       4) update_count descending (more-confirmed entry wins ties)
      * @note A NONE-threat entry can never outrank a LOW+ entry, so a weak
      *       one-off signal can never displace a confirmed threat.
@@ -1453,11 +1504,14 @@ private:
         if (ta != tb) {
             return ta > tb;
         }
-        if (a.rssi != b.rssi) {
-            return a.rssi > b.rssi;
+        const RssiValue sa = recent_strength(a);
+        const RssiValue sb = recent_strength(b);
+        if (sa != sb) {
+            return sa > sb;
         }
-        if (a.last_seen != b.last_seen) {
-            return a.last_seen > b.last_seen;
+        const bool a_newer = is_fresher(a.last_seen, b.last_seen);
+        if (a_newer != is_fresher(b.last_seen, a.last_seen)) {
+            return a_newer;
         }
         return a.update_count > b.update_count;
     }
@@ -1465,8 +1519,19 @@ private:
     /**
      * @brief Internal: Compare a NOT-YET-CREATED drone candidate against an
      *        existing tracked drone. Same priority keys as
-     *        has_higher_priority(); on a full tie the existing entry wins
-     *        (a fresh detection has update_count 0, the resident is confirmed).
+     *        has_higher_priority() — threat, recent strength, freshness — with
+     *        two deliberate deviations:
+     *        a) the candidate's strength IS its raw sample (it has no history)
+     *           and is compared against the resident's LATEST sample, so the
+     *           units match and a stale display peak cannot skew the verdict;
+     *        b) on an equal-threat / equal-strength tie the CONFIRMED resident
+     *           wins: drone.update_count > 0 short-circuits the freshness key.
+     *           Freshness may only break a tie between two UNCONFIRMED entries
+     *           (update_count == 0 — resident created but never re-detected).
+     *           Without this ordering the freshness key would always favor the
+     *           candidate ("now" > any last_seen), the update_count check
+     *           would be unreachable, and a single blip of equal strength
+     *           would displace a confirmed drone.
      * @param cand_threat_rank Threat rank of the candidate (0..4)
      * @param cand_rssi Candidate RSSI (dBm)
      * @param cand_time Candidate detection time (ms)
@@ -1482,13 +1547,14 @@ private:
         if (cand_threat_rank != drone_threat) {
             return (cand_threat_rank > drone_threat) ? 1 : -1;
         }
-        if (cand_rssi != drone.rssi) {
-            return (cand_rssi > drone.rssi) ? 1 : -1;
+        const RssiValue drone_strength = recent_strength(drone);
+        if (cand_rssi != drone_strength) {
+            return (cand_rssi > drone_strength) ? 1 : -1;
         }
-        if (cand_time != drone.last_seen) {
-            return (cand_time > drone.last_seen) ? 1 : -1;
+        if (drone.update_count == 0 && is_fresher(cand_time, drone.last_seen)) {
+            return 1;  // both unconfirmed — the fresher detection wins
         }
-        return (drone.update_count > 0) ? -1 : 0;
+        return (drone.update_count > 0) ? -1 : 0;  // confirmed resident wins ties
     }
 
     /**
@@ -1514,14 +1580,69 @@ private:
     }
 
     /**
+     * @brief Internal: May the candidate legally displace `victim` (the
+     *        current weakest resident) when the tracker is full?
+     * @param cand_threat_rank Threat rank of the candidate (0..4)
+     * @param cand_rssi Candidate RSSI (dBm)
+     * @param cand_time Candidate detection time (ms)
+     * @param victim Resident that would be overwritten
+     * @return true when displacement is allowed, false when the victim is
+     *         protected (caller returns BUFFER_FULL).
+     * @note Protection rules (defense against "full tracker = silent, permanent
+     *       loss of a confirmed drone"; see add_tracked_drone_internal()):
+     *       1) A HIGH or CRITICAL resident is NEVER evictable. The top two
+     *          threat levels represent confirmed, operator-relevant targets
+     *          and must not be destroyed by an unconfirmed one-off sample; a
+     *          full tracker always offers a legal weaker victim otherwise.
+     *       2) The drone frequency-matching locked_frequency_ is NEVER
+     *          evictable: the frequency-lock state machine
+     *          (perform_scan_cycle_internal / dwell logic) has no other way to
+     *          learn its tracker entry vanished. Evicting it would (a) strand
+     *          the lock on a ghost entry (UI keeps showing Lock/Track on a row
+     *          that no longer exists) and (b) at dwell expiry make
+     *          find_nearest_drone_internal(locked_freq) miss, so the frequency
+     *          would be blacklisted as noise after NOISE_BLACKLIST_THRESHOLD
+     *          expiries — suppressing the very drone just detected.
+     *       3) Otherwise the strict composite compare must pass.
+     * @pre Caller must hold DATA_MUTEX, or have exclusive tracker access.
+     * @note Stack: ~24 bytes. No heap, no FP.
+     */
+    [[nodiscard]] bool can_evict_internal(
+        uint8_t cand_threat_rank,
+        RssiValue cand_rssi,
+        SystemTime cand_time,
+        const TrackedDrone& victim) const noexcept {
+        if (victim.threat_level >= ThreatLevel::HIGH) {
+            return false;  // rule 1 — confirmed HIGH+ is not disposable
+        }
+        if (locked_frequency_ != 0) {
+            const FreqHz diff = (victim.frequency > locked_frequency_)
+                ? victim.frequency - locked_frequency_
+                : locked_frequency_ - victim.frequency;
+            if (diff <= static_cast<FreqHz>(config_.freq_match_radius_mhz) * 1'000'000ULL) {
+                return false;  // rule 2 — the locked drone is not disposable
+            }
+        }
+        return compare_candidate_to_drone(
+            cand_threat_rank, cand_rssi, cand_time, victim) > 0;  // rule 3
+    }
+
+    /**
      * @brief Internal: Pick the tracker slot where a NEW drone should be
-     *        written, EVICTING the weakest resident when the tracker is full.
+     *        written, EVICTING the weakest EVICTABLE resident when the tracker
+     *        is full.
      * @param rssi_dbm Candidate RSSI (dBm)
      * @param timestamp_ms Candidate detection time (ms)
      * @return Write index, or SIZE_MAX when the candidate is invalid, or the
-     *         tracker is full AND every resident outranks the candidate
-     *         (nothing eligible to evict → caller returns BUFFER_FULL).
+     *         tracker is full AND the candidate cannot legally displace the
+     *         weakest resident (nothing eligible to evict → caller returns
+     *         BUFFER_FULL).
      * @pre Caller must hold DATA_MUTEX, or have exclusive tracker access.
+     * @note Weakest-scan tie-break: among equal-priority residents the LOWEST
+     *       index is chosen (oldest insertion era — matches the survivor rule
+     *       in match_and_consolidate_drone_internal()). This is the single
+     *       tie-break convention for BOTH selection (get_tracked_drones keeps
+     *       the first best) and eviction (this keeps the first weakest).
      * @note Stack: ~24 bytes. O(n), n <= MAX_TRACKED_DRONES. No heap.
      */
     [[nodiscard]] size_t find_add_slot_internal(
@@ -1534,18 +1655,19 @@ private:
             return tracked_count_;  // free slot at the tail — no eviction needed
         }
         const uint8_t cand_threat = classify_threat_rank(rssi_dbm);
-        size_t weakest = SIZE_MAX;
-        for (size_t i = 0; i < tracked_count_; ++i) {
-            if (weakest == SIZE_MAX
-                || !has_higher_priority(tracked_drones_[i], tracked_drones_[weakest])) {
-                weakest = i;
+        // tracked_count_ == MAX_TRACKED_DRONES here (>= 1), so index 0 is valid.
+        size_t weakest = 0;
+        for (size_t i = 1; i < tracked_count_; ++i) {
+            const bool i_worse = has_higher_priority(
+                tracked_drones_[weakest], tracked_drones_[i]);
+            const bool i_equal = !i_worse && !has_higher_priority(
+                tracked_drones_[i], tracked_drones_[weakest]);
+            if (i_worse || (i_equal && i < weakest)) {
+                weakest = i;  // strictly worse, or equal priority + older index
             }
         }
-        if (weakest == SIZE_MAX) {
-            return SIZE_MAX;
-        }
-        return (compare_candidate_to_drone(
-                    cand_threat, rssi_dbm, timestamp_ms, tracked_drones_[weakest]) > 0)
+        return can_evict_internal(
+            cand_threat, rssi_dbm, timestamp_ms, tracked_drones_[weakest])
             ? weakest
             : SIZE_MAX;
     }
@@ -2034,6 +2156,11 @@ private:
     // MRG merge flag: set by match_and_consolidate_drone_internal() when
     // absorption occurred (in_radius_count > 1). Cleared by caller after use.
     bool last_merge_absorbed_{false};
+
+    // EVICT flag: set by add_tracked_drone_internal() when a tracked drone is
+    // displaced by a stronger/fresher detection. Consumed (read-and-cleared)
+    // by the UI slow tick via get_and_clear_eviction_pending(). SRAM: 1 byte.
+    bool eviction_pending_{false};
 
     // RSSI detector for signal analysis and threat classification
     RSSIDetector rssi_detector_;

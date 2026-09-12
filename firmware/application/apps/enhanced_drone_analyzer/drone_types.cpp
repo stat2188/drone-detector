@@ -453,7 +453,8 @@ DisplayDroneEntry::DisplayDroneEntry() noexcept
     , last_seen{0}
     , type_name{'\0'}
     , display_color{0xFFFFFFFF}
-    , trend{MovementTrend::UNKNOWN} {
+    , trend{MovementTrend::UNKNOWN}
+    , last_rssi{RSSI_NOISE_FLOOR_DBM} {
 }
 
 DisplayDroneEntry::DisplayDroneEntry(const TrackedDrone& drone) noexcept
@@ -464,7 +465,8 @@ DisplayDroneEntry::DisplayDroneEntry(const TrackedDrone& drone) noexcept
     , last_seen(drone.last_seen)
     , type_name{0}
     , display_color(0xFFFFFFFF)
-    , trend(drone.get_movement_trend()) {
+    , trend(drone.get_movement_trend())
+    , last_rssi(drone.last_rssi_) {
     
     const char* type_str = drone_type_to_string(drone.drone_type);
     size_t i = 0;
