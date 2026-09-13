@@ -624,6 +624,13 @@ constexpr uint32_t COLOR_BACKGROUND = 0xFF000000;
  */
 constexpr uint32_t COLOR_TEXT = 0xFFFFFFFF;
 
+/**
+ * @brief Red detection-window bracket overlay (sweep spectrum title strip)
+ * @note Pure red — visually distinct from the white range title and the
+ *       colored spectrum bars below the strip.
+ */
+constexpr uint32_t COLOR_DET_WINDOW = 0xFFFF0000;
+
 // ============================================================================
 // FFT Bin Layout Constants (HackRF baseband: 256-bin FFT)
 // ============================================================================

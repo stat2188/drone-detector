@@ -1420,6 +1420,11 @@ void DroneScannerUI::update_sweep_pair_display() noexcept {
             last_sweep2_range_end_ = sweep_[w1].f_max;
         }
         drone_display_.set_sweep2_data(sweep_[w1].composite, COMPOSITE_SIZE);
+        // Detection-window brackets: band 0 shows w0, band 1 shows w1.
+        drone_display_.set_detection_windows(
+            0, g_workspace_cfg.sweep_det_win_start_mhz[w0], g_workspace_cfg.sweep_det_win_end_mhz[w0]);
+        drone_display_.set_detection_windows(
+            1, g_workspace_cfg.sweep_det_win_start_mhz[w1], g_workspace_cfg.sweep_det_win_end_mhz[w1]);
     } else if (sweep_[w0].enabled) {
         // Single mode: only w0
         if (sweep_[w0].f_min != last_sweep_range_start_ || sweep_[w0].f_max != last_sweep_range_end_) {
@@ -1428,6 +1433,9 @@ void DroneScannerUI::update_sweep_pair_display() noexcept {
             last_sweep_range_end_ = sweep_[w0].f_max;
         }
         drone_display_.set_composite_data(sweep_[w0].composite, COMPOSITE_SIZE);
+        // Single mode: only band 0 is rendered → brackets from w0 there.
+        drone_display_.set_detection_windows(
+            0, g_workspace_cfg.sweep_det_win_start_mhz[w0], g_workspace_cfg.sweep_det_win_end_mhz[w0]);
         if (last_dual_sweep_mode_) {
             drone_display_.set_dual_sweep_mode(false);
             last_dual_sweep_mode_ = false;
@@ -1440,6 +1448,9 @@ void DroneScannerUI::update_sweep_pair_display() noexcept {
             last_sweep_range_end_ = sweep_[w1].f_max;
         }
         drone_display_.set_composite_data(sweep_[w1].composite, COMPOSITE_SIZE);
+        // Only w1 enabled (shown alone on band 0) → brackets from w1 there.
+        drone_display_.set_detection_windows(
+            0, g_workspace_cfg.sweep_det_win_start_mhz[w1], g_workspace_cfg.sweep_det_win_end_mhz[w1]);
         if (last_dual_sweep_mode_) {
             drone_display_.set_dual_sweep_mode(false);
             last_dual_sweep_mode_ = false;

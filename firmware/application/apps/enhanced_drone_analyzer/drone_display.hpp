@@ -231,6 +231,24 @@ public:
         set_dirty();
     }
 
+    /**
+     * @brief Push detection-window ranges (MHz mirror) for one spectrum band.
+     * @param band      0 = band1 (upper / single mode), 1 = band2 (dual lower)
+     * @param start_mhz Lower bounds of the 5 slots (MHz; 0 = unset)
+     * @param end_mhz   Upper bounds of the 5 slots (MHz; 0 = unset)
+     * @note Slot activation rule matches the scanner gate
+     *       (start > 0 && end > 0 && start <= end — see
+     *       SweepProcessor::is_detection_window_allowed()). Active slots are
+     *       drawn as red brackets in the band's title strip.
+     * @note Content is compared against the stored mirror first: an unchanged
+     *       push (every sweep frame) costs two memcmps and no repaint.
+     * @note Stack: ~0 bytes. SRAM: 80 B (2 bands × 5 slots × 2 mirrors).
+     */
+    void set_detection_windows(
+        uint8_t band,
+        const uint32_t (&start_mhz)[DETECTION_WINDOWS_PER_WINDOW],
+        const uint32_t (&end_mhz)[DETECTION_WINDOWS_PER_WINDOW]) noexcept;
+
     // Dual-column drone list (compact rows, splits above DUAL_COLUMN_MIN_COUNT detections)
     void set_dual_column_mode(bool enabled) noexcept { dual_column_mode_ = enabled; dirty_flags_ = DIRTY_ALL; set_dirty(); }
     [[nodiscard]] bool get_dual_column_mode() const noexcept { return dual_column_mode_; }
@@ -653,6 +671,34 @@ private:
         uint16_t height
     ) noexcept;
 
+    /**
+     * @brief Draw red [ ]-style brackets over the title strip for every active
+     *        detection-window slot of the band.
+     * @param band_idx        Band whose det-window mirror to use (0 or 1)
+     * @param f_min           Band lower frequency bound (Hz)
+     * @param f_max           Band upper frequency bound (Hz)
+     * @param composite_size  Composite buffer length (bins)
+     * @param bar_count       On-screen bar count (may be < composite_size)
+     * @param chart_start_x   Pixel X of composite bin 0 (same anchor as bars)
+     * @param title_y         Pixel Y of the title strip top line
+     * @pre Call from render_composite_full_band() only — the incremental
+     *      renderer never touches the title strip, so brackets persist
+     *      between full repaints.
+     * @note Inverse of the composite mapping in SweepProcessor::process_frame
+     *       (index = (freq − f_min) · size / range); u64 integer math only —
+     *       no float, no heap. Stack: ~0 bytes (registers).
+     */
+    void draw_detection_brackets(
+        Painter& painter,
+        uint8_t band_idx,
+        FreqHz f_min,
+        FreqHz f_max,
+        size_t composite_size,
+        uint16_t bar_count,
+        uint16_t chart_start_x,
+        uint16_t title_y
+    ) noexcept;
+
 public:
     /**
      * @brief Layout metrics computed once per paint/hit_test cycle.
@@ -692,6 +738,14 @@ private:
     size_t sweep2_data_size_{0};
     FreqHz sweep2_freq_start_{0};
     FreqHz sweep2_freq_end_{0};
+
+    // Detection-window bracket mirror (SWP From/To ranges), per band:
+    // [0] = band1 (upper/single), [1] = band2 (dual lower). Stored as the same
+    // MHz mirror as ScanConfig — SRAM: 2 bands × 5 slots × 2 × 4 B = 80 B BSS.
+    uint32_t det_win_start_mhz_[2][DETECTION_WINDOWS_PER_WINDOW]{};
+    uint32_t det_win_end_mhz_[2][DETECTION_WINDOWS_PER_WINDOW]{};
+    bool det_win_active_[2]{false, false};  // >= 1 active slot per band
+    bool det_win_dirty_{false};             // config changed → force full band repaint
 
     // Dual-column drone list (two narrow detection columns)
     bool dual_column_mode_{true};

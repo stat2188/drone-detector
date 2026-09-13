@@ -240,6 +240,13 @@ void DroneDisplay::paint(Painter& painter) {
 
     if (show_spec && (dirty_flags_ & DIRTY_SPEC_ANY)) {
         if (composite_mode_ && composite_data_ != nullptr && composite_data_size_ > 0) {
+            // Detection-window config changed → drop the incremental shadows so
+            // the next band render is FULL and redraws the title strip brackets.
+            if (det_win_dirty_) {
+                band1_.shadow_valid = false;
+                band2_.shadow_valid = false;
+                det_win_dirty_ = false;
+            }
             if (dual_sweep_mode_ && sweep2_data_ != nullptr && sweep2_data_size_ > 0) {
                 render_dual_composite(painter, ox, y_offset, w, layout.spec_h);
             } else if (multi_zone_count_ > 1) {
@@ -1187,6 +1194,13 @@ void DroneDisplay::render_composite_full_band(
     const uint16_t bar_count = static_cast<uint16_t>(
         (composite_size <= chart_w) ? composite_size : chart_w);
 
+    // Red detection-window brackets over the title strip (SWP From/To ranges
+    // of the window shown on this band). band1_/band2_ are the ONLY instances
+    // of BandRenderCtx — recover the band index for the per-band mirror.
+    const uint8_t band_idx = (&band == &band1_) ? 0U : 1U;
+    draw_detection_brackets(painter, band_idx, title_start, title_end,
+                            composite_size, bar_count, chart_start_x, start_y + 1);
+
     // Compute display threshold: subtract noise floor + margin from all power values.
     // This eliminates the visible noise baseline while preserving signal peaks.
     // noise_floor parameter allows per-band noise floor in dual-sweep mode.
@@ -1248,6 +1262,57 @@ void DroneDisplay::render_composite_full_band(
     band.last_y = start_y;
     band.last_w = width;
     band.last_h = height;
+}
+
+void DroneDisplay::draw_detection_brackets(
+    Painter& painter,
+    uint8_t band_idx,
+    FreqHz f_min,
+    FreqHz f_max,
+    size_t composite_size,
+    uint16_t bar_count,
+    uint16_t chart_start_x,
+    uint16_t title_y
+) noexcept {
+    if (band_idx >= 2 || !det_win_active_[band_idx]) return;
+    if (f_min == 0 || f_max <= f_min || composite_size == 0 || bar_count == 0) return;
+
+    const FreqHz range = f_max - f_min;
+    // Inverse of the composite mapping in SweepProcessor::process_frame():
+    // index = (freq - f_min) * composite_size / range → on-screen pixel X is
+    // chart_start_x + index (the exact anchor the bars use).
+    for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
+        const uint32_t start_mhz = det_win_start_mhz_[band_idx][i];
+        const uint32_t end_mhz = det_win_end_mhz_[band_idx][i];
+        // Same activation rule as SweepProcessor::is_detection_window_allowed().
+        if (start_mhz == 0 || end_mhz == 0 || start_mhz > end_mhz) continue;
+
+        // MHz → Hz expansion in u64 — 7200e6 cannot overflow.
+        const FreqHz lo = static_cast<FreqHz>(start_mhz) * MHZ;
+        const FreqHz hi = static_cast<FreqHz>(end_mhz) * MHZ;
+
+        // u64 intermediates: (lo - f_min) up to ~7 GHz × 240 fits easily.
+        const uint16_t i0 = (lo <= f_min)
+            ? 0U
+            : static_cast<uint16_t>((lo - f_min) * composite_size / range);
+        const uint16_t i1 = (hi >= f_max)
+            ? static_cast<uint16_t>(composite_size - 1)
+            : static_cast<uint16_t>((hi - f_min) * composite_size / range);
+
+        // Clamp to the on-screen bar range (chart may be narrower than the
+        // composite); skip slots entirely off the visible right edge.
+        if (i0 >= bar_count) continue;
+        const uint16_t clamped_i1 = (i1 >= bar_count) ? static_cast<uint16_t>(bar_count - 1) : i1;
+
+        const uint16_t x0 = chart_start_x + i0;
+        const uint16_t x1 = chart_start_x + clamped_i1;
+
+        // Bracket glyph: 1px top rail + 2px down-ticks on both ends — mini-font
+        // height, drawn OVER the title text by design (per UI spec).
+        draw_rectangle(painter, x0, title_y, static_cast<uint16_t>(x1 - x0 + 1), 1, COLOR_DET_WINDOW);
+        draw_rectangle(painter, x0, title_y, 1, 3, COLOR_DET_WINDOW);
+        draw_rectangle(painter, x1, title_y, 1, 3, COLOR_DET_WINDOW);
+    }
 }
 
 void DroneDisplay::render_composite_partial_band(
@@ -1507,6 +1572,37 @@ void DroneDisplay::set_sweep2_data(const uint8_t* data, size_t size) noexcept {
     sweep2_data_size_ = copy_n;
     // Data changed → incremental per-column diff redraw (NOT a full repaint).
     dirty_flags_ |= DIRTY_SPEC_DATA;
+    set_dirty();
+}
+
+void DroneDisplay::set_detection_windows(
+    uint8_t band,
+    const uint32_t (&start_mhz)[DETECTION_WINDOWS_PER_WINDOW],
+    const uint32_t (&end_mhz)[DETECTION_WINDOWS_PER_WINDOW]) noexcept {
+    if (band >= 2) return;
+    // Unchanged push (every sweep frame) → two memcmps, no repaint churn.
+    if (__builtin_memcmp(det_win_start_mhz_[band], start_mhz, sizeof(start_mhz)) == 0 &&
+        __builtin_memcmp(det_win_end_mhz_[band], end_mhz, sizeof(end_mhz)) == 0) {
+        return;
+    }
+    __builtin_memcpy(det_win_start_mhz_[band], start_mhz, sizeof(start_mhz));
+    __builtin_memcpy(det_win_end_mhz_[band], end_mhz, sizeof(end_mhz));
+
+    // Same activation rule as the scanner gate (0 = unset, inverted = inactive).
+    bool any_active = false;
+    for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
+        if (start_mhz[i] != 0 && end_mhz[i] != 0 && start_mhz[i] <= end_mhz[i]) {
+            any_active = true;
+            break;
+        }
+    }
+    det_win_active_[band] = any_active;
+
+    // Brackets live in the title strip, which only the FULL band renderer
+    // draws → invalidate the incremental shadows for exactly one full repaint.
+    // DIRTY_SPEC forces the full-render path immediately on the next paint.
+    det_win_dirty_ = true;
+    dirty_flags_ |= DIRTY_SPEC;
     set_dirty();
 }
 
