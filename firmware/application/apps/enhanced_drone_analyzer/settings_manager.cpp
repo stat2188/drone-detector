@@ -530,7 +530,10 @@ static void wbool(File& f, const char* key, bool val) noexcept {
 
 static void write_dw_slot(File& f, const char* key_start, const char* key_end,
                           uint32_t start_mhz, uint32_t end_mhz) noexcept {
-    if (start_mhz == 0 || end_mhz == 0 || start_mhz > end_mhz) return;  // inactive slot — keep file minimal
+    // Single source of truth: constants.hpp::is_det_win_slot_active() —
+    // inactive slots are never serialized (keeps the settings file minimal,
+    // matching what the scanner gate and the display brackets consider active).
+    if (!is_det_win_slot_active(start_mhz, end_mhz)) return;
     wl(f, key_start, static_cast<int64_t>(start_mhz));
     wl(f, key_end,   static_cast<int64_t>(end_mhz));
 }

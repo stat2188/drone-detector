@@ -1343,6 +1343,32 @@ constexpr FreqHz SWEEP_DEFAULT_END_HZ = 5945000000;     // 5.945 GHz - 300 MHz s
  */
 constexpr uint8_t DETECTION_WINDOWS_PER_WINDOW = 5;
 /**
+ * @brief Number of spectrum bands carrying detection-window brackets
+ * @note Band 0 = upper sweep band (single mode renders here too), band 1 =
+ *       lower sweep band (dual-sweep mode). DroneDisplay keeps one MHz
+ *       bracket mirror per band (see det_win_start_mhz_/det_win_end_mhz_).
+ */
+constexpr uint8_t DET_WIN_BAND_COUNT = 2;
+
+/**
+ * @brief Slot activation rule for detection-window ranges — SINGLE SOURCE OF TRUTH
+ * @param start_mhz Range lower bound in MHz (0 = slot unset)
+ * @param end_mhz   Range upper bound in MHz (0 = slot unset)
+ * @return true iff the slot gates detection (start > 0 && end > 0 && start <= end)
+ * @note Consumed by four call sites that must never drift apart:
+ *       SweepProcessor::is_detection_window_allowed() (scanner gate),
+ *       DroneDisplay::set_detection_windows() (bracket mirror activation),
+ *       DroneDisplay::draw_detection_brackets() (bracket rendering) and
+ *       SettingsFileManager::write_dw_slot() (file serialization skip).
+ *       The rule is invariant under MHz→Hz expansion (monotonic,
+ *       zero-preserving), so gate-time checks on Hz and UI-time checks on
+ *       MHz agree on every input.
+ */
+[[nodiscard]] constexpr bool is_det_win_slot_active(uint32_t start_mhz, uint32_t end_mhz) noexcept {
+    return start_mhz != 0 && end_mhz != 0 && start_mhz <= end_mhz;
+}
+
+/**
  * @brief Upper bound (MHz) of any detection-window From/To value
  * @note Derived from the hardware frequency ceiling, so the settings-file
  *       parser clamp, the UI NumberField range {0, 7200} and the MHz mirror

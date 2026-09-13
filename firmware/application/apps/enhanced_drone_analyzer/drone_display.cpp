@@ -17,6 +17,13 @@ namespace drone_analyzer {
 // + 1 px gap = 10 px total.
 constexpr uint16_t WF_HEADER_H = 10;
 
+// Detection-window bracket glyph geometry (red title-strip overlay).
+// 1 px horizontal rail + 3 px end ticks: the tick drop matches the mini-font
+// cap height so the outline reads as [ ] over the 8 px title glyphs while
+// staying inside the 10 px header (no collision with bars below).
+constexpr uint16_t DET_BRACKET_RAIL_H = 1;
+constexpr uint16_t DET_BRACKET_TICK_H = 3;
+
 // ============================================================================
 // Drone list layout constants (single source for render, draw, and hit-test)
 // ============================================================================
@@ -1195,9 +1202,9 @@ void DroneDisplay::render_composite_full_band(
         (composite_size <= chart_w) ? composite_size : chart_w);
 
     // Red detection-window brackets over the title strip (SWP From/To ranges
-    // of the window shown on this band). band1_/band2_ are the ONLY instances
-    // of BandRenderCtx — recover the band index for the per-band mirror.
-    const uint8_t band_idx = (&band == &band1_) ? 0U : 1U;
+    // of the window shown on this band). Band index is carried by the render
+    // context (fixed at construction) — no pointer-identity assumptions (M1).
+    const uint8_t band_idx = band.band_idx_;
     draw_detection_brackets(painter, band_idx, title_start, title_end,
                             composite_size, bar_count, chart_start_x, start_y + 1);
 
@@ -1274,7 +1281,7 @@ void DroneDisplay::draw_detection_brackets(
     uint16_t chart_start_x,
     uint16_t title_y
 ) noexcept {
-    if (band_idx >= 2 || !det_win_active_[band_idx]) return;
+    if (band_idx >= DET_WIN_BAND_COUNT || !det_win_active_[band_idx]) return;
     if (f_min == 0 || f_max <= f_min || composite_size == 0 || bar_count == 0) return;
 
     const FreqHz range = f_max - f_min;
@@ -1284,8 +1291,9 @@ void DroneDisplay::draw_detection_brackets(
     for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
         const uint32_t start_mhz = det_win_start_mhz_[band_idx][i];
         const uint32_t end_mhz = det_win_end_mhz_[band_idx][i];
-        // Same activation rule as SweepProcessor::is_detection_window_allowed().
-        if (start_mhz == 0 || end_mhz == 0 || start_mhz > end_mhz) continue;
+        // Single source of truth: constants.hpp::is_det_win_slot_active()
+        // — the exact rule the scanner gate applies at detection time (M2).
+        if (!is_det_win_slot_active(start_mhz, end_mhz)) continue;
 
         // MHz → Hz expansion in u64 — 7200e6 cannot overflow.
         const FreqHz lo = static_cast<FreqHz>(start_mhz) * MHZ;
@@ -1309,9 +1317,9 @@ void DroneDisplay::draw_detection_brackets(
 
         // Bracket glyph: 1px top rail + 2px down-ticks on both ends — mini-font
         // height, drawn OVER the title text by design (per UI spec).
-        draw_rectangle(painter, x0, title_y, static_cast<uint16_t>(x1 - x0 + 1), 1, COLOR_DET_WINDOW);
-        draw_rectangle(painter, x0, title_y, 1, 3, COLOR_DET_WINDOW);
-        draw_rectangle(painter, x1, title_y, 1, 3, COLOR_DET_WINDOW);
+        draw_rectangle(painter, x0, title_y, static_cast<uint16_t>(x1 - x0 + 1), DET_BRACKET_RAIL_H, COLOR_DET_WINDOW);
+        draw_rectangle(painter, x0, title_y, 1, DET_BRACKET_TICK_H, COLOR_DET_WINDOW);
+        draw_rectangle(painter, x1, title_y, 1, DET_BRACKET_TICK_H, COLOR_DET_WINDOW);
     }
 }
 
@@ -1579,19 +1587,20 @@ void DroneDisplay::set_detection_windows(
     uint8_t band,
     const uint32_t (&start_mhz)[DETECTION_WINDOWS_PER_WINDOW],
     const uint32_t (&end_mhz)[DETECTION_WINDOWS_PER_WINDOW]) noexcept {
-    if (band >= 2) return;
+    if (band >= DET_WIN_BAND_COUNT) return;
     // Unchanged push (every sweep frame) → two memcmps, no repaint churn.
-    if (__builtin_memcmp(det_win_start_mhz_[band], start_mhz, sizeof(start_mhz)) == 0 &&
-        __builtin_memcmp(det_win_end_mhz_[band], end_mhz, sizeof(end_mhz)) == 0) {
+    if (std::memcmp(det_win_start_mhz_[band], start_mhz, sizeof(start_mhz)) == 0 &&
+        std::memcmp(det_win_end_mhz_[band], end_mhz, sizeof(end_mhz)) == 0) {
         return;
     }
-    __builtin_memcpy(det_win_start_mhz_[band], start_mhz, sizeof(start_mhz));
-    __builtin_memcpy(det_win_end_mhz_[band], end_mhz, sizeof(end_mhz));
+    std::memcpy(det_win_start_mhz_[band], start_mhz, sizeof(start_mhz));
+    std::memcpy(det_win_end_mhz_[band], end_mhz, sizeof(end_mhz));
 
-    // Same activation rule as the scanner gate (0 = unset, inverted = inactive).
+    // Single source of truth: constants.hpp::is_det_win_slot_active()
+    // (same rule as the scanner gate; 0 = unset, inverted = inactive).
     bool any_active = false;
     for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
-        if (start_mhz[i] != 0 && end_mhz[i] != 0 && start_mhz[i] <= end_mhz[i]) {
+        if (is_det_win_slot_active(start_mhz[i], end_mhz[i])) {
             any_active = true;
             break;
         }

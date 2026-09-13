@@ -236,12 +236,15 @@ public:
      * @param band      0 = band1 (upper / single mode), 1 = band2 (dual lower)
      * @param start_mhz Lower bounds of the 5 slots (MHz; 0 = unset)
      * @param end_mhz   Upper bounds of the 5 slots (MHz; 0 = unset)
-     * @note Slot activation rule matches the scanner gate
-     *       (start > 0 && end > 0 && start <= end — see
-     *       SweepProcessor::is_detection_window_allowed()). Active slots are
-     *       drawn as red brackets in the band's title strip.
+     * @note Slot activation rule: constants.hpp::is_det_win_slot_active()
+     *       (single source of truth — the scanner gate applies the same rule).
+     *       Active slots are drawn as red brackets in the band's title strip.
      * @note Content is compared against the stored mirror first: an unchanged
      *       push (every sweep frame) costs two memcmps and no repaint.
+     * @note Band 1 mirror is retained in single mode (NOT cleared): a later
+     *       return to dual-sweep mode redraws the correct brackets from the
+     *       retained mirror via the DIRTY_SPEC raised by set_dual_sweep_mode() —
+     *       no extra push is needed (L3 audit contract).
      * @note Stack: ~0 bytes. SRAM: 80 B (2 bands × 5 slots × 2 mirrors).
      */
     void set_detection_windows(
@@ -596,9 +599,11 @@ private:
      * @note shadow points into file-scope s_dd (BSS) — NOT owned, never freed.
      * @note last_* fields snapshot every screen-visible input; any mismatch
      *       forces a full band repaint (correctness over speed).
-     * @note SRAM: ~16 B per instance. Stack: 0 B (member).
+     * @note SRAM: ~20 B per instance (band_idx_ pads 16 → 20). Stack: 0 B (member).
      */
     struct BandRenderCtx {
+        constexpr BandRenderCtx() noexcept = default;
+        constexpr explicit BandRenderCtx(uint8_t idx) noexcept : band_idx_(idx) {}
         uint8_t* shadow{nullptr};      // [COMPOSITE_SIZE] rendered values on screen
         int16_t marker_on_screen{-1};  // marker column currently visible
         bool shadow_valid{false};      // false until first full render
@@ -608,9 +613,13 @@ private:
         uint16_t last_y{0};
         uint16_t last_w{0};
         uint16_t last_h{0};
+        // Mirror index for the det-window brackets (det_win_*_mhz_): fixed at
+        // construction, read by render_composite_full_band() — replaces the
+        // fragile (&band == &band1_) pointer-identity check (M1 audit fix).
+        uint8_t band_idx_{0};
     };
-    BandRenderCtx band1_;  // upper band (single mode renders here too)
-    BandRenderCtx band2_;  // lower band (dual-sweep only)
+    BandRenderCtx band1_{};   // band 0: upper band (single mode renders here too)
+    BandRenderCtx band2_{1};  // band 1: lower band (dual-sweep only)
 
     /**
      * @brief Full composite render of one band (clear + title + all columns).
@@ -742,9 +751,9 @@ private:
     // Detection-window bracket mirror (SWP From/To ranges), per band:
     // [0] = band1 (upper/single), [1] = band2 (dual lower). Stored as the same
     // MHz mirror as ScanConfig — SRAM: 2 bands × 5 slots × 2 × 4 B = 80 B BSS.
-    uint32_t det_win_start_mhz_[2][DETECTION_WINDOWS_PER_WINDOW]{};
-    uint32_t det_win_end_mhz_[2][DETECTION_WINDOWS_PER_WINDOW]{};
-    bool det_win_active_[2]{false, false};  // >= 1 active slot per band
+    uint32_t det_win_start_mhz_[DET_WIN_BAND_COUNT][DETECTION_WINDOWS_PER_WINDOW]{};
+    uint32_t det_win_end_mhz_[DET_WIN_BAND_COUNT][DETECTION_WINDOWS_PER_WINDOW]{};
+    bool det_win_active_[DET_WIN_BAND_COUNT]{false, false};  // >= 1 active slot per band
     bool det_win_dirty_{false};             // config changed → force full band repaint
 
     // Dual-column drone list (two narrow detection columns)
