@@ -37,27 +37,14 @@ enum class SweepFieldID : uint8_t {
     W4_DW0_FROM, W4_DW0_TO, W4_DW1_FROM, W4_DW1_TO, W4_DW2_FROM, W4_DW2_TO, W4_DW3_FROM, W4_DW3_TO, W4_DW4_FROM, W4_DW4_TO,
 };
 
-static void set_config_field_by_id(SweepFieldID field_id, rf::Frequency f) noexcept {
-    const FreqHz value = static_cast<FreqHz>(f);
-    switch (field_id) {
-        case SweepFieldID::W1_START: g_workspace_cfg.sweep_start_freq = value; break;
-        case SweepFieldID::W1_END: g_workspace_cfg.sweep_end_freq = value; break;
-        case SweepFieldID::W2_START: g_workspace_cfg.sweep2_start_freq = value; break;
-        case SweepFieldID::W2_END: g_workspace_cfg.sweep2_end_freq = value; break;
-        case SweepFieldID::W3_START: g_workspace_cfg.sweep3_start_freq = value; break;
-        case SweepFieldID::W3_END: g_workspace_cfg.sweep3_end_freq = value; break;
-        case SweepFieldID::W4_START: g_workspace_cfg.sweep4_start_freq = value; break;
-        case SweepFieldID::W4_END: g_workspace_cfg.sweep4_end_freq = value; break;
-        default:
-            set_dw_field_by_id(field_id, value);
-            break;
-    }
-}
-
 // ============================================================================
 // Detection-window field encoding
 // Enum layout (dense):  [W1..W4 start/end] then 40 dw ids W{N}_DW{S}_{F,T}.
 // off = (w*10) + (slot*2) + is_end  →  w = off/10, slot = (off%10)/2, end = off&1.
+// NOTE: helpers are defined BEFORE set_config_field_by_id() — the default
+// branch of that dispatcher calls set_dw_field_by_id(), and a static free
+// function must be declared before its point of use (fixes
+// "error: 'set_dw_field_by_id' was not declared in this scope").
 // ============================================================================
 
 static SweepFieldID dw_field_id(uint8_t w, uint8_t slot, bool is_end) noexcept {
@@ -82,6 +69,25 @@ static void set_dw_field_by_id(SweepFieldID id, FreqHz value) noexcept {
         g_workspace_cfg.sweep_det_win_end_mhz[w][slot] = static_cast<uint32_t>(value / MHZ);
     } else {
         g_workspace_cfg.sweep_det_win_start_mhz[w][slot] = static_cast<uint32_t>(value / MHZ);
+    }
+}
+
+// W1..W4 window bounds; every other ID dispatches into the detection-window
+// decoder above (for FrequencyKeypadView callbacks).
+static void set_config_field_by_id(SweepFieldID field_id, rf::Frequency f) noexcept {
+    const FreqHz value = static_cast<FreqHz>(f);
+    switch (field_id) {
+        case SweepFieldID::W1_START: g_workspace_cfg.sweep_start_freq = value; break;
+        case SweepFieldID::W1_END: g_workspace_cfg.sweep_end_freq = value; break;
+        case SweepFieldID::W2_START: g_workspace_cfg.sweep2_start_freq = value; break;
+        case SweepFieldID::W2_END: g_workspace_cfg.sweep2_end_freq = value; break;
+        case SweepFieldID::W3_START: g_workspace_cfg.sweep3_start_freq = value; break;
+        case SweepFieldID::W3_END: g_workspace_cfg.sweep3_end_freq = value; break;
+        case SweepFieldID::W4_START: g_workspace_cfg.sweep4_start_freq = value; break;
+        case SweepFieldID::W4_END: g_workspace_cfg.sweep4_end_freq = value; break;
+        default:
+            set_dw_field_by_id(field_id, value);
+            break;
     }
 }
 

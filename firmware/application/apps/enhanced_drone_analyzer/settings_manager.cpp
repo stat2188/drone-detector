@@ -127,9 +127,13 @@ static void parse_settings_line(
                 val_start[2] == 'u' && val_start[3] == 'e');
     };
 
-    auto parse_mhz_clamped = []() -> uint32_t {
+    auto parse_mhz_clamped = [&parse_int]() -> uint32_t {
+        // NOTE: [&parse_int] — a captureless lambda cannot odr-use the local
+        // 'parse_int' (compile error "'parse_int' is not captured"). Both
+        // lambdas live in this function scope only → by-reference is safe.
+        // Clamp to the same ceiling the UI NumberFields enforce ({0, 7200}).
         const uint64_t v = parse_int();
-        return (v > 7200ULL) ? 7200U : static_cast<uint32_t>(v);  // clamp to HW max
+        return (v > MAX_DET_WIN_MHZ) ? MAX_DET_WIN_MHZ : static_cast<uint32_t>(v);
     };
 
     auto parse_signed_int = [val_start, val_len]() -> int32_t {

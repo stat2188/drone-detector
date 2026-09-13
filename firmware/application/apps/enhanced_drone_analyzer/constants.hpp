@@ -1335,6 +1335,13 @@ constexpr FreqHz SWEEP_DEFAULT_END_HZ = 5945000000;     // 5.945 GHz - 300 MHz s
  *       (the old exception-radius "cutting" was removed — see sweep_processor).
  */
 constexpr uint8_t DETECTION_WINDOWS_PER_WINDOW = 5;
+/**
+ * @brief Upper bound (MHz) of any detection-window From/To value
+ * @note Derived from the hardware frequency ceiling, so the settings-file
+ *       parser clamp, the UI NumberField range {0, 7200} and the MHz mirror
+ *       in ScanConfig/SettingsStruct always agree on the same maximum.
+ */
+constexpr uint32_t MAX_DET_WIN_MHZ = static_cast<uint32_t>(HARDWARE_MAX_FREQ_HZ / MHZ);
 
 // ============================================================================
 // String Constants (Flash Storage)
