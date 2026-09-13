@@ -76,10 +76,12 @@ static void set_dw_field_by_id(SweepFieldID id, FreqHz value) noexcept {
     const uint8_t slot = (off % 10U) / 2U;  // 0..4 (range slot)
     const bool is_end = (off & 1U) != 0;
     if (w >= MAX_SWEEP_WINDOWS || slot >= DETECTION_WINDOWS_PER_WINDOW) return;
+    // ScanConfig stores detection windows as a MHz mirror (see scanner.hpp):
+    // keypad delivers Hz, down-convert to MHz (UI displays MHz anyway).
     if (is_end) {
-        g_workspace_cfg.sweep_det_windows[w][slot].end_hz = value;
+        g_workspace_cfg.sweep_det_win_end_mhz[w][slot] = static_cast<uint32_t>(value / MHZ);
     } else {
-        g_workspace_cfg.sweep_det_windows[w][slot].start_hz = value;
+        g_workspace_cfg.sweep_det_win_start_mhz[w][slot] = static_cast<uint32_t>(value / MHZ);
     }
 }
 
@@ -278,10 +280,13 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     windows_[3].step_freq = config.sweep4_step_freq;
     windows_[3].enabled = config.sweep4_enabled;
 
-    // Load 5 detection ranges per window (POD copy)
+    // Load 5 detection ranges per window (MHz mirror → UI-side Hz)
     for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
         for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
-            windows_[w].det_windows[i] = config.sweep_det_windows[w][i];
+            windows_[w].det_windows[i].start_hz =
+                static_cast<FreqHz>(config.sweep_det_win_start_mhz[w][i]) * MHZ;
+            windows_[w].det_windows[i].end_hz =
+                static_cast<FreqHz>(config.sweep_det_win_end_mhz[w][i]) * MHZ;
         }
     }
 
@@ -350,10 +355,13 @@ void DroneSweepView::save_settings() noexcept {
         g_workspace_cfg.sweep4_step_freq = windows_[3].step_freq;
         g_workspace_cfg.sweep4_enabled = windows_[3].enabled;
 
-        // Detection ranges (POD copy, Hz)
+        // Detection ranges (UI-side Hz → MHz mirror in ScanConfig)
         for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
             for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
-                g_workspace_cfg.sweep_det_windows[w][i] = windows_[w].det_windows[i];
+                g_workspace_cfg.sweep_det_win_start_mhz[w][i] = static_cast<uint32_t>(
+                    windows_[w].det_windows[i].start_hz / MHZ);
+                g_workspace_cfg.sweep_det_win_end_mhz[w][i] = static_cast<uint32_t>(
+                    windows_[w].det_windows[i].end_hz / MHZ);
             }
         }
 

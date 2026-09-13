@@ -1323,8 +1323,12 @@ constexpr FreqHz SWEEP_DEFAULT_END_HZ = 5945000000;     // 5.945 GHz - 300 MHz s
 
 /**
  * @brief Number of detection-range slots per sweep window
- * @note Each slot is an inclusive [start_hz, end_hz] range (FreqRangeHz).
- *       A slot is active iff start_hz > 0 && end_hz > 0 && start_hz <= end_hz.
+ * @note Each slot is an inclusive [start, end] range stored in BOTH
+ *       ScanConfig and SettingsStruct as a MHz MIRROR (uint32 pairs —
+ *       8 B/slot; a FreqRangeHz Hz array is 16 B/slot and breaks the
+ *       512 B static_assert on ScanConfig). MHz→Hz expansion happens in
+ *       SweepProcessor::is_detection_window_allowed() at gate time.
+ *       A slot is active iff start > 0 && end > 0 && start <= end.
  *       When ALL slots of a window are inactive (0 by default), detection
  *       runs over the ENTIRE sweep window range; otherwise detection runs
  *       ONLY inside the active ranges. The spectrum is always drawn fully

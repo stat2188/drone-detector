@@ -352,10 +352,11 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             g_workspace_settings.sweep4_enabled = g_workspace_cfg.sweep4_enabled;
             for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w)
                 for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
-                    g_workspace_settings.sweep_det_win_start_mhz[w][i] = static_cast<uint32_t>(
-                        g_workspace_cfg.sweep_det_windows[w][i].start_hz / 1000000ULL);
-                    g_workspace_settings.sweep_det_win_end_mhz[w][i] = static_cast<uint32_t>(
-                        g_workspace_cfg.sweep_det_windows[w][i].end_hz / 1000000ULL);
+                    // Both sides store the MHz mirror — direct POD copy.
+                    g_workspace_settings.sweep_det_win_start_mhz[w][i] =
+                        g_workspace_cfg.sweep_det_win_start_mhz[w][i];
+                    g_workspace_settings.sweep_det_win_end_mhz[w][i] =
+                        g_workspace_cfg.sweep_det_win_end_mhz[w][i];
                 }
 
             // Step 2: Build updated config from original + user edits.
@@ -383,10 +384,11 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             g_workspace_cfg.sweep4_enabled = g_workspace_settings.sweep4_enabled;
             for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w)
                 for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
-                    g_workspace_cfg.sweep_det_windows[w][i].start_hz =
-                        static_cast<FreqHz>(g_workspace_settings.sweep_det_win_start_mhz[w][i]) * 1000000ULL;
-                    g_workspace_cfg.sweep_det_windows[w][i].end_hz =
-                        static_cast<FreqHz>(g_workspace_settings.sweep_det_win_end_mhz[w][i]) * 1000000ULL;
+                    // Both sides store the MHz mirror — direct POD copy.
+                    g_workspace_cfg.sweep_det_win_start_mhz[w][i] =
+                        g_workspace_settings.sweep_det_win_start_mhz[w][i];
+                    g_workspace_cfg.sweep_det_win_end_mhz[w][i] =
+                        g_workspace_settings.sweep_det_win_end_mhz[w][i];
                 }
 
             const ErrorCode err = scanner_ptr_->set_config(g_workspace_cfg);

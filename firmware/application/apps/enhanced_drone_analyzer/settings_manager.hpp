@@ -14,10 +14,12 @@ namespace drone_analyzer {
  * @brief Unified settings data structure (all settings + sweep in one POD)
  * @note Single source of truth — replaces duplicated DroneSettings + ScanConfig sweep fields
  * @note ~360 bytes total (14×FreqHz=112B + sweep_det_win_*_mhz[4][5]×2=160B + other=~88B)
- * @note Sweep detection windows are stored as an MHz FILE-FORMAT MIRROR (uint32),
- *       NOT FreqHz: full-range [start,end] pairs would add 320B and break the
- *       ≤512B static_assert below. The scanner's ScanConfig keeps them in Hz;
- *       conversion happens ONLY here, in apply_to_config()/extract_from_config().
+ * @note Sweep detection windows are stored as an MHz MIRROR (uint32),
+ *       SHARED with ScanConfig (identical field names/types): full-range
+ *       FreqRangeHz pairs would add 320B and break the
+ *       ≤512B static_assert below. No conversion is needed between the
+ *       two structures — apply_to_config()/extract_from_config() copy the
+ *       mirror verbatim; MHz→Hz expansion happens only in the detection gate.
  * @note Use static locals in functions to avoid stack overflow on 4KB main thread stack
  * @note No heap allocation, no virtual functions
  */

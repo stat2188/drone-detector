@@ -17,8 +17,10 @@ using FreqHz = uint64_t;
  * @brief Inclusive frequency range [start_hz, end_hz] (POD, 16 bytes)
  * @note A slot is DISABLED iff both fields are 0 (the default).
  * @note A slot is VALID iff start_hz > 0 && end_hz > 0 && start_hz <= end_hz.
- * @note Used for per-sweep-window detection ranges — see
- *       SweepProcessor::is_detection_window_allowed().
+ * @note UI-side representation only (drone_sweep_view WindowData). The
+ *       persisted/config storage is the MHz mirror (uint32 pairs — see
+ *       ScanConfig / SettingsStruct); the detection gate expands MHz→Hz —
+ *       see SweepProcessor::is_detection_window_allowed().
  */
 struct FreqRangeHz {
     FreqHz start_hz{0};  //< range lower bound (Hz); 0 = unset

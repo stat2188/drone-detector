@@ -75,19 +75,22 @@ public:
 
     /**
      * @brief Detection-window gate (pure, no state, no I/O).
-     * @param slots     Array of num_slots inclusive ranges [start_hz, end_hz]
+     * @param start_mhz Array of num_slots range lower bounds (MHz; 0 = unset)
+     * @param end_mhz   Array of num_slots range upper bounds (MHz; 0 = unset)
      * @param num_slots Number of slots (DETECTION_WINDOWS_PER_WINDOW)
      * @param freq      Candidate peak frequency (Hz)
      * @return true if freq MAY be tracked:
      *         - when NO slot is active → everywhere (full sweep range), or
      *         - when >= 1 slot is active → freq inside an active range
-     * @note A slot is active iff start_hz > 0 && end_hz > 0 &&
-     *       start_hz <= end_hz; inverted ranges count as inactive (guard
-     *       against a malformed "kills the whole band" configuration).
+     * @note A slot is active iff start_mhz[i] > 0 && end_mhz[i] > 0 &&
+     *       start_mhz[i] <= end_mhz[i]; inverted ranges count as inactive
+     *       (guard against a malformed "kills the whole band" configuration).
+     * @note MHz→Hz expansion per slot: one UMULL per slot (u32 × 1e6 → u64).
      * @note O(num_slots), integer-only, no heap, no stack beyond registers.
      */
     [[nodiscard]] static bool is_detection_window_allowed(
-        const FreqRangeHz* slots,
+        const uint32_t* start_mhz,
+        const uint32_t* end_mhz,
         uint8_t num_slots,
         FreqHz freq
     ) noexcept;

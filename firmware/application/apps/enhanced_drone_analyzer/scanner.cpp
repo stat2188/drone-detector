@@ -455,7 +455,9 @@ bool DroneScanner::is_blacklisted(FreqHz frequency) const noexcept {
 bool DroneScanner::is_detection_window_allowed(uint8_t win_idx, FreqHz freq) const noexcept {
     if (win_idx >= MAX_SWEEP_WINDOWS) return true;  // guard: malformed index never kills detection
     return SweepProcessor::is_detection_window_allowed(
-        config_.sweep_det_windows[win_idx], DETECTION_WINDOWS_PER_WINDOW, freq);
+        config_.sweep_det_win_start_mhz[win_idx],
+        config_.sweep_det_win_end_mhz[win_idx],
+        DETECTION_WINDOWS_PER_WINDOW, freq);
 }
 
 ErrorCode DroneScanner::perform_scan_cycle() noexcept {

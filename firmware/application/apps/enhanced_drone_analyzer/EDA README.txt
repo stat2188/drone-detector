@@ -281,9 +281,10 @@ Key Structures:
     uint32_t display_color                // 4B (RGBA)
     MovementTrend trend                   // 1B
 
-  ScanConfig (~447 bytes):
-    (+79B SRAM: FreqRangeHz sweep_det_windows[4][5] = 160B
-     replaces FreqHz sweep_exceptions[4][5] + radius = 81B)
+  ScanConfig (~367 bytes):
+    (-1B SRAM: uint32 sweep_det_win_start/end_mhz[4][5] = 160B
+     replaces FreqHz sweep_exceptions[4][5] + radius = 161B; a FreqRangeHz
+     (2×u64) array would be 320B and break the 512B static_assert)
     ScanningMode mode
     FreqHz start_frequency, end_frequency
     uint32_t scan_interval_ms
@@ -292,7 +293,7 @@ Key Structures:
     uint32_t stale_timeout_ms
     FreqHz sweep_start/end/step_freq (×4 windows)
     bool sweep2/3/4_enabled
-    FreqRangeHz sweep_det_windows[4][5]   // detection windows (From/To, Hz)
+    uint32 sweep_det_win_start/end_mhz[4][5]  // detection windows (From/To, MHz mirror)
     bool dwell_enabled, confirm_count_enabled, noise_blacklist_enabled
     bool spectrum_detection_enabled, median_enabled
     uint8_t spectrum_margin/min_width/max_width/sharpness/ratio/valley/flatness/symmetry

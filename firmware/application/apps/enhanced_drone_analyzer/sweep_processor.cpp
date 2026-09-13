@@ -8,15 +8,18 @@
 namespace drone_analyzer {
 
 bool SweepProcessor::is_detection_window_allowed(
-    const FreqRangeHz* slots,
+    const uint32_t* start_mhz,
+    const uint32_t* end_mhz,
     uint8_t num_slots,
     FreqHz freq
 ) noexcept {
-    if (slots == nullptr || num_slots == 0) return true;
+    if (start_mhz == nullptr || end_mhz == nullptr || num_slots == 0) return true;
     bool any_enabled = false;
     for (uint8_t i = 0; i < num_slots; ++i) {
-        const FreqHz lo = slots[i].start_hz;
-        const FreqHz hi = slots[i].end_hz;
+        // MHz → Hz expansion (one UMULL per active slot; u32 max 7200 M
+        // cannot overflow u64).
+        const FreqHz lo = static_cast<FreqHz>(start_mhz[i]) * MHZ;
+        const FreqHz hi = static_cast<FreqHz>(end_mhz[i]) * MHZ;
         if (lo == 0 || hi == 0 || lo > hi) continue;  // inactive slot (0/0 or inverted)
         any_enabled = true;
         if (freq >= lo && freq <= hi) return true;    // inside an active window

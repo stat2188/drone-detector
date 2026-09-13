@@ -24,7 +24,7 @@ namespace drone_analyzer {
 /**
  * @brief Scan configuration
  * @note ScannerState is defined in drone_types.hpp
- * @note Size: ~528 bytes (14×FreqHz=112B + sweep_det_windows[4][5]×16B=320B + bools/uint8_t=~96B)
+ * @note Size: ~367 bytes (14×FreqHz=112B + sweep_det_win_*_mhz[4][5]×2×4B=160B + bools/uint8_t=~95B)
  * @note Passed by const reference (const ScanConfig&) to avoid copy overhead
  * @note Consider partitioning if future extensions increase size significantly
  */
@@ -103,12 +103,15 @@ struct ScanConfig {
     uint8_t os_cfar_k_percent{DEFAULT_OS_CFAR_K_PERCENT};    // OS-CFAR k-th order (50-90%)
     uint8_t vi_cfar_threshold_x10{DEFAULT_VI_CFAR_THRESHOLD_X10};  // VI-CFAR threshold ×10 (5-50)
 
-    // Sweep detection windows — per window x 5 inclusive [start_hz, end_hz]
-    // ranges (FreqRangeHz). Slot ACTIVE iff start>0 && end>0 && start<=end.
-    // A sweep window with NO active slot detects over its ENTIRE range;
-    // otherwise detections are accepted ONLY inside the active ranges.
-    // The sweep spectrum is ALWAYS drawn fully (no pixel masking).
-    FreqRangeHz sweep_det_windows[MAX_SWEEP_WINDOWS][DETECTION_WINDOWS_PER_WINDOW]{};
+    // Sweep detection windows — per window x 5 inclusive ranges, stored as a
+    // MHz MIRROR (uint32), NOT FreqHz: a 20-slot FreqRangeHz array is 320 B
+    // and breaks the 512 B static_assert below (regression caught by CI).
+    // Slot ACTIVE iff start>0 && end>0 && start<=end (checked after MHz→Hz
+    // expansion in the gate). A sweep window with NO active slot detects over
+    // its ENTIRE range; otherwise detections are accepted ONLY inside the
+    // active ranges. The sweep spectrum is ALWAYS drawn fully (no masking).
+    uint32_t sweep_det_win_start_mhz[MAX_SWEEP_WINDOWS][DETECTION_WINDOWS_PER_WINDOW]{};
+    uint32_t sweep_det_win_end_mhz[MAX_SWEEP_WINDOWS][DETECTION_WINDOWS_PER_WINDOW]{};
     uint8_t rssi_decrease_cycles{5};  // Normal mode: seconds of RSSI decrease before threat decay (sweep uses hardcoded MAX_SWEEP_CYCLES_MISSED)
     uint8_t freq_match_radius_mhz{DEFAULT_FREQ_MATCH_RADIUS_MHZ};  // 0-100, drone detection merge radius (0=disabled)
 

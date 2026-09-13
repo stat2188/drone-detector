@@ -525,10 +525,10 @@ static void wbool(File& f, const char* key, bool val) noexcept {
 }
 
 static void write_dw_slot(File& f, const char* key_start, const char* key_end,
-                          FreqHz start_hz, FreqHz end_hz) noexcept {
-    if (start_hz == 0 || end_hz == 0 || start_hz > end_hz) return;  // inactive slot — keep file minimal
-    wl(f, key_start, static_cast<int64_t>(start_hz / 1000000ULL));
-    wl(f, key_end,   static_cast<int64_t>(end_hz / 1000000ULL));
+                          uint32_t start_mhz, uint32_t end_mhz) noexcept {
+    if (start_mhz == 0 || end_mhz == 0 || start_mhz > end_mhz) return;  // inactive slot — keep file minimal
+    wl(f, key_start, static_cast<int64_t>(start_mhz));
+    wl(f, key_end,   static_cast<int64_t>(end_mhz));
 }
 
 // ============================================================================
@@ -560,11 +560,9 @@ ErrorCode SettingsFileManager::save(
         s_sweep_cfg.sweep4_enabled = s.sweep4_enabled;
         for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
             for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
-                // SettingsStruct is the MHz file-mirror; ScanConfig keeps Hz.
-                s_sweep_cfg.sweep_det_windows[w][i].start_hz =
-                    static_cast<FreqHz>(s.sweep_det_win_start_mhz[w][i]) * 1000000ULL;
-                s_sweep_cfg.sweep_det_windows[w][i].end_hz =
-                    static_cast<FreqHz>(s.sweep_det_win_end_mhz[w][i]) * 1000000ULL;
+                // ScanConfig and SettingsStruct share the MHz mirror — direct copy.
+                s_sweep_cfg.sweep_det_win_start_mhz[w][i] = s.sweep_det_win_start_mhz[w][i];
+                s_sweep_cfg.sweep_det_win_end_mhz[w][i] = s.sweep_det_win_end_mhz[w][i];
             }
         }
     }
@@ -659,8 +657,8 @@ ErrorCode SettingsFileManager::save(
     for (uint8_t w = 0; w < 4; ++w) {
         for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
             write_dw_slot(file, dw_keys_start[w][i], dw_keys_end[w][i],
-                s_sweep_cfg.sweep_det_windows[w][i].start_hz,
-                s_sweep_cfg.sweep_det_windows[w][i].end_hz);
+                s_sweep_cfg.sweep_det_win_start_mhz[w][i],
+                s_sweep_cfg.sweep_det_win_end_mhz[w][i]);
         }
     }
 
@@ -797,13 +795,11 @@ void SettingsFileManager::apply_to_config(
     config.sweep4_step_freq = s.sweep4_step_freq;
     config.sweep4_enabled = s.sweep4_enabled;
 
-    // Sweep detection windows (MHz mirror → Hz)
+    // Sweep detection windows (MHz mirror — direct POD copy)
     for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
         for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
-            config.sweep_det_windows[w][i].start_hz =
-                static_cast<FreqHz>(s.sweep_det_win_start_mhz[w][i]) * 1000000ULL;
-            config.sweep_det_windows[w][i].end_hz =
-                static_cast<FreqHz>(s.sweep_det_win_end_mhz[w][i]) * 1000000ULL;
+            config.sweep_det_win_start_mhz[w][i] = s.sweep_det_win_start_mhz[w][i];
+            config.sweep_det_win_end_mhz[w][i] = s.sweep_det_win_end_mhz[w][i];
         }
     }
     config.rssi_decrease_cycles = s.rssi_decrease_cycles;
@@ -884,13 +880,11 @@ void SettingsFileManager::extract_from_config(
     s.sweep4_step_freq = config.sweep4_step_freq;
     s.sweep4_enabled = config.sweep4_enabled;
 
-    // Sweep detection windows (Hz → MHz mirror)
+    // Sweep detection windows (MHz mirror — direct POD copy)
     for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
         for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
-            s.sweep_det_win_start_mhz[w][i] = static_cast<uint32_t>(
-                config.sweep_det_windows[w][i].start_hz / 1000000ULL);
-            s.sweep_det_win_end_mhz[w][i] = static_cast<uint32_t>(
-                config.sweep_det_windows[w][i].end_hz / 1000000ULL);
+            s.sweep_det_win_start_mhz[w][i] = config.sweep_det_win_start_mhz[w][i];
+            s.sweep_det_win_end_mhz[w][i] = config.sweep_det_win_end_mhz[w][i];
         }
     }
     s.rssi_decrease_cycles = config.rssi_decrease_cycles;
