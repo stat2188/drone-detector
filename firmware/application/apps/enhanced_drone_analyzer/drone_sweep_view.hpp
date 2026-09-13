@@ -76,14 +76,20 @@ public:
     WindowData* bound_data_{nullptr};
     uint8_t bound_index_{0};
 
+    // Left column — ALL focusable rows share the 16px row grid with the
+    // detection-window column on the right. Labels sit INLINE with their
+    // fields (Start|field on row 1, End|field on row 2, Enabled on row 3), so
+    // the geometric focus manager (FocusManager::update → rect_distances,
+    // see ui_focus.cpp) always finds an axis-aligned neighbour: Up/Down walk
+    // rows 1→2→3 without skips, Left/Right swap columns on the same row.
     ui::Labels labels_{
-        {{UI_POS_X(0), UI_POS_Y(0)}, "-- Window --", Color::white()},
-        {{UI_POS_X(1), UI_POS_Y(1)}, "Start(MHz):", Color::white()},
-        {{UI_POS_X(1), UI_POS_Y(3)}, "End(MHz):", Color::white()},
+        {{UI_POS_X(0), UI_POS_Y(0)}, "-- Win --", Color::white()},
+        {{UI_POS_X(0), UI_POS_Y(1)}, "Start", Color::white()},
+        {{UI_POS_X(0), UI_POS_Y(2)}, "End", Color::white()},
     };
-    ui::Checkbox check_enabled_{{UI_POS_X(1), UI_POS_Y(5)}, 8, "Enabled", false};
-    ui::NumberField field_start_{{UI_POS_X(1), UI_POS_Y(2)}, 5, {100, 7200}, 1, ' '};
-    ui::NumberField field_end_{{UI_POS_X(1), UI_POS_Y(4)}, 5, {100, 7200}, 1, ' '};
+    ui::Checkbox check_enabled_{{UI_POS_X(0), UI_POS_Y(3)}, 8, "Enabled", false};
+    ui::NumberField field_start_{{UI_POS_X(6), UI_POS_Y(1)}, 5, {100, 7200}, 1, ' '};
+    ui::NumberField field_end_{{UI_POS_X(4), UI_POS_Y(2)}, 5, {100, 7200}, 1, ' '};
 
     // Detection windows — right side (5 ranges × From/To), rows 0-5.
     // A range is OFF when BOTH fields are 0 (default); when at least one range
@@ -158,9 +164,11 @@ private:
         }
     };
 
-    // Buttons
-    ui::Button button_defaults_{{UI_POS_X(15), 285, UI_POS_WIDTH(7), 20}, "DEFAULTS"};
-    ui::Button button_save_{{UI_POS_X(22), 285, UI_POS_WIDTH(7), 20}, "SAVE"};
+    // Buttons — row 8, directly below the detection-window grid: Down from the
+    // bottom row (dw4 / Enabled) lands on them in one predictable step instead
+    // of teleporting to y=285 (~10 empty rows below the editor grid).
+    ui::Button button_defaults_{{UI_POS_X(15), UI_POS_Y(8), UI_POS_WIDTH(7), 20}, "DEFAULTS"};
+    ui::Button button_save_{{UI_POS_X(22), UI_POS_Y(8), UI_POS_WIDTH(7), 20}, "SAVE"};
 
     uint8_t selected_window_{0};
 

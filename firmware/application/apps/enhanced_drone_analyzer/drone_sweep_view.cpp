@@ -131,18 +131,22 @@ SweepWindowView::SweepWindowView(NavigationView& nav, const Rect parent_rect, Dr
     , nav_(nav)
     , scanner_ptr_(scanner_ptr) {
     set_parent_rect(parent_rect);
+    // add_children order == visual row order. It only serves as the tie-break
+    // order for the geometric FocusManager (min_element keeps the first
+    // equidistant widget), but keeping it aligned with the layout guarantees a
+    // deterministic selector path.
     add_children({
-        &labels_,
-        &check_enabled_,
-        &field_start_,
-        &field_end_,
-        &labels_dw_,
-        &labels_dw_idx_,
-        &field_dw0_start_, &field_dw0_end_,
-        &field_dw1_start_, &field_dw1_end_,
-        &field_dw2_start_, &field_dw2_end_,
-        &field_dw3_start_, &field_dw3_end_,
-        &field_dw4_start_, &field_dw4_end_,
+        &labels_,                             // r0 title, r1 Start, r2 End
+        &labels_dw_,                          // r0 From/To header
+        &labels_dw_idx_,                      // r1..r5 range indexes
+        &field_start_,                        // r1 left
+        &field_dw0_start_, &field_dw0_end_,   // r1 right
+        &field_end_,                          // r2 left
+        &field_dw1_start_, &field_dw1_end_,   // r2 right
+        &check_enabled_,                      // r3 left
+        &field_dw2_start_, &field_dw2_end_,   // r3 right
+        &field_dw3_start_, &field_dw3_end_,   // r4 right
+        &field_dw4_start_, &field_dw4_end_,   // r5 right
     });
 
     // on_select callbacks route through the bound window index
@@ -207,11 +211,12 @@ void SweepWindowView::bind(WindowData* data, uint8_t window_index) noexcept {
     bound_index_ = window_index;
     if (data != nullptr) {
         char label_buf[20];
-        snprintf(label_buf, sizeof(label_buf), "-- Window %d --", static_cast<int>(window_index) + 1);
+        // 12 chars → x0..95: must stay clear of the "From" header at x104.
+        snprintf(label_buf, sizeof(label_buf), "-- Win %d --", static_cast<int>(window_index) + 1);
         labels_.set_labels({
             {{UI_POS_X(0), UI_POS_Y(0)}, label_buf, Color::white()},
-            {{UI_POS_X(1), UI_POS_Y(1)}, "Start(MHz):", Color::white()},
-            {{UI_POS_X(1), UI_POS_Y(3)}, "End(MHz):", Color::white()},
+            {{UI_POS_X(0), UI_POS_Y(1)}, "Start", Color::white()},
+            {{UI_POS_X(0), UI_POS_Y(2)}, "End", Color::white()},
         });
         sync_to_widgets();
     }
@@ -318,7 +323,10 @@ DroneSweepView::~DroneSweepView() noexcept {
 }
 
 void DroneSweepView::focus() {
-    sweep_view_.focus();
+    // Entry focus: the window selector ("Win 1"). It is the first element of
+    // the navigation grid, so the encoder switches windows immediately; Down
+    // then reaches Start/End/Enabled and the detection windows predictably.
+    field_window_select_.focus();
 }
 
 void DroneSweepView::switch_to_window(uint8_t index) noexcept {
