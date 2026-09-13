@@ -350,10 +350,13 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             g_workspace_settings.sweep4_end_freq = g_workspace_cfg.sweep4_end_freq;
             g_workspace_settings.sweep4_step_freq = g_workspace_cfg.sweep4_step_freq;
             g_workspace_settings.sweep4_enabled = g_workspace_cfg.sweep4_enabled;
-            for (uint8_t w = 0; w < 4; ++w)
-                for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i)
-                    g_workspace_settings.sweep_exceptions[w][i] = g_workspace_cfg.sweep_exceptions[w][i];
-            g_workspace_settings.exception_radius_mhz = g_workspace_cfg.exception_radius_mhz;
+            for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w)
+                for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
+                    g_workspace_settings.sweep_det_win_start_mhz[w][i] = static_cast<uint32_t>(
+                        g_workspace_cfg.sweep_det_windows[w][i].start_hz / 1000000ULL);
+                    g_workspace_settings.sweep_det_win_end_mhz[w][i] = static_cast<uint32_t>(
+                        g_workspace_cfg.sweep_det_windows[w][i].end_hz / 1000000ULL);
+                }
 
             // Step 2: Build updated config from original + user edits.
             // This overwrites sweep fields in g_workspace_cfg — that's fine,
@@ -378,10 +381,13 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             g_workspace_cfg.sweep4_end_freq = g_workspace_settings.sweep4_end_freq;
             g_workspace_cfg.sweep4_step_freq = g_workspace_settings.sweep4_step_freq;
             g_workspace_cfg.sweep4_enabled = g_workspace_settings.sweep4_enabled;
-            for (uint8_t w = 0; w < 4; ++w)
-                for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i)
-                    g_workspace_cfg.sweep_exceptions[w][i] = g_workspace_settings.sweep_exceptions[w][i];
-            g_workspace_cfg.exception_radius_mhz = g_workspace_settings.exception_radius_mhz;
+            for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w)
+                for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
+                    g_workspace_cfg.sweep_det_windows[w][i].start_hz =
+                        static_cast<FreqHz>(g_workspace_settings.sweep_det_win_start_mhz[w][i]) * 1000000ULL;
+                    g_workspace_cfg.sweep_det_windows[w][i].end_hz =
+                        static_cast<FreqHz>(g_workspace_settings.sweep_det_win_end_mhz[w][i]) * 1000000ULL;
+                }
 
             const ErrorCode err = scanner_ptr_->set_config(g_workspace_cfg);
             if (err != ErrorCode::SUCCESS) {

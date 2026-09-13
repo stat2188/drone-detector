@@ -36,9 +36,6 @@ public:
      *                       prevents drift) driving pixel_index.
      * @param pixel_step_hz  Hz per pixel on the window scale (range / 240)
      * @param f_center       FFT slice center frequency (Hz)
-     * @param exception_radius_hz Exclusion radius around exception frequencies
-     * @param exceptions     Exception frequency array
-     * @param num_exceptions Number of valid exception entries
      * @param effective_bin_size Hz contributed per FFT bin to the progress
      *        accumulator. Must equal step_hz / 236 (236 = 240 total bins - 2
      *        end skip - 2 DC spike) so each slice advances the accumulator by
@@ -46,6 +43,9 @@ public:
      * @param f_min          Window lower bound (Hz) — linear scale anchor
      * @param f_max          Window upper bound (Hz) — linear scale anchor
      * @return Updated pixel_index
+     * @note The spectrum is drawn FULLY — the old exception-radius pixel
+     *       masking was removed (detection-window gating lives exclusively in
+     *       the scanner, see DroneScanner::is_detection_window_allowed()).
      * @note DATA PLACEMENT — TRUE POSITION, not sequential: every bin is
      *       written at composite[(freq - f_min) * 240 / range] — the exact
      *       pixel its RF frequency occupies on the linear window scale, i.e.
@@ -68,20 +68,28 @@ public:
         FreqHz& bins_hz_acc,
         FreqHz pixel_step_hz,
         FreqHz f_center,
-        FreqHz exception_radius_hz,
-        const FreqHz* exceptions,
-        uint8_t num_exceptions,
         FreqHz effective_bin_size,
         FreqHz f_min,
         FreqHz f_max
     ) noexcept;
 
-private:
-    [[nodiscard]] static bool is_exception_freq(
-        FreqHz hz,
-        FreqHz exception_radius_hz,
-        const FreqHz* exceptions,
-        uint8_t num_exceptions
+    /**
+     * @brief Detection-window gate (pure, no state, no I/O).
+     * @param slots     Array of num_slots inclusive ranges [start_hz, end_hz]
+     * @param num_slots Number of slots (DETECTION_WINDOWS_PER_WINDOW)
+     * @param freq      Candidate peak frequency (Hz)
+     * @return true if freq MAY be tracked:
+     *         - when NO slot is active → everywhere (full sweep range), or
+     *         - when >= 1 slot is active → freq inside an active range
+     * @note A slot is active iff start_hz > 0 && end_hz > 0 &&
+     *       start_hz <= end_hz; inverted ranges count as inactive (guard
+     *       against a malformed "kills the whole band" configuration).
+     * @note O(num_slots), integer-only, no heap, no stack beyond registers.
+     */
+    [[nodiscard]] static bool is_detection_window_allowed(
+        const FreqRangeHz* slots,
+        uint8_t num_slots,
+        FreqHz freq
     ) noexcept;
 };
 

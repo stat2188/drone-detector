@@ -28,10 +28,13 @@ enum class SweepFieldID : uint8_t {
     W2_START, W2_END,
     W3_START, W3_END,
     W4_START, W4_END,
-    W1_EXC0, W1_EXC1, W1_EXC2, W1_EXC3, W1_EXC4,
-    W2_EXC0, W2_EXC1, W2_EXC2, W2_EXC3, W2_EXC4,
-    W3_EXC0, W3_EXC1, W3_EXC2, W3_EXC3, W3_EXC4,
-    W4_EXC0, W4_EXC1, W4_EXC2, W4_EXC3, W4_EXC4,
+    // Detection-window ranges: W{N}_DW{slot}_{FROM|TO} — values MUST stay
+    // dense & ordered (W1_DW0_FROM..W4_DW4_TO); set_dw_field_by_id() decodes
+    // them arithmetically (see below).
+    W1_DW0_FROM, W1_DW0_TO, W1_DW1_FROM, W1_DW1_TO, W1_DW2_FROM, W1_DW2_TO, W1_DW3_FROM, W1_DW3_TO, W1_DW4_FROM, W1_DW4_TO,
+    W2_DW0_FROM, W2_DW0_TO, W2_DW1_FROM, W2_DW1_TO, W2_DW2_FROM, W2_DW2_TO, W2_DW3_FROM, W2_DW3_TO, W2_DW4_FROM, W2_DW4_TO,
+    W3_DW0_FROM, W3_DW0_TO, W3_DW1_FROM, W3_DW1_TO, W3_DW2_FROM, W3_DW2_TO, W3_DW3_FROM, W3_DW3_TO, W3_DW4_FROM, W3_DW4_TO,
+    W4_DW0_FROM, W4_DW0_TO, W4_DW1_FROM, W4_DW1_TO, W4_DW2_FROM, W4_DW2_TO, W4_DW3_FROM, W4_DW3_TO, W4_DW4_FROM, W4_DW4_TO,
 };
 
 static void set_config_field_by_id(SweepFieldID field_id, rf::Frequency f) noexcept {
@@ -45,38 +48,39 @@ static void set_config_field_by_id(SweepFieldID field_id, rf::Frequency f) noexc
         case SweepFieldID::W3_END: g_workspace_cfg.sweep3_end_freq = value; break;
         case SweepFieldID::W4_START: g_workspace_cfg.sweep4_start_freq = value; break;
         case SweepFieldID::W4_END: g_workspace_cfg.sweep4_end_freq = value; break;
-        case SweepFieldID::W1_EXC0: g_workspace_cfg.sweep_exceptions[0][0] = value; break;
-        case SweepFieldID::W1_EXC1: g_workspace_cfg.sweep_exceptions[0][1] = value; break;
-        case SweepFieldID::W1_EXC2: g_workspace_cfg.sweep_exceptions[0][2] = value; break;
-        case SweepFieldID::W1_EXC3: g_workspace_cfg.sweep_exceptions[0][3] = value; break;
-        case SweepFieldID::W1_EXC4: g_workspace_cfg.sweep_exceptions[0][4] = value; break;
-        case SweepFieldID::W2_EXC0: g_workspace_cfg.sweep_exceptions[1][0] = value; break;
-        case SweepFieldID::W2_EXC1: g_workspace_cfg.sweep_exceptions[1][1] = value; break;
-        case SweepFieldID::W2_EXC2: g_workspace_cfg.sweep_exceptions[1][2] = value; break;
-        case SweepFieldID::W2_EXC3: g_workspace_cfg.sweep_exceptions[1][3] = value; break;
-        case SweepFieldID::W2_EXC4: g_workspace_cfg.sweep_exceptions[1][4] = value; break;
-        case SweepFieldID::W3_EXC0: g_workspace_cfg.sweep_exceptions[2][0] = value; break;
-        case SweepFieldID::W3_EXC1: g_workspace_cfg.sweep_exceptions[2][1] = value; break;
-        case SweepFieldID::W3_EXC2: g_workspace_cfg.sweep_exceptions[2][2] = value; break;
-        case SweepFieldID::W3_EXC3: g_workspace_cfg.sweep_exceptions[2][3] = value; break;
-        case SweepFieldID::W3_EXC4: g_workspace_cfg.sweep_exceptions[2][4] = value; break;
-        case SweepFieldID::W4_EXC0: g_workspace_cfg.sweep_exceptions[3][0] = value; break;
-        case SweepFieldID::W4_EXC1: g_workspace_cfg.sweep_exceptions[3][1] = value; break;
-        case SweepFieldID::W4_EXC2: g_workspace_cfg.sweep_exceptions[3][2] = value; break;
-        case SweepFieldID::W4_EXC3: g_workspace_cfg.sweep_exceptions[3][3] = value; break;
-        case SweepFieldID::W4_EXC4: g_workspace_cfg.sweep_exceptions[3][4] = value; break;
+        default:
+            set_dw_field_by_id(field_id, value);
+            break;
     }
 }
 
-// Map (window_index, exc_slot) → SweepFieldID
-static SweepFieldID exc_field_id(uint8_t w, uint8_t s) noexcept {
-    constexpr SweepFieldID table[4][5] = {
-        {SweepFieldID::W1_EXC0, SweepFieldID::W1_EXC1, SweepFieldID::W1_EXC2, SweepFieldID::W1_EXC3, SweepFieldID::W1_EXC4},
-        {SweepFieldID::W2_EXC0, SweepFieldID::W2_EXC1, SweepFieldID::W2_EXC2, SweepFieldID::W2_EXC3, SweepFieldID::W2_EXC4},
-        {SweepFieldID::W3_EXC0, SweepFieldID::W3_EXC1, SweepFieldID::W3_EXC2, SweepFieldID::W3_EXC3, SweepFieldID::W3_EXC4},
-        {SweepFieldID::W4_EXC0, SweepFieldID::W4_EXC1, SweepFieldID::W4_EXC2, SweepFieldID::W4_EXC3, SweepFieldID::W4_EXC4},
-    };
-    return (w < 4 && s < 5) ? table[w][s] : SweepFieldID::W1_START;
+// ============================================================================
+// Detection-window field encoding
+// Enum layout (dense):  [W1..W4 start/end] then 40 dw ids W{N}_DW{S}_{F,T}.
+// off = (w*10) + (slot*2) + is_end  →  w = off/10, slot = (off%10)/2, end = off&1.
+// ============================================================================
+
+static SweepFieldID dw_field_id(uint8_t w, uint8_t slot, bool is_end) noexcept {
+    const uint8_t off = static_cast<uint8_t>((w * 10U) + (slot * 2U) + (is_end ? 1U : 0U));
+    return (w < MAX_SWEEP_WINDOWS && slot < DETECTION_WINDOWS_PER_WINDOW)
+        ? static_cast<SweepFieldID>(static_cast<uint8_t>(SweepFieldID::W1_DW0_FROM) + off)
+        : SweepFieldID::W1_START;
+}
+
+static void set_dw_field_by_id(SweepFieldID id, FreqHz value) noexcept {
+    const uint8_t raw = static_cast<uint8_t>(id);
+    const uint8_t base = static_cast<uint8_t>(SweepFieldID::W1_DW0_FROM);
+    if (raw < base) return;  // not a detection-window field
+    const uint8_t off = raw - base;
+    const uint8_t w = off / 10U;            // 0..3 (window index)
+    const uint8_t slot = (off % 10U) / 2U;  // 0..4 (range slot)
+    const bool is_end = (off & 1U) != 0;
+    if (w >= MAX_SWEEP_WINDOWS || slot >= DETECTION_WINDOWS_PER_WINDOW) return;
+    if (is_end) {
+        g_workspace_cfg.sweep_det_windows[w][slot].end_hz = value;
+    } else {
+        g_workspace_cfg.sweep_det_windows[w][slot].start_hz = value;
+    }
 }
 
 static SweepFieldID start_field_id(uint8_t w) noexcept {
@@ -124,12 +128,13 @@ SweepWindowView::SweepWindowView(NavigationView& nav, const Rect parent_rect, Dr
         &check_enabled_,
         &field_start_,
         &field_end_,
-        &labels_exc_,
-        &field_exc0_,
-        &field_exc1_,
-        &field_exc2_,
-        &field_exc3_,
-        &field_exc4_,
+        &labels_dw_,
+        &labels_dw_idx_,
+        &field_dw0_start_, &field_dw0_end_,
+        &field_dw1_start_, &field_dw1_end_,
+        &field_dw2_start_, &field_dw2_end_,
+        &field_dw3_start_, &field_dw3_end_,
+        &field_dw4_start_, &field_dw4_end_,
     });
 
     // on_select callbacks route through the bound window index
@@ -142,26 +147,46 @@ SweepWindowView::SweepWindowView(NavigationView& nav, const Rect parent_rect, Dr
             static_cast<FreqHz>(field_end_.value()) * MHZ, scanner_ptr_, field_end_);
     };
 
-    // Exception fields
-    field_exc0_.on_select = [this](NumberField&) {
-        open_freq_keypad_push(nav_, exc_field_id(bound_index_, 0),
-            static_cast<FreqHz>(field_exc0_.value()) * MHZ, scanner_ptr_, field_exc0_);
+    // Detection-window range fields (5 × From/To)
+    field_dw0_start_.on_select = [this](NumberField&) {
+        open_freq_keypad_push(nav_, dw_field_id(bound_index_, 0, false),
+            static_cast<FreqHz>(field_dw0_start_.value()) * MHZ, scanner_ptr_, field_dw0_start_);
     };
-    field_exc1_.on_select = [this](NumberField&) {
-        open_freq_keypad_push(nav_, exc_field_id(bound_index_, 1),
-            static_cast<FreqHz>(field_exc1_.value()) * MHZ, scanner_ptr_, field_exc1_);
+    field_dw0_end_.on_select = [this](NumberField&) {
+        open_freq_keypad_push(nav_, dw_field_id(bound_index_, 0, true),
+            static_cast<FreqHz>(field_dw0_end_.value()) * MHZ, scanner_ptr_, field_dw0_end_);
     };
-    field_exc2_.on_select = [this](NumberField&) {
-        open_freq_keypad_push(nav_, exc_field_id(bound_index_, 2),
-            static_cast<FreqHz>(field_exc2_.value()) * MHZ, scanner_ptr_, field_exc2_);
+    field_dw1_start_.on_select = [this](NumberField&) {
+        open_freq_keypad_push(nav_, dw_field_id(bound_index_, 1, false),
+            static_cast<FreqHz>(field_dw1_start_.value()) * MHZ, scanner_ptr_, field_dw1_start_);
     };
-    field_exc3_.on_select = [this](NumberField&) {
-        open_freq_keypad_push(nav_, exc_field_id(bound_index_, 3),
-            static_cast<FreqHz>(field_exc3_.value()) * MHZ, scanner_ptr_, field_exc3_);
+    field_dw1_end_.on_select = [this](NumberField&) {
+        open_freq_keypad_push(nav_, dw_field_id(bound_index_, 1, true),
+            static_cast<FreqHz>(field_dw1_end_.value()) * MHZ, scanner_ptr_, field_dw1_end_);
     };
-    field_exc4_.on_select = [this](NumberField&) {
-        open_freq_keypad_push(nav_, exc_field_id(bound_index_, 4),
-            static_cast<FreqHz>(field_exc4_.value()) * MHZ, scanner_ptr_, field_exc4_);
+    field_dw2_start_.on_select = [this](NumberField&) {
+        open_freq_keypad_push(nav_, dw_field_id(bound_index_, 2, false),
+            static_cast<FreqHz>(field_dw2_start_.value()) * MHZ, scanner_ptr_, field_dw2_start_);
+    };
+    field_dw2_end_.on_select = [this](NumberField&) {
+        open_freq_keypad_push(nav_, dw_field_id(bound_index_, 2, true),
+            static_cast<FreqHz>(field_dw2_end_.value()) * MHZ, scanner_ptr_, field_dw2_end_);
+    };
+    field_dw3_start_.on_select = [this](NumberField&) {
+        open_freq_keypad_push(nav_, dw_field_id(bound_index_, 3, false),
+            static_cast<FreqHz>(field_dw3_start_.value()) * MHZ, scanner_ptr_, field_dw3_start_);
+    };
+    field_dw3_end_.on_select = [this](NumberField&) {
+        open_freq_keypad_push(nav_, dw_field_id(bound_index_, 3, true),
+            static_cast<FreqHz>(field_dw3_end_.value()) * MHZ, scanner_ptr_, field_dw3_end_);
+    };
+    field_dw4_start_.on_select = [this](NumberField&) {
+        open_freq_keypad_push(nav_, dw_field_id(bound_index_, 4, false),
+            static_cast<FreqHz>(field_dw4_start_.value()) * MHZ, scanner_ptr_, field_dw4_start_);
+    };
+    field_dw4_end_.on_select = [this](NumberField&) {
+        open_freq_keypad_push(nav_, dw_field_id(bound_index_, 4, true),
+            static_cast<FreqHz>(field_dw4_end_.value()) * MHZ, scanner_ptr_, field_dw4_end_);
     };
 }
 
@@ -190,9 +215,13 @@ void SweepWindowView::sync_to_widgets() noexcept {
     field_end_.set_value(static_cast<int32_t>(bound_data_->end_freq / MHZ));
     check_enabled_.set_value(bound_data_->enabled);
 
-    ui::NumberField* exc_fields[5] = {&field_exc0_, &field_exc1_, &field_exc2_, &field_exc3_, &field_exc4_};
-    for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-        exc_fields[i]->set_value(static_cast<int32_t>(bound_data_->exceptions[i] / MHZ));
+    ui::NumberField* dw_start_fields[DETECTION_WINDOWS_PER_WINDOW] = {
+        &field_dw0_start_, &field_dw1_start_, &field_dw2_start_, &field_dw3_start_, &field_dw4_start_};
+    ui::NumberField* dw_end_fields[DETECTION_WINDOWS_PER_WINDOW] = {
+        &field_dw0_end_, &field_dw1_end_, &field_dw2_end_, &field_dw3_end_, &field_dw4_end_};
+    for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
+        dw_start_fields[i]->set_value(static_cast<int32_t>(bound_data_->det_windows[i].start_hz / MHZ));
+        dw_end_fields[i]->set_value(static_cast<int32_t>(bound_data_->det_windows[i].end_hz / MHZ));
     }
 }
 
@@ -202,9 +231,15 @@ void SweepWindowView::sync_from_widgets() noexcept {
     bound_data_->end_freq = read_mhz_field(field_end_);
     bound_data_->enabled = check_enabled_.value();
 
-    const ui::NumberField* exc_fields[5] = {&field_exc0_, &field_exc1_, &field_exc2_, &field_exc3_, &field_exc4_};
-    for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-        bound_data_->exceptions[i] = static_cast<FreqHz>(exc_fields[i]->value()) * MHZ;
+    const ui::NumberField* dw_start_fields[DETECTION_WINDOWS_PER_WINDOW] = {
+        &field_dw0_start_, &field_dw1_start_, &field_dw2_start_, &field_dw3_start_, &field_dw4_start_};
+    const ui::NumberField* dw_end_fields[DETECTION_WINDOWS_PER_WINDOW] = {
+        &field_dw0_end_, &field_dw1_end_, &field_dw2_end_, &field_dw3_end_, &field_dw4_end_};
+    for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
+        bound_data_->det_windows[i].start_hz =
+            static_cast<FreqHz>(dw_start_fields[i]->value()) * MHZ;
+        bound_data_->det_windows[i].end_hz =
+            static_cast<FreqHz>(dw_end_fields[i]->value()) * MHZ;
     }
 }
 
@@ -221,8 +256,6 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     add_children({
         &field_window_select_,
         &sweep_view_,
-        &labels_exc_radius_,
-        &field_exc_radius_,
         &button_defaults_,
         &button_save_,
     });
@@ -232,35 +265,25 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     windows_[0].end_freq = config.sweep_end_freq;
     windows_[0].step_freq = config.sweep_step_freq;
     windows_[0].enabled = true;  // Window 1 always enabled
-    for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-        windows_[0].exceptions[i] = config.sweep_exceptions[0][i];
-    }
-
     windows_[1].start_freq = config.sweep2_start_freq;
     windows_[1].end_freq = config.sweep2_end_freq;
     windows_[1].step_freq = config.sweep2_step_freq;
     windows_[1].enabled = config.sweep2_enabled;
-    for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-        windows_[1].exceptions[i] = config.sweep_exceptions[1][i];
-    }
-
     windows_[2].start_freq = config.sweep3_start_freq;
     windows_[2].end_freq = config.sweep3_end_freq;
     windows_[2].step_freq = config.sweep3_step_freq;
     windows_[2].enabled = config.sweep3_enabled;
-    for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-        windows_[2].exceptions[i] = config.sweep_exceptions[2][i];
-    }
-
     windows_[3].start_freq = config.sweep4_start_freq;
     windows_[3].end_freq = config.sweep4_end_freq;
     windows_[3].step_freq = config.sweep4_step_freq;
     windows_[3].enabled = config.sweep4_enabled;
-    for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-        windows_[3].exceptions[i] = config.sweep_exceptions[3][i];
-    }
 
-    field_exc_radius_.set_value(static_cast<int32_t>(config.exception_radius_mhz));
+    // Load 5 detection ranges per window (POD copy)
+    for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
+        for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
+            windows_[w].det_windows[i] = config.sweep_det_windows[w][i];
+        }
+    }
 
     // Window selector callback
     field_window_select_.on_change = [this](size_t, int32_t v) {
@@ -305,8 +328,6 @@ void DroneSweepView::save_settings() noexcept {
     // Sync widgets → data array
     sweep_view_.sync_from_widgets();
 
-    const uint8_t exc_radius = static_cast<uint8_t>(field_exc_radius_.value());
-
     if (scanner_ptr_ != nullptr) {
         scanner_ptr_->get_config(g_workspace_cfg);
 
@@ -329,13 +350,12 @@ void DroneSweepView::save_settings() noexcept {
         g_workspace_cfg.sweep4_step_freq = windows_[3].step_freq;
         g_workspace_cfg.sweep4_enabled = windows_[3].enabled;
 
-        for (uint8_t w = 0; w < 4; ++w) {
-            for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-                g_workspace_cfg.sweep_exceptions[w][i] = windows_[w].exceptions[i];
+        // Detection ranges (POD copy, Hz)
+        for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
+            for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
+                g_workspace_cfg.sweep_det_windows[w][i] = windows_[w].det_windows[i];
             }
         }
-
-        g_workspace_cfg.exception_radius_mhz = exc_radius;
 
         (void)scanner_ptr_->set_config(g_workspace_cfg);
     }
@@ -351,28 +371,27 @@ void DroneSweepView::apply_defaults() noexcept {
     windows_[0].end_freq = defaults.sweep_end_freq;
     windows_[0].step_freq = defaults.sweep_step_freq;
     windows_[0].enabled = true;
-    for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) windows_[0].exceptions[i] = 0;
-
     windows_[1].start_freq = defaults.sweep2_start_freq;
     windows_[1].end_freq = defaults.sweep2_end_freq;
     windows_[1].step_freq = defaults.sweep2_step_freq;
     windows_[1].enabled = false;
-    for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) windows_[1].exceptions[i] = 0;
-
     windows_[2].start_freq = defaults.sweep3_start_freq;
     windows_[2].end_freq = defaults.sweep3_end_freq;
     windows_[2].step_freq = defaults.sweep3_step_freq;
     windows_[2].enabled = false;
-    for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) windows_[2].exceptions[i] = 0;
-
     windows_[3].start_freq = defaults.sweep4_start_freq;
     windows_[3].end_freq = defaults.sweep4_end_freq;
     windows_[3].step_freq = defaults.sweep4_step_freq;
     windows_[3].enabled = false;
-    for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) windows_[3].exceptions[i] = 0;
+
+    // Zero all detection ranges → every sweep window detects its full range.
+    for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
+        for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
+            windows_[w].det_windows[i] = FreqRangeHz{};
+        }
+    }
 
     sweep_view_.sync_to_widgets();
-    field_exc_radius_.set_value(DEFAULT_EXCEPTION_RADIUS_MHZ);
 }
 
 } // namespace drone_analyzer

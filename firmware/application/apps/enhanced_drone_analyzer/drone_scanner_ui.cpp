@@ -592,15 +592,6 @@ void DroneScannerUI::on_show() {
         sweep_[3].init(g_workspace_cfg.sweep4_start_freq, g_workspace_cfg.sweep4_end_freq, g_workspace_cfg.sweep4_step_freq);
         sweep_[3].enabled = g_workspace_cfg.sweep4_enabled;
 
-        // Copy exception frequencies to each sweep window
-        const FreqHz on_show_exc_radius = static_cast<FreqHz>(g_workspace_cfg.exception_radius_mhz) * 1000000ULL;
-        for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
-            for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-                sweep_[w].exceptions[i] = g_workspace_cfg.sweep_exceptions[w][i];
-            }
-            sweep_[w].exception_radius_hz = on_show_exc_radius;
-        }
-
         // Find first enabled window
         active_sweep_idx_ = 0;
         for (uint8_t i = 0; i < MAX_SWEEP_WINDOWS; ++i) {
@@ -1038,15 +1029,6 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
         drone_display_.set_active_sweep_windows(wf_mask);
     }
 
-    // Copy exception frequencies to each sweep window
-    const FreqHz exc_radius_hz = static_cast<FreqHz>(g_workspace_cfg.exception_radius_mhz) * 1000000ULL;
-    for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
-        for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-            sweep_[w].exceptions[i] = g_workspace_cfg.sweep_exceptions[w][i];
-        }
-        sweep_[w].exception_radius_hz = exc_radius_hz;
-    }
-
     // Find first enabled window for round-robin
     active_sweep_idx_ = MAX_SWEEP_WINDOWS;  // invalid sentinel
     for (uint8_t i = 0; i < MAX_SWEEP_WINDOWS; ++i) {
@@ -1265,7 +1247,7 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         // Pass sweep range boundaries to prevent false positives outside the range.
         // Shape analysis runs on RAW FFT bins inside the scanner (RF-monotonic,
         // DC gap = hard measurement boundary) — never on display-mapped buffers.
-        scanner_ptr_->process_spectrum_sweep(spectrum, fft_freq, win.f_min, win.f_max);
+        scanner_ptr_->process_spectrum_sweep(active_sweep_idx_, spectrum, fft_freq, win.f_min, win.f_max);
 
         // AGC for sweep mode — applies optimal gains to each frame's spectrum
         apply_agc(spectrum.db.data());
@@ -1552,16 +1534,6 @@ void DroneScannerUI::SweepWindow::reset() noexcept {
     settle_frames_remaining_ = 0;
 }
 
-bool DroneScannerUI::SweepWindow::is_exception(FreqHz hz) const noexcept {
-    for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-        if (exceptions[i] == 0) continue;
-        const FreqHz lo = (exceptions[i] > exception_radius_hz) ? (exceptions[i] - exception_radius_hz) : 0;
-        const FreqHz hi = exceptions[i] + exception_radius_hz;
-        if (hz >= lo && hz <= hi) return true;
-    }
-    return false;
-}
-
 bool DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) noexcept {
     // Discard frames captured before/while the PLL settled: their power data is
     // stale, so it MUST NOT be written into the composite AND it must NOT
@@ -1595,9 +1567,6 @@ bool DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) 
         bins_hz_acc,
         pixel_step_hz,
         f_center,
-        exception_radius_hz,
-        exceptions,
-        EXCEPTIONS_PER_WINDOW,
         effective_bin_size,
         f_min,
         f_max

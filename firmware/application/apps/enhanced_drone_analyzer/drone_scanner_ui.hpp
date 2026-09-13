@@ -169,8 +169,6 @@ private:
         FreqHz pixel_step_hz{0};
         FreqHz step_hz{0};
         FreqHz bins_hz_acc{0};
-        FreqHz exceptions[EXCEPTIONS_PER_WINDOW]{};  // exception frequencies (0 = unused)
-        FreqHz exception_radius_hz{3000000ULL};       // configurable exclusion radius (Hz)
         uint16_t pixel_index{0};
         uint8_t pixel_max{0};
         uint8_t settle_frames_remaining_{0};  // frames to skip after retune
@@ -179,13 +177,9 @@ private:
         void init(FreqHz start, FreqHz end, FreqHz step = 0) noexcept;
         void reset() noexcept;
         [[nodiscard]] bool process_bins(const ChannelSpectrum& spectrum) noexcept;
-
-        /**
-         * @brief Check if a frequency falls within ±EXCEPTION_RADIUS_HZ of any exception
-         * @param hz Frequency to check
-         * @return true if frequency should be suppressed
-         */
-        [[nodiscard]] bool is_exception(FreqHz hz) const noexcept;
+        // NOTE: rendering is never masked — the sweep window is always drawn
+        // fully. Detection-window gating is applied in the scanner only
+        // (DroneScanner::is_detection_window_allowed()).
     };
 
     SweepWindow sweep_[MAX_SWEEP_WINDOWS]{};

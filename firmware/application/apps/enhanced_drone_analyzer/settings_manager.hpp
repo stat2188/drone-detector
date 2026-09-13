@@ -13,7 +13,11 @@ namespace drone_analyzer {
 /**
  * @brief Unified settings data structure (all settings + sweep in one POD)
  * @note Single source of truth — replaces duplicated DroneSettings + ScanConfig sweep fields
- * @note ~360 bytes total (14×FreqHz=112B + sweep_exceptions[4][5]=160B + other=~88B)
+ * @note ~360 bytes total (14×FreqHz=112B + sweep_det_win_*_mhz[4][5]×2=160B + other=~88B)
+ * @note Sweep detection windows are stored as an MHz FILE-FORMAT MIRROR (uint32),
+ *       NOT FreqHz: full-range [start,end] pairs would add 320B and break the
+ *       ≤512B static_assert below. The scanner's ScanConfig keeps them in Hz;
+ *       conversion happens ONLY here, in apply_to_config()/extract_from_config().
  * @note Use static locals in functions to avoid stack overflow on 4KB main thread stack
  * @note No heap allocation, no virtual functions
  */
@@ -114,9 +118,12 @@ struct SettingsStruct {
     FreqHz sweep4_step_freq;
     bool sweep4_enabled;
 
-    // Sweep exception frequencies (per window, 0 = unused)
-    FreqHz sweep_exceptions[4][EXCEPTIONS_PER_WINDOW]{};
-    uint8_t exception_radius_mhz{DEFAULT_EXCEPTION_RADIUS_MHZ};  // 1-100 MHz exclusion radius
+    // Sweep detection windows — MHz file-format mirror (keeps sizeof ≤ 512B).
+    // Slot i of window w is ACTIVE iff start>0 && end>0 && start<=end.
+    // When ALL 5 slots of a window are 0 (default), detection runs over the
+    // window's ENTIRE range; otherwise ONLY inside the active ranges.
+    uint32_t sweep_det_win_start_mhz[MAX_SWEEP_WINDOWS][DETECTION_WINDOWS_PER_WINDOW]{};
+    uint32_t sweep_det_win_end_mhz[MAX_SWEEP_WINDOWS][DETECTION_WINDOWS_PER_WINDOW]{};
     uint8_t rssi_decrease_cycles{5};  // Normal mode: seconds before RSSI decay (sweep uses hardcoded constant)
     uint8_t freq_match_radius_mhz{DEFAULT_FREQ_MATCH_RADIUS_MHZ};  // 0-100 MHz, drone detection merge radius (0=disabled)
 

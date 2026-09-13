@@ -4,6 +4,7 @@
 #include "ch.h"
 
 #include "scanner.hpp"
+#include "sweep_processor.hpp"
 #include "receiver_model.hpp"
 #include "portapack.hpp"
 #include "portapack_persistent_memory.hpp"
@@ -451,18 +452,10 @@ bool DroneScanner::is_blacklisted(FreqHz frequency) const noexcept {
     return false;
 }
 
-bool DroneScanner::is_exception_frequency(FreqHz freq) const noexcept {
-    const FreqHz exc_radius = static_cast<FreqHz>(config_.exception_radius_mhz) * 1000000ULL;
-    for (uint8_t w = 0; w < 4; ++w) {
-        for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-            const FreqHz exc = config_.sweep_exceptions[w][i];
-            if (exc == 0) continue;
-            // Absolute difference — avoids unsigned underflow when exc < exc_radius
-            const FreqHz diff = (freq > exc) ? (freq - exc) : (exc - freq);
-            if (diff <= exc_radius) return true;
-        }
-    }
-    return false;
+bool DroneScanner::is_detection_window_allowed(uint8_t win_idx, FreqHz freq) const noexcept {
+    if (win_idx >= MAX_SWEEP_WINDOWS) return true;  // guard: malformed index never kills detection
+    return SweepProcessor::is_detection_window_allowed(
+        config_.sweep_det_windows[win_idx], DETECTION_WINDOWS_PER_WINDOW, freq);
 }
 
 ErrorCode DroneScanner::perform_scan_cycle() noexcept {
@@ -846,9 +839,9 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     }
 
     if (signal_detected) {
-        // Exception check: suppress drones at configured exclusion frequencies
-        // Applies to both normal scanning and sweep detection paths
-        if (is_exception_frequency(frequency)) return ErrorCode::SUCCESS;
+        // NOTE: no exception/detection-window filter here — the detection-window
+        // gate is a SWEEP-mode concept (see apply_sweep_tracking()); normal DB
+        // scanning accepts every shape-validated channel detection.
 
         // Neighbor margin check (if enabled): center freq must dominate neighbors
         // This eliminates wideband noise false positives (WiFi, BT, microwave)
@@ -1026,9 +1019,6 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
 
             // Skip if frequency is out of valid range
             if (det_freq < MIN_FREQUENCY_HZ || det_freq > MAX_FREQUENCY_HZ) continue;
-
-            // Exception check (same as primary)
-            if (is_exception_frequency(det_freq)) continue;
 
             // Track secondary detection directly (no confirm count needed —
             // shape analysis already validated the signal). The full-tracker
@@ -2431,11 +2421,12 @@ bool DroneScanner::tbd_peak_is_narrowband(
 }
 
 // ============================================================================
-// apply_sweep_tracking — range check, exception filter, Mahalanobis gate,
+// apply_sweep_tracking — range check, detection-window gate, Mahalanobis gate,
 //                        and drone tracking
 // ============================================================================
 
 void DroneScanner::apply_sweep_tracking(
+    uint8_t win_idx,
     FreqHz peak_freq,
     int32_t peak_rssi,
     FreqHz center_freq,
@@ -2452,8 +2443,10 @@ void DroneScanner::apply_sweep_tracking(
         if (peak_freq < range_min || peak_freq > range_max) return;
     }
 
-    // Exception frequency filter
-    if (is_exception_frequency(peak_freq)) return;
+    // Detection-window gate — sweep-only filter: when at least one detection
+    // window is active for this sweep window, a peak OUTSIDE every active
+    // range is dropped; when NO window is active, the full range is allowed.
+    if (!is_detection_window_allowed(win_idx, peak_freq)) return;
 
     // Mahalanobis gate
     bool mahalanobis_rejected = false;
@@ -2528,6 +2521,7 @@ void DroneScanner::apply_sweep_tracking(
 }
 
 void DroneScanner::process_spectrum_sweep(
+    uint8_t win_idx,
     const ChannelSpectrum& spectrum,
     FreqHz center_freq,
     FreqHz f_min,
@@ -2736,6 +2730,7 @@ void DroneScanner::process_spectrum_sweep(
         }
 
         apply_sweep_tracking(
+            win_idx,
             peak_freq,
             peak_rssi, center_freq, f_min, f_max
         );
@@ -2790,7 +2785,7 @@ void DroneScanner::process_spectrum_sweep(
                     noise_floor, FFT_EDGE_SKIP_NARROW)) {
                 const FreqHz tbd_freq = fft_bin_to_freq(center_freq, tbd_peak_bin);
                 apply_sweep_tracking(
-                    tbd_freq, tbd_rssi, center_freq, f_min, f_max
+                    win_idx, tbd_freq, tbd_rssi, center_freq, f_min, f_max
                 );
             }
         }

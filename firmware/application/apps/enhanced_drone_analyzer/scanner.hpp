@@ -24,7 +24,7 @@ namespace drone_analyzer {
 /**
  * @brief Scan configuration
  * @note ScannerState is defined in drone_types.hpp
- * @note Size: ~368 bytes (14×FreqHz=112B + sweep_exceptions[4][5]=160B + bools/uint8_t=~96B)
+ * @note Size: ~528 bytes (14×FreqHz=112B + sweep_det_windows[4][5]×16B=320B + bools/uint8_t=~96B)
  * @note Passed by const reference (const ScanConfig&) to avoid copy overhead
  * @note Consider partitioning if future extensions increase size significantly
  */
@@ -103,9 +103,12 @@ struct ScanConfig {
     uint8_t os_cfar_k_percent{DEFAULT_OS_CFAR_K_PERCENT};    // OS-CFAR k-th order (50-90%)
     uint8_t vi_cfar_threshold_x10{DEFAULT_VI_CFAR_THRESHOLD_X10};  // VI-CFAR threshold ×10 (5-50)
 
-    // Sweep exception frequencies (per window, 0 = unused slot)
-    FreqHz sweep_exceptions[4][EXCEPTIONS_PER_WINDOW]{};
-    uint8_t exception_radius_mhz{DEFAULT_EXCEPTION_RADIUS_MHZ};  // 1-100, configurable exclusion radius
+    // Sweep detection windows — per window x 5 inclusive [start_hz, end_hz]
+    // ranges (FreqRangeHz). Slot ACTIVE iff start>0 && end>0 && start<=end.
+    // A sweep window with NO active slot detects over its ENTIRE range;
+    // otherwise detections are accepted ONLY inside the active ranges.
+    // The sweep spectrum is ALWAYS drawn fully (no pixel masking).
+    FreqRangeHz sweep_det_windows[MAX_SWEEP_WINDOWS][DETECTION_WINDOWS_PER_WINDOW]{};
     uint8_t rssi_decrease_cycles{5};  // Normal mode: seconds of RSSI decrease before threat decay (sweep uses hardcoded MAX_SWEEP_CYCLES_MISSED)
     uint8_t freq_match_radius_mhz{DEFAULT_FREQ_MATCH_RADIUS_MHZ};  // 0-100, drone detection merge radius (0=disabled)
 
@@ -1250,6 +1253,8 @@ public:
 
     /**
      * @brief Lightweight spectrum processing for sweep mode
+     * @param win_idx        Active sweep window index (0-3) — drives the
+     *                       per-window detection-window gate
      * @param spectrum Channel spectrum data (256 bins)
      * @param center_freq Current slice center frequency
      * @param f_min Minimum frequency of sweep range (0 = no range check)
@@ -1265,6 +1270,7 @@ public:
      * @note Implementation in scanner.cpp — delegates tracking to apply_sweep_tracking()
      */
     void process_spectrum_sweep(
+        uint8_t win_idx,
         const ChannelSpectrum& spectrum,
         FreqHz center_freq,
         FreqHz f_min = 0,
@@ -1728,13 +1734,17 @@ private:
     [[nodiscard]] ErrorCode validate_config_internal(const ScanConfig& config) const noexcept;
 
     /**
-     * @brief Check if a frequency falls within an exception exclusion zone
-     * @param freq Frequency to check (Hz)
-     * @return true if frequency matches any exception (should be skipped)
-     * @note Checks all 4 sweep windows × EXCEPTIONS_PER_WINDOW slots
-     * @pre Caller holds DATA_MUTEX (config_.sweep_exceptions read)
+     * @brief Detection-window gate for the ACTIVE sweep window.
+     * @param win_idx Active sweep window index (0-3)
+     * @param freq    Candidate peak frequency (Hz)
+     * @return true if freq may be tracked: either the window has NO active
+     *         slot (full-range detection) or freq falls inside an active
+     *         [start_hz, end_hz] slot. See DETECTION_WINDOWS_PER_WINDOW.
+     * @note Sweep-only concept — normal DB scanning is NOT filtered.
+     * @note O(5) integer compare, UI-thread only, no I/O, no allocations.
+     * @note Delegates to the pure SweepProcessor::is_detection_window_allowed().
      */
-    [[nodiscard]] bool is_exception_frequency(FreqHz freq) const noexcept;
+    [[nodiscard]] bool is_detection_window_allowed(uint8_t win_idx, FreqHz freq) const noexcept;
 
     /**
      * @brief Internal: Analyze spectrum shape for U/V signal peaks
@@ -2020,8 +2030,9 @@ private:
     ) const noexcept;
 
     /**
-     * @brief Sweep-mode post-detection: range check, exception filter, Mahalanobis gate,
-     *        and drone tracking.
+     * @brief Sweep-mode post-detection: range check, detection-window gate,
+     *        Mahalanobis gate, and drone tracking.
+     * @param win_idx         Active sweep window index (0-3)
      * @param peak_freq       Detected peak RF frequency (Hz)
      * @param peak_rssi       Filtered RSSI (dBm) after median filter
      * @param center_freq     FFT slice center frequency for Mahalanobis
@@ -2032,6 +2043,7 @@ private:
      * @note Called from UI thread during sweep (scanner thread stopped, no mutex).
      */
     void apply_sweep_tracking(
+        uint8_t win_idx,
         FreqHz peak_freq,
         int32_t peak_rssi,
         FreqHz center_freq,

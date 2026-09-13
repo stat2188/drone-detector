@@ -1318,20 +1318,19 @@ constexpr FreqHz SWEEP_DEFAULT_START_HZ = 5645000000;   // 5.645 GHz - full 5.8 
 constexpr FreqHz SWEEP_DEFAULT_END_HZ = 5945000000;     // 5.945 GHz - 300 MHz span
 
 // ============================================================================
-// Sweep Exception Constants
+// Sweep Detection Window Constants
 // ============================================================================
 
 /**
- * @brief Default exclusion radius around exception frequencies (±3 MHz)
- * @note Configurable at runtime via ScanConfig.exception_radius_mhz (1-100)
+ * @brief Number of detection-range slots per sweep window
+ * @note Each slot is an inclusive [start_hz, end_hz] range (FreqRangeHz).
+ *       A slot is active iff start_hz > 0 && end_hz > 0 && start_hz <= end_hz.
+ *       When ALL slots of a window are inactive (0 by default), detection
+ *       runs over the ENTIRE sweep window range; otherwise detection runs
+ *       ONLY inside the active ranges. The spectrum is always drawn fully
+ *       (the old exception-radius "cutting" was removed — see sweep_processor).
  */
-constexpr uint8_t DEFAULT_EXCEPTION_RADIUS_MHZ = 3;
-constexpr FreqHz EXCEPTION_RADIUS_HZ = 3'000'000ULL;
-
-/**
- * @brief Number of exception frequency slots per sweep window
- */
-constexpr uint8_t EXCEPTIONS_PER_WINDOW = 5;
+constexpr uint8_t DETECTION_WINDOWS_PER_WINDOW = 5;
 
 // ============================================================================
 // String Constants (Flash Storage)

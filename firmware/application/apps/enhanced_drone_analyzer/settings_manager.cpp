@@ -127,6 +127,11 @@ static void parse_settings_line(
                 val_start[2] == 'u' && val_start[3] == 'e');
     };
 
+    auto parse_mhz_clamped = []() -> uint32_t {
+        const uint64_t v = parse_int();
+        return (v > 7200ULL) ? 7200U : static_cast<uint32_t>(v);  // clamp to HW max
+    };
+
     auto parse_signed_int = [val_start, val_len]() -> int32_t {
         const bool negative = (val_len > 0 && val_start[0] == '-');
         const uint8_t* num_start = negative ? val_start + 1 : val_start;
@@ -286,32 +291,47 @@ static void parse_settings_line(
     } else if (key_matches("sweep4_enabled")) {
         s.sweep4_enabled = parse_bool();
 
-    // --- Sweep exceptions (5 slots per window) ---
-    } else if (key_matches("sw1_exc0_mhz")) { s.sweep_exceptions[0][0] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw1_exc1_mhz")) { s.sweep_exceptions[0][1] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw1_exc2_mhz")) { s.sweep_exceptions[0][2] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw1_exc3_mhz")) { s.sweep_exceptions[0][3] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw1_exc4_mhz")) { s.sweep_exceptions[0][4] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw2_exc0_mhz")) { s.sweep_exceptions[1][0] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw2_exc1_mhz")) { s.sweep_exceptions[1][1] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw2_exc2_mhz")) { s.sweep_exceptions[1][2] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw2_exc3_mhz")) { s.sweep_exceptions[1][3] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw2_exc4_mhz")) { s.sweep_exceptions[1][4] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw3_exc0_mhz")) { s.sweep_exceptions[2][0] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw3_exc1_mhz")) { s.sweep_exceptions[2][1] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw3_exc2_mhz")) { s.sweep_exceptions[2][2] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw3_exc3_mhz")) { s.sweep_exceptions[2][3] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw3_exc4_mhz")) { s.sweep_exceptions[2][4] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw4_exc0_mhz")) { s.sweep_exceptions[3][0] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw4_exc1_mhz")) { s.sweep_exceptions[3][1] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw4_exc2_mhz")) { s.sweep_exceptions[3][2] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw4_exc3_mhz")) { s.sweep_exceptions[3][3] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw4_exc4_mhz")) { s.sweep_exceptions[3][4] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-
-    // --- Exception radius ---
-    } else if (key_matches("exception_radius_mhz")) {
-        const int32_t r = static_cast<int32_t>(parse_int());
-        s.exception_radius_mhz = static_cast<uint8_t>(r > 100 ? 100 : (r < 1 ? 1 : r));
+    // --- Sweep detection windows (5 ranges per window; MHz; 0/0 = disabled) ---
+    } else if (key_matches("sw1_dw0_start_mhz")) { s.sweep_det_win_start_mhz[0][0] = parse_mhz_clamped();
+    } else if (key_matches("sw1_dw0_end_mhz")) { s.sweep_det_win_end_mhz[0][0] = parse_mhz_clamped();
+    } else if (key_matches("sw1_dw1_start_mhz")) { s.sweep_det_win_start_mhz[0][1] = parse_mhz_clamped();
+    } else if (key_matches("sw1_dw1_end_mhz")) { s.sweep_det_win_end_mhz[0][1] = parse_mhz_clamped();
+    } else if (key_matches("sw1_dw2_start_mhz")) { s.sweep_det_win_start_mhz[0][2] = parse_mhz_clamped();
+    } else if (key_matches("sw1_dw2_end_mhz")) { s.sweep_det_win_end_mhz[0][2] = parse_mhz_clamped();
+    } else if (key_matches("sw1_dw3_start_mhz")) { s.sweep_det_win_start_mhz[0][3] = parse_mhz_clamped();
+    } else if (key_matches("sw1_dw3_end_mhz")) { s.sweep_det_win_end_mhz[0][3] = parse_mhz_clamped();
+    } else if (key_matches("sw1_dw4_start_mhz")) { s.sweep_det_win_start_mhz[0][4] = parse_mhz_clamped();
+    } else if (key_matches("sw1_dw4_end_mhz")) { s.sweep_det_win_end_mhz[0][4] = parse_mhz_clamped();
+    } else if (key_matches("sw2_dw0_start_mhz")) { s.sweep_det_win_start_mhz[1][0] = parse_mhz_clamped();
+    } else if (key_matches("sw2_dw0_end_mhz")) { s.sweep_det_win_end_mhz[1][0] = parse_mhz_clamped();
+    } else if (key_matches("sw2_dw1_start_mhz")) { s.sweep_det_win_start_mhz[1][1] = parse_mhz_clamped();
+    } else if (key_matches("sw2_dw1_end_mhz")) { s.sweep_det_win_end_mhz[1][1] = parse_mhz_clamped();
+    } else if (key_matches("sw2_dw2_start_mhz")) { s.sweep_det_win_start_mhz[1][2] = parse_mhz_clamped();
+    } else if (key_matches("sw2_dw2_end_mhz")) { s.sweep_det_win_end_mhz[1][2] = parse_mhz_clamped();
+    } else if (key_matches("sw2_dw3_start_mhz")) { s.sweep_det_win_start_mhz[1][3] = parse_mhz_clamped();
+    } else if (key_matches("sw2_dw3_end_mhz")) { s.sweep_det_win_end_mhz[1][3] = parse_mhz_clamped();
+    } else if (key_matches("sw2_dw4_start_mhz")) { s.sweep_det_win_start_mhz[1][4] = parse_mhz_clamped();
+    } else if (key_matches("sw2_dw4_end_mhz")) { s.sweep_det_win_end_mhz[1][4] = parse_mhz_clamped();
+    } else if (key_matches("sw3_dw0_start_mhz")) { s.sweep_det_win_start_mhz[2][0] = parse_mhz_clamped();
+    } else if (key_matches("sw3_dw0_end_mhz")) { s.sweep_det_win_end_mhz[2][0] = parse_mhz_clamped();
+    } else if (key_matches("sw3_dw1_start_mhz")) { s.sweep_det_win_start_mhz[2][1] = parse_mhz_clamped();
+    } else if (key_matches("sw3_dw1_end_mhz")) { s.sweep_det_win_end_mhz[2][1] = parse_mhz_clamped();
+    } else if (key_matches("sw3_dw2_start_mhz")) { s.sweep_det_win_start_mhz[2][2] = parse_mhz_clamped();
+    } else if (key_matches("sw3_dw2_end_mhz")) { s.sweep_det_win_end_mhz[2][2] = parse_mhz_clamped();
+    } else if (key_matches("sw3_dw3_start_mhz")) { s.sweep_det_win_start_mhz[2][3] = parse_mhz_clamped();
+    } else if (key_matches("sw3_dw3_end_mhz")) { s.sweep_det_win_end_mhz[2][3] = parse_mhz_clamped();
+    } else if (key_matches("sw3_dw4_start_mhz")) { s.sweep_det_win_start_mhz[2][4] = parse_mhz_clamped();
+    } else if (key_matches("sw3_dw4_end_mhz")) { s.sweep_det_win_end_mhz[2][4] = parse_mhz_clamped();
+    } else if (key_matches("sw4_dw0_start_mhz")) { s.sweep_det_win_start_mhz[3][0] = parse_mhz_clamped();
+    } else if (key_matches("sw4_dw0_end_mhz")) { s.sweep_det_win_end_mhz[3][0] = parse_mhz_clamped();
+    } else if (key_matches("sw4_dw1_start_mhz")) { s.sweep_det_win_start_mhz[3][1] = parse_mhz_clamped();
+    } else if (key_matches("sw4_dw1_end_mhz")) { s.sweep_det_win_end_mhz[3][1] = parse_mhz_clamped();
+    } else if (key_matches("sw4_dw2_start_mhz")) { s.sweep_det_win_start_mhz[3][2] = parse_mhz_clamped();
+    } else if (key_matches("sw4_dw2_end_mhz")) { s.sweep_det_win_end_mhz[3][2] = parse_mhz_clamped();
+    } else if (key_matches("sw4_dw3_start_mhz")) { s.sweep_det_win_start_mhz[3][3] = parse_mhz_clamped();
+    } else if (key_matches("sw4_dw3_end_mhz")) { s.sweep_det_win_end_mhz[3][3] = parse_mhz_clamped();
+    } else if (key_matches("sw4_dw4_start_mhz")) { s.sweep_det_win_start_mhz[3][4] = parse_mhz_clamped();
+    } else if (key_matches("sw4_dw4_end_mhz")) { s.sweep_det_win_end_mhz[3][4] = parse_mhz_clamped();
 
     // --- Drone frequency match merge radius ---
     } else if (key_matches("freq_match_radius_mhz")) {
@@ -504,9 +524,11 @@ static void wbool(File& f, const char* key, bool val) noexcept {
     wb(f, val);
 }
 
-static void wexc(File& f, const char* key, uint64_t hz) noexcept {
-    if (hz == 0) return;
-    wl(f, key, static_cast<int64_t>(hz / 1000000ULL));
+static void write_dw_slot(File& f, const char* key_start, const char* key_end,
+                          FreqHz start_hz, FreqHz end_hz) noexcept {
+    if (start_hz == 0 || end_hz == 0 || start_hz > end_hz) return;  // inactive slot — keep file minimal
+    wl(f, key_start, static_cast<int64_t>(start_hz / 1000000ULL));
+    wl(f, key_end,   static_cast<int64_t>(end_hz / 1000000ULL));
 }
 
 // ============================================================================
@@ -536,9 +558,13 @@ ErrorCode SettingsFileManager::save(
         s_sweep_cfg.sweep4_end_freq = s.sweep4_end_freq;
         s_sweep_cfg.sweep4_step_freq = s.sweep4_step_freq;
         s_sweep_cfg.sweep4_enabled = s.sweep4_enabled;
-        for (uint8_t w = 0; w < 4; ++w) {
-            for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-                s_sweep_cfg.sweep_exceptions[w][i] = s.sweep_exceptions[w][i];
+        for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
+            for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
+                // SettingsStruct is the MHz file-mirror; ScanConfig keeps Hz.
+                s_sweep_cfg.sweep_det_windows[w][i].start_hz =
+                    static_cast<FreqHz>(s.sweep_det_win_start_mhz[w][i]) * 1000000ULL;
+                s_sweep_cfg.sweep_det_windows[w][i].end_hz =
+                    static_cast<FreqHz>(s.sweep_det_win_end_mhz[w][i]) * 1000000ULL;
             }
         }
     }
@@ -617,21 +643,26 @@ ErrorCode SettingsFileManager::save(
     wl(file, "sweep4_step_khz", static_cast<int64_t>(s_sweep_cfg.sweep4_step_freq / 1000ULL));
     wbool(file, "sweep4_enabled", s_sweep_cfg.sweep4_enabled);
 
-    // Sweep exceptions (4 windows x 5 slots)
-    static const char* exc_keys[4][EXCEPTIONS_PER_WINDOW] = {
-        {"sw1_exc0_mhz", "sw1_exc1_mhz", "sw1_exc2_mhz", "sw1_exc3_mhz", "sw1_exc4_mhz"},
-        {"sw2_exc0_mhz", "sw2_exc1_mhz", "sw2_exc2_mhz", "sw2_exc3_mhz", "sw2_exc4_mhz"},
-        {"sw3_exc0_mhz", "sw3_exc1_mhz", "sw3_exc2_mhz", "sw3_exc3_mhz", "sw3_exc4_mhz"},
-        {"sw4_exc0_mhz", "sw4_exc1_mhz", "sw4_exc2_mhz", "sw4_exc3_mhz", "sw4_exc4_mhz"},
+    // Sweep detection windows (4 windows x 5 ranges; MHz; only active slots written)
+    static const char* dw_keys_start[4][DETECTION_WINDOWS_PER_WINDOW] = {
+        {"sw1_dw0_start_mhz", "sw1_dw1_start_mhz", "sw1_dw2_start_mhz", "sw1_dw3_start_mhz", "sw1_dw4_start_mhz"},
+        {"sw2_dw0_start_mhz", "sw2_dw1_start_mhz", "sw2_dw2_start_mhz", "sw2_dw3_start_mhz", "sw2_dw4_start_mhz"},
+        {"sw3_dw0_start_mhz", "sw3_dw1_start_mhz", "sw3_dw2_start_mhz", "sw3_dw3_start_mhz", "sw3_dw4_start_mhz"},
+        {"sw4_dw0_start_mhz", "sw4_dw1_start_mhz", "sw4_dw2_start_mhz", "sw4_dw3_start_mhz", "sw4_dw4_start_mhz"},
+    };
+    static const char* dw_keys_end[4][DETECTION_WINDOWS_PER_WINDOW] = {
+        {"sw1_dw0_end_mhz", "sw1_dw1_end_mhz", "sw1_dw2_end_mhz", "sw1_dw3_end_mhz", "sw1_dw4_end_mhz"},
+        {"sw2_dw0_end_mhz", "sw2_dw1_end_mhz", "sw2_dw2_end_mhz", "sw2_dw3_end_mhz", "sw2_dw4_end_mhz"},
+        {"sw3_dw0_end_mhz", "sw3_dw1_end_mhz", "sw3_dw2_end_mhz", "sw3_dw3_end_mhz", "sw3_dw4_end_mhz"},
+        {"sw4_dw0_end_mhz", "sw4_dw1_end_mhz", "sw4_dw2_end_mhz", "sw4_dw3_end_mhz", "sw4_dw4_end_mhz"},
     };
     for (uint8_t w = 0; w < 4; ++w) {
-        for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-            wexc(file, exc_keys[w][i], s_sweep_cfg.sweep_exceptions[w][i]);
+        for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
+            write_dw_slot(file, dw_keys_start[w][i], dw_keys_end[w][i],
+                s_sweep_cfg.sweep_det_windows[w][i].start_hz,
+                s_sweep_cfg.sweep_det_windows[w][i].end_hz);
         }
     }
-
-    // Exception radius
-    wl(file, "exception_radius_mhz", static_cast<int64_t>(s.exception_radius_mhz));
 
     // Drone frequency match merge radius
     wl(file, "freq_match_radius_mhz", static_cast<int64_t>(s.freq_match_radius_mhz));
@@ -766,13 +797,15 @@ void SettingsFileManager::apply_to_config(
     config.sweep4_step_freq = s.sweep4_step_freq;
     config.sweep4_enabled = s.sweep4_enabled;
 
-    // Sweep exceptions
-    for (uint8_t w = 0; w < 4; ++w) {
-        for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-            config.sweep_exceptions[w][i] = s.sweep_exceptions[w][i];
+    // Sweep detection windows (MHz mirror → Hz)
+    for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
+        for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
+            config.sweep_det_windows[w][i].start_hz =
+                static_cast<FreqHz>(s.sweep_det_win_start_mhz[w][i]) * 1000000ULL;
+            config.sweep_det_windows[w][i].end_hz =
+                static_cast<FreqHz>(s.sweep_det_win_end_mhz[w][i]) * 1000000ULL;
         }
     }
-    config.exception_radius_mhz = s.exception_radius_mhz;
     config.rssi_decrease_cycles = s.rssi_decrease_cycles;
     config.freq_match_radius_mhz = s.freq_match_radius_mhz;
 }
@@ -851,13 +884,15 @@ void SettingsFileManager::extract_from_config(
     s.sweep4_step_freq = config.sweep4_step_freq;
     s.sweep4_enabled = config.sweep4_enabled;
 
-    // Sweep exceptions
-    for (uint8_t w = 0; w < 4; ++w) {
-        for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-            s.sweep_exceptions[w][i] = config.sweep_exceptions[w][i];
+    // Sweep detection windows (Hz → MHz mirror)
+    for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
+        for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
+            s.sweep_det_win_start_mhz[w][i] = static_cast<uint32_t>(
+                config.sweep_det_windows[w][i].start_hz / 1000000ULL);
+            s.sweep_det_win_end_mhz[w][i] = static_cast<uint32_t>(
+                config.sweep_det_windows[w][i].end_hz / 1000000ULL);
         }
     }
-    s.exception_radius_mhz = config.exception_radius_mhz;
     s.rssi_decrease_cycles = config.rssi_decrease_cycles;
     s.freq_match_radius_mhz = config.freq_match_radius_mhz;
 

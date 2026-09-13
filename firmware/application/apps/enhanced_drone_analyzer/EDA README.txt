@@ -281,7 +281,9 @@ Key Structures:
     uint32_t display_color                // 4B (RGBA)
     MovementTrend trend                   // 1B
 
-  ScanConfig (~368 bytes):
+  ScanConfig (~447 bytes):
+    (+79B SRAM: FreqRangeHz sweep_det_windows[4][5] = 160B
+     replaces FreqHz sweep_exceptions[4][5] + radius = 81B)
     ScanningMode mode
     FreqHz start_frequency, end_frequency
     uint32_t scan_interval_ms
@@ -290,7 +292,7 @@ Key Structures:
     uint32_t stale_timeout_ms
     FreqHz sweep_start/end/step_freq (×4 windows)
     bool sweep2/3/4_enabled
-    FreqHz sweep_exceptions[4][5]
+    FreqRangeHz sweep_det_windows[4][5]   // detection windows (From/To, Hz)
     bool dwell_enabled, confirm_count_enabled, noise_blacklist_enabled
     bool spectrum_detection_enabled, median_enabled
     uint8_t spectrum_margin/min_width/max_width/sharpness/ratio/valley/flatness/symmetry
@@ -304,7 +306,7 @@ Key Structures:
     uint8_t cfar_hybrid_alpha/beta/gamma, os_cfar_k_percent, vi_cfar_threshold_x10
     bool shape_bypass_enabled, sensitive_mode
     bool kurtosis_enabled, adaptive_cfar_enabled
-    uint8_t exception_radius_mhz, rssi_decrease_cycles, freq_match_radius_mhz
+    uint8_t rssi_decrease_cycles, freq_match_radius_mhz
 
   SettingsStruct (~360 bytes):
     Mirrors ScanConfig fields + display-only settings (spectrum_visible, etc.)
@@ -386,8 +388,8 @@ Sweep Architecture:
   │    pixel_index        — current pixel position        │
   │    pixel_step_hz      — Hz per pixel                  │
   │    step_hz            — Hz per FFT step               │
-  │    exceptions[5]      — exclusion frequencies         │
-  │    exception_radius_hz— exclusion radius              │
+  │    det_windows[5]     — detection windows (From/To)   │
+  │    (render never masks pixels; detection gating only) │
   └──────────────────────────────────────────────────────┘
 
   ┌──────────────────────────────────────────────────────┐
@@ -522,7 +524,7 @@ The EDA follows the standard Mayhem UI pattern:
     ├── SweepWindowView (reusable, 1 instance)
     │   ├── Start/End NumberFields
     │   ├── Enabled Checkbox
-    │   └── 5 Exception NumberFields
+    │   └── 5×2 Det-Win NumberFields (From/To, MHz)
     ├── OptionsField window_select_      — switch window 1-4
     └── Save/Defaults buttons
 
@@ -597,8 +599,8 @@ SettingsStruct fields (all persisted):
   // Sweep Window 2-4
   sweep2/3/4_start/end/step_freq, sweep2/3/4_enabled
 
-  // Sweep Exceptions
-  sweep_exceptions[4][5], exception_radius_mhz
+  // Sweep Detection Windows
+  sweep_det_win_start_mhz[4][5], sweep_det_win_end_mhz[4][5]
 
   // Misc
   rssi_decrease_cycles, freq_match_radius_mhz

@@ -14,6 +14,18 @@ namespace drone_analyzer {
 using FreqHz = uint64_t;
 
 /**
+ * @brief Inclusive frequency range [start_hz, end_hz] (POD, 16 bytes)
+ * @note A slot is DISABLED iff both fields are 0 (the default).
+ * @note A slot is VALID iff start_hz > 0 && end_hz > 0 && start_hz <= end_hz.
+ * @note Used for per-sweep-window detection ranges — see
+ *       SweepProcessor::is_detection_window_allowed().
+ */
+struct FreqRangeHz {
+    FreqHz start_hz{0};  //< range lower bound (Hz); 0 = unset
+    FreqHz end_hz{0};    //< range upper bound (Hz); 0 = unset
+};
+
+/**
  * @brief Type alias for signal strength (RSSI)
  */
 using RssiValue = int32_t;

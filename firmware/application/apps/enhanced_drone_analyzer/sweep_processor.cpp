@@ -7,20 +7,21 @@
 
 namespace drone_analyzer {
 
-bool SweepProcessor::is_exception_freq(
-    FreqHz hz,
-    FreqHz exception_radius_hz,
-    const FreqHz* exceptions,
-    uint8_t num_exceptions
+bool SweepProcessor::is_detection_window_allowed(
+    const FreqRangeHz* slots,
+    uint8_t num_slots,
+    FreqHz freq
 ) noexcept {
-    for (uint8_t i = 0; i < num_exceptions; ++i) {
-        if (exceptions[i] == 0) continue;
-        const FreqHz lo = (exceptions[i] > exception_radius_hz)
-            ? (exceptions[i] - exception_radius_hz) : 0;
-        const FreqHz hi = exceptions[i] + exception_radius_hz;
-        if (hz >= lo && hz <= hi) return true;
+    if (slots == nullptr || num_slots == 0) return true;
+    bool any_enabled = false;
+    for (uint8_t i = 0; i < num_slots; ++i) {
+        const FreqHz lo = slots[i].start_hz;
+        const FreqHz hi = slots[i].end_hz;
+        if (lo == 0 || hi == 0 || lo > hi) continue;  // inactive slot (0/0 or inverted)
+        any_enabled = true;
+        if (freq >= lo && freq <= hi) return true;    // inside an active window
     }
-    return false;
+    return !any_enabled;  // all slots disabled → entire sweep range allowed
 }
 
 uint16_t SweepProcessor::process_frame(
@@ -31,9 +32,6 @@ uint16_t SweepProcessor::process_frame(
     FreqHz& bins_hz_acc,
     FreqHz pixel_step_hz,
     FreqHz f_center,
-    FreqHz exception_radius_hz,
-    const FreqHz* exceptions,
-    uint8_t num_exceptions,
     FreqHz effective_bin_size,
     FreqHz f_min,
     FreqHz f_max
@@ -76,9 +74,9 @@ uint16_t SweepProcessor::process_frame(
         // match tracked frequencies).
         const FreqHz freq = DroneScanner::fft_bin_to_freq(f_center, fft_bin);
         if (freq == 0 || freq < f_min || freq >= f_max) continue;
-        if (is_exception_freq(freq, exception_radius_hz, exceptions, num_exceptions)) {
-            continue;
-        }
+        // NOTE: no pixel masking here — the sweep window is drawn FULLY.
+        // Detection-window gating is applied in the scanner only
+        // (DroneScanner::is_detection_window_allowed).
 
         // 64-bit intermediate: (freq - f_min) up to ~5 GHz x 240 overflows
         // uint32_t. One UMULL + UDIV per bin on the UI thread — the old code

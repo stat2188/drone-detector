@@ -19,8 +19,8 @@ struct ScanConfig;
 
 /**
  * @brief Per-window sweep configuration data (POD, no UI widgets)
- * @note SRAM: 72 bytes (3×FreqHz=24B + enabled=1+7pad + exceptions[5]×8=40B)
- *       Total for array[4]: 288 bytes BSS.
+ * @note SRAM: 112 bytes (3×FreqHz=24B + enabled=1+7pad + det_windows[5]×16=80B)
+ *       Total for array[4]: 448 bytes BSS.
  * @note Stored as std::array<WindowData, MAX_SWEEP_WINDOWS> in DroneSweepView
  *       to avoid duplicating widgets for each window.
  */
@@ -29,16 +29,18 @@ struct WindowData {
     FreqHz end_freq{0};
     FreqHz step_freq{0};
     bool enabled{false};
-    std::array<FreqHz, EXCEPTIONS_PER_WINDOW> exceptions{};
+    // 5 inclusive detection ranges; slot active iff start>0 && end>0 &&
+    // start<=end. All inactive (0/0) → detect over the ENTIRE window range.
+    std::array<FreqRangeHz, DETECTION_WINDOWS_PER_WINDOW> det_windows{};
 };
 
 /**
  * @brief Single-window sweep configuration view (reuses widgets for all 4 windows)
- * @note Contains Start/End + Enabled + 5 exception fields for ONE window.
- *       DroneSweepView switches the data pointer to show different windows.
- *       (The sweep center pitch is auto-derived for gapless coverage —
+ * @note Contains Start/End + Enabled + 5 detection ranges (From/To) for ONE
+ *       window. DroneSweepView switches the data pointer to show different
+ *       windows. (The sweep center pitch is auto-derived for gapless coverage —
  *       SweepWindow::init() ignores step_freq. See SWEEP_GAPLESS_STEP_MAX_HZ.)
- * @note SRAM: ~480 bytes (15 widgets × ~32 bytes each)
+ * @note SRAM: ~800 bytes (21 widgets × ~32 bytes each + labels)
  *       vs old design: ~2,400 bytes (2 group views × 30 widgets × ~32 bytes)
  */
 class SweepWindowView : public ui::View {
@@ -83,22 +85,37 @@ public:
     ui::NumberField field_start_{{UI_POS_X(1), UI_POS_Y(2)}, 5, {100, 7200}, 1, ' '};
     ui::NumberField field_end_{{UI_POS_X(1), UI_POS_Y(4)}, 5, {100, 7200}, 1, ' '};
 
-    // Exception fields — right side (5 slots)
-    ui::Labels labels_exc_{
-        {{UI_POS_X(16), UI_POS_Y(0)}, "Exc(MHz):", Color::white()},
+    // Detection windows — right side (5 ranges × From/To), rows 0-5.
+    // A range is OFF when BOTH fields are 0 (default); when at least one range
+    // is ON, detections outside every ON range are ignored (scanner-side gate).
+    ui::Labels labels_dw_{
+        {{UI_POS_X(13), UI_POS_Y(0)}, "From", Color::white()},
+        {{UI_POS_X(19), UI_POS_Y(0)}, "To", Color::white()},
     };
-    ui::NumberField field_exc0_{{UI_POS_X(16), UI_POS_Y(1)}, 5, {0, 7200}, 1, ' '};
-    ui::NumberField field_exc1_{{UI_POS_X(16), UI_POS_Y(2)}, 5, {0, 7200}, 1, ' '};
-    ui::NumberField field_exc2_{{UI_POS_X(16), UI_POS_Y(3)}, 5, {0, 7200}, 1, ' '};
-    ui::NumberField field_exc3_{{UI_POS_X(16), UI_POS_Y(4)}, 5, {0, 7200}, 1, ' '};
-    ui::NumberField field_exc4_{{UI_POS_X(16), UI_POS_Y(5)}, 5, {0, 7200}, 1, ' '};
+    ui::Labels labels_dw_idx_{
+        {{UI_POS_X(12), UI_POS_Y(1)}, "1", Color::grey()},
+        {{UI_POS_X(12), UI_POS_Y(2)}, "2", Color::grey()},
+        {{UI_POS_X(12), UI_POS_Y(3)}, "3", Color::grey()},
+        {{UI_POS_X(12), UI_POS_Y(4)}, "4", Color::grey()},
+        {{UI_POS_X(12), UI_POS_Y(5)}, "5", Color::grey()},
+    };
+    ui::NumberField field_dw0_start_{{UI_POS_X(13), UI_POS_Y(1)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_dw0_end_{{UI_POS_X(19), UI_POS_Y(1)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_dw1_start_{{UI_POS_X(13), UI_POS_Y(2)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_dw1_end_{{UI_POS_X(19), UI_POS_Y(2)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_dw2_start_{{UI_POS_X(13), UI_POS_Y(3)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_dw2_end_{{UI_POS_X(19), UI_POS_Y(3)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_dw3_start_{{UI_POS_X(13), UI_POS_Y(4)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_dw3_end_{{UI_POS_X(19), UI_POS_Y(4)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_dw4_start_{{UI_POS_X(13), UI_POS_Y(5)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_dw4_end_{{UI_POS_X(19), UI_POS_Y(5)}, 5, {0, 7200}, 1, ' '};
 };
 
 /**
  * @brief Sweep settings view — accessible via SWP button
  * @note Uses a SINGLE SweepWindowView that swaps data for each window.
  *       A window selector (OptionsField) switches which window is displayed.
- *       Total SRAM: ~688B (SweepWindowView ~392B + WindowData[4] 288B + UI ~8B)
+ *       Total SRAM: ~1,260B (SweepWindowView ~800B + WindowData[4] 448B + UI ~10B)
  *       vs old design: ~4,800B (2 group views ~2,400B each + TabView + buttons)
  */
 class DroneSweepView : public ui::View {
@@ -142,10 +159,6 @@ private:
     };
 
     // Buttons
-    ui::NumberField field_exc_radius_{{UI_POS_X(0), 285}, 3, {1, 100}, 1, ' '};
-    ui::Labels labels_exc_radius_{
-        {{UI_POS_X(4), 285}, "Exc R(MHz):", Color::white()},
-    };
     ui::Button button_defaults_{{UI_POS_X(15), 285, UI_POS_WIDTH(7), 20}, "DEFAULTS"};
     ui::Button button_save_{{UI_POS_X(22), 285, UI_POS_WIDTH(7), 20}, "SAVE"};
 
