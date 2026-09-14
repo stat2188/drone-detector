@@ -599,7 +599,8 @@ private:
      * @note shadow points into file-scope s_dd (BSS) — NOT owned, never freed.
      * @note last_* fields snapshot every screen-visible input; any mismatch
      *       forces a full band repaint (correctness over speed).
-     * @note SRAM: ~20 B per instance (band_idx_ pads 16 → 20). Stack: 0 B (member).
+     * @note SRAM: ~36 B per instance (band_idx_ + 2x FreqHz pads 20 → 36).
+     *       Stack: 0 B (member).
      */
     struct BandRenderCtx {
         constexpr BandRenderCtx() noexcept = default;
@@ -613,6 +614,8 @@ private:
         uint16_t last_y{0};
         uint16_t last_w{0};
         uint16_t last_h{0};
+        FreqHz last_title_start{0};
+        FreqHz last_title_end{0};
         // Mirror index for the det-window brackets (det_win_*_mhz_): fixed at
         // construction, read by render_composite_full_band() — replaces the
         // fragile (&band == &band1_) pointer-identity check (M1 audit fix).

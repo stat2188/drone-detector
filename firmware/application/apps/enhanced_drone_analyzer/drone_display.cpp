@@ -172,7 +172,14 @@ DroneDisplay::DroneDisplay(const Rect parent_rect) noexcept
     , drone_list_visible_(true)
     , status_bar_visible_(true)
     , band1_{}
-    , band2_{} {
+    , band2_{1} {
+    // NOTE: band2_ MUST be {1} — BandRenderCtx::band_idx_ selects the
+    // det-window mirror (det_win_*_mhz_[band_idx]) in
+    // render_composite_full_band(). A plain {} resets band_idx_ to 0 and
+    // both bands render band-0 brackets (red brackets only in first sweep
+    // window). The mem-initializer wins over the NSDMI in the header.
+    band1_.band_idx_ = 0;
+    band2_.band_idx_ = 1;
     // Incremental spectrum render shadows (non-owning, point into s_dd BSS).
     band1_.shadow = s_dd.composite_rendered;
     band2_.shadow = s_dd.sweep2_rendered;
@@ -1269,6 +1276,8 @@ void DroneDisplay::render_composite_full_band(
     band.last_y = start_y;
     band.last_w = width;
     band.last_h = height;
+    band.last_title_start = title_start;
+    band.last_title_end = title_end;
 }
 
 void DroneDisplay::draw_detection_brackets(
@@ -1352,12 +1361,16 @@ void DroneDisplay::render_composite_partial_band(
         (composite_size <= chart_w) ? composite_size : chart_w);
 
     // Guard: any screen-visible input changed since last paint → full repaint.
-    // Covers threshold, noise floor, layout shifts and the very first paint.
+    // Covers threshold, noise floor, layout shifts, sweep title range
+    // (title strip + detection brackets are full-render only) and the very
+    // first paint.
     const bool need_full = !band.shadow_valid
         || band.last_x != start_x || band.last_y != start_y
         || band.last_w != width || band.last_h != height
         || band.last_noise_floor != noise_floor
-        || band.last_threshold != min_color_power_;
+        || band.last_threshold != min_color_power_
+        || band.last_title_start != title_start
+        || band.last_title_end != title_end;
     if (need_full) {
         render_composite_full_band(painter, band, composite_data, composite_size,
                                    start_x, start_y, width, height,
