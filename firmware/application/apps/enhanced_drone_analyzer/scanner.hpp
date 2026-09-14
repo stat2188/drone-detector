@@ -1049,6 +1049,19 @@ public:
     void clear_lock_state() noexcept;
 
     /**
+     * @brief Reset sweep temporal integrators (median + waterfall) between modes.
+     * @note Called on sweep ENTER (after stop_scanning/clear_lock_state) AND on
+     *       sweep EXIT (before DB scan resumes). Both resets are unconditional
+     *       (no read-modify-write on the detector state): stale sweep frames
+     *       must never seed the DB-scan TBD/median, and stale DB frames must
+     *       never seed the sweep TBD/median. Costs one 2 KB zeroing per
+     *       transition — negligible against a mode switch (PLL/baseband
+     *       reconfiguration), zero cost in the hot per-frame path.
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
+     */
+    void reset_sweep_integrators() noexcept;
+
+    /**
      * @brief Get number of tracked drones
      * @return Number of tracked drones
      * @note Acquires mutex (LockOrder::DATA_MUTEX)
@@ -2103,9 +2116,37 @@ private:
     uint8_t pending_count_{0};
 
     // RSSI hysteresis state (Schmitt trigger: 2 dB to turn ON, 2 dB easier to stay ON)
+    // NORMAL-mode keys — owned by process_spectrum_message(). Sweep mode has
+    // its own per-window keys below and MUST NOT touch these (see C2 block).
     bool signal_present_{false};
     FreqHz last_hysteresis_freq_{0};
     static constexpr int32_t RSSI_HYSTERESIS_DB = 2;
+
+    // Sweep-mode per-window integrator state (C2 FIX): the UI round-robin
+    // visits up to 4 sweep windows alternately, so a SINGLE shared state
+    // (last_sweep_freq_/median/waterfall/hysteresis) is reset on EVERY step
+    // whenever >1 window is enabled — median never warms (warm=4), waterfall
+    // never accumulates >1 frame, and TBD (needs TBD_MIN_FRAMES frames at the
+    // same tuned frequency) NEVER fires in multi-window sweep. Identical
+    // center frequencies arriving consecutively from the SAME window therefore
+    // no longer reset each other: frequency tolerance is tracked per window.
+    //
+    // Sensitivity is UNCHANGED in single-window sweep: per-window state for
+    // the active window behaves bit-for-bit like the old shared state
+    // (same tolerance, same reset policy, same push/accumulate order).
+    //
+    // Sweep-mode integrator keys — OWNED by process_spectrum_sweep(). The
+    // normal-mode keys above (signal_present_/last_hysteresis_freq_) MUST NOT
+    // be touched from the sweep path (see C2 block).
+    FreqHz last_sweep_freq_per_win_[MAX_SWEEP_WINDOWS]{};
+    FreqHz last_hyst_freq_per_win_[MAX_SWEEP_WINDOWS]{};
+    // Sweep-mode Schmitt presence bit, keyed by (window, slice-step) via the
+    // per-window key above. SEPARATE from normal-mode signal_present_: the
+    // sweep detection path in this file is RSSI-threshold + tracking (it has
+    // no signal_present_-driven gate), so no behavior changes if this bit is
+    // ignored by future logic — but the per-window KEY must never collapse
+    // back to the shared normal-mode key (see C2 block).
+    bool sweep_signal_present_{false};
 
     // Consecutive missed detections on locked frequency (prevents premature lock-break)
     uint8_t missed_lock_count_{0};

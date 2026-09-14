@@ -136,6 +136,10 @@ private:
     // Reusable buffer to prevent stack overflow in message handler
     // ChannelSpectrum is 256 bytes - moved from local stack to BSS
     ChannelSpectrum spectrum_buffer_{};
+    // C1 drain scratch: sweep-mode drain-to-newest pops up to 3 stale frames
+    // per tick into this BSS buffer (NOT the stack — ~272 bytes). Never read
+    // except for the empty-FIFO fallback copy in the frame-sync handler.
+    ChannelSpectrum spectrum_discard_{};
 
     DroneDisplay drone_display_{{0, 68, DISPLAY_WIDTH, 206}};
 

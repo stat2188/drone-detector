@@ -67,9 +67,66 @@ void DroneScannerUI::register_handlers() noexcept {
         [this](Message* const) {
             if (!this->scanning_) return;
             if (this->spectrum_fifo_ != nullptr) {
-                // Use class member buffer instead of local stack to prevent M0 overflow
+                // C1: drain-to-newest per tick (sweep-aware). The M0 produces
+                // FFT frames ~2.5x faster than the ~60 Hz DisplayFrameSync
+                // consumer, so the 4-slot FIFO is permanently FULL and a plain
+                // single out() always returns a 2-4-frame-old capture. In sweep
+                // mode that staleness is pure dead air: EVERY processed step is
+                // followed by a retune, and the retune's settle discipline must
+                // then discard the stale backlog one frame per tick
+                // (SWEEP_SETTLE_FRAMES + STALE_FIFO_FRAMES = 4 ticks ≈ 67 ms of
+                // dwell that integrates NOTHING). Draining to the newest frame
+                // here keeps exactly ONE frame per tick on the wire (same CPU
+                // and RF budget as before — the dropped frames were never
+                // integrated anyway) but hands the pipeline the FRESHEST
+                // capture, so after a retune the settle window covers only the
+                // frames that can physically be stale (see retune_sweep_window):
+                // the step cadence drops from 5 ticks to 2 (1 settle + 1 live).
+                // DB-scan mode is UNTOUCHED (single out(), same cadence and the
+                // same retune-straddle guard in on_channel_spectrum) — the
+                // drain runs only while composite_active_ (sweep) is true.
+                // Detection sensitivity is UNCHANGED: the processed frame is
+                // still exactly one full 6.5 ms FFT integration (trigger 63);
+                // only its AGE changes (freshest instead of oldest-queued).
+                // Threading: single consumer (this UI handler); M0 is the sole
+                // producer. FIFO::out() is the consumer-side primitive; the
+                // loop is bounded (FIFO depth is 4) so it cannot spin.
                 ChannelSpectrum& spectrum = this->spectrum_buffer_;
-                if (this->spectrum_fifo_->out(spectrum)) {
+                bool have_frame = false;
+                if (this->composite_active_) {
+                    ChannelSpectrum& discard = this->spectrum_discard_;
+                    uint8_t drained = 0;
+                    // Keep the newest: pop stale frames into the discard buffer
+                    // (same BSS class as spectrum_buffer_, NOT the stack —
+                    // ChannelSpectrum is ~272 bytes), then pop the final frame
+                    // into spectrum_buffer_ for processing.
+                    while (this->spectrum_fifo_->out(discard)) {
+                        ++drained;
+                        if (drained >= 3) break;  // FIFO depth 4: 3 stale + 1 live max
+                    }
+                    have_frame = this->spectrum_fifo_->out(spectrum);
+                    // EMPTY-FIFO FALLBACK (jitter/stall safety): if the M0 did
+                    // not produce a frame this tick, the discard loop above
+                    // consumed nothing (out() returns false on empty) and
+                    // have_frame is false — except when the FIFO held exactly
+                    // 1-3 stale frames and no fresh one yet. In that case the
+                    // LAST drained frame is still newer than anything the old
+                    // single-out() path would have processed two ticks later,
+                    // so reuse it instead of idling the tick: copy it into the
+                    // live buffer. No double-processing hazard: the frame was
+                    // already popped (it cannot be served again), and the
+                    // settle counter still discards it when a retune is
+                    // pending — detection/drop semantics are unchanged, only
+                    // the idle-tick stall is removed.
+                    if (!have_frame && drained > 0) {
+                        spectrum = discard;
+                        have_frame = true;
+                    }
+                } else {
+                    // Use class member buffer instead of local stack to prevent M0 overflow
+                    have_frame = this->spectrum_fifo_->out(spectrum);
+                }
+                if (have_frame) {
                     if (this->composite_active_) {
                         this->on_sweep_spectrum(spectrum);
                     } else {
@@ -1085,6 +1142,11 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
         (void)scanner_ptr_->stop_scanning();
         // Clear lock state to prevent stale LOCKING/TRACKING after resume
         scanner_ptr_->clear_lock_state();
+        // Flush temporal integrators BEFORE the first sweep frame: DB-scan
+        // frames (different trigger/bandwidth/gain regime) must not seed the
+        // sweep TBD envelope or the per-window median windows. Unconditional
+        // reset — zero hot-path cost, one 2 KB zeroing per mode entry.
+        scanner_ptr_->reset_sweep_integrators();
     }
     scanning_ = false;
 
@@ -1181,6 +1243,14 @@ void DroneScannerUI::exit_sweep_mode(bool suppress_auto_restart) noexcept {
         // Clear sweep-mode flags on tracked drones so they resume
         // rssi_history_-based trend calculation in normal scanning mode
         scanner_ptr_->clear_sweep_modes();
+        // Flush temporal integrators BEFORE DB scan resumes: sweep frames
+        // (different slice steps, round-robin windows) must not seed the
+        // DB-scan TBD envelope or median window. Without this, the first DB
+        // frames after sweep exit integrate against stale sweep power and
+        // TBD can confirm a phantom (or the median can suppress a real peak
+        // for up to 7 frames). Unconditional reset — one 2 KB zeroing per
+        // mode exit, zero hot-path cost.
+        scanner_ptr_->reset_sweep_integrators();
 
         // Continue scanning from last DB position (skip already-scanned)
         // Restore both frequency AND database index for exact resume
@@ -1594,21 +1664,33 @@ void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) n
     // Frame-based settling replaces the old 5ms wall-clock sleep + streaming
     // restart. Streaming is continuous, so frames already queued in the channel
     // FIFO (and the frame overlapping the retune instant) belong to the
-    // PREVIOUS frequency. process_bins() discards SWEEP_SETTLE_FRAMES +
-    // STALE_FIFO_FRAMES frames after every retune, guaranteeing each analyzed
-    // frame was captured after the MAX2837/RFFC5072 finished locking (~200us,
-    // far below one FFT frame period). This is strictly stronger than sleeping:
-    // the guarantee is pinned to captured frames, not to wall time, and the
-    // UI event loop no longer blocks for 5ms on every sweep step.
+    // PREVIOUS frequency. process_bins() discards settle frames after every
+    // retune, guaranteeing each analyzed frame was captured after the
+    // MAX2837/RFFC5072 finished locking (~200us, far below one FFT frame
+    // period). This is strictly stronger than sleeping: the guarantee is
+    // pinned to captured frames, not to wall time, and the UI event loop no
+    // longer blocks for 5ms on every sweep step.
     //
-    // WHY STALE_FIFO_FRAMES MUST EQUAL THE FULL FIFO DEPTH MINUS ONE (=3):
-    // The DisplayFrameSync handler drains exactly ONE frame per tick (~60 Hz)
-    // while the M0 produces ~154 fps (20 MHz / trigger 63 ≈ 6.5 ms per FFT).
-    // FIFO::in() DROPS frames when full (common/fifo.hpp), so the 4-slot FIFO
-    // (ChannelSpectrumConfigMessage::fifo_k = 2) is permanently FULL: the
-    // oldest served frame is always ~2-4 frame periods old. Consequently, at
-    // the instant of a retune ALL 4 queued frames were captured at the OLD
-    // frequency — settle must cover all 4, not 2.
+    // C1 SETTLE DISCIPLINE (drain-to-newest consumer — see frame-sync handler):
+    // the handler now drains the FIFO to the NEWEST frame every tick, so at
+    // the instant of a retune at most ONE queued frame can predate the retune
+    // (the frame currently being written by the M0 / the single frame that
+    // arrived between the last drain and this retune). All older backlog is
+    // already gone — popped by the per-tick drain, not left rotting in the
+    // queue. The settle window therefore covers exactly:
+    //   SWEEP_SETTLE_FRAMES (= 1): the frame overlapping the retune instant
+    //     (PLL unlocked mid-capture, straddles old+new frequency).
+    // The old STALE_FIFO_FRAMES = 3 backlog term is OBSOLETE under the new
+    // consumer: keeping it would discard 3 LIVE frames per step (the freshest
+    // captures on the new frequency) — pure sensitivity loss AND 3 wasted
+    // ticks per step (~50 ms dead air). The constant is kept (named) for the
+    // archaeology below and as the fallback if the drain is ever disabled.
+    //
+    // WHY THE OLD CODE NEEDED STALE=3 (kept for archaeology — do NOT revert):
+    // the old consumer drained exactly ONE frame per tick while the M0
+    // produced ~154 fps, so the 4-slot FIFO was permanently FULL and ALL 4
+    // queued frames were captured at the OLD frequency — settle had to cover
+    // all 4, not 2.
     //
     // HISTORY (do not flip this value again without reading this):
     //  - 4ae47015: STALE=3, but settle frames also banked phantom Hz credit
@@ -1625,13 +1707,17 @@ void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) n
     //    in the same commit → "3-BROKE SWEEP" observation. Confounding: the
     //    credit broke it, STALE=3 was innocent.
     //  - bf018832/aa01fc92: reverted both again.
-    // CORRECT COMBINATION (this commit): STALE=3 AND no Hz credit during
-    // settle. Cost: 4 discarded frames (~26 ms) per slice step — dwell only;
-    // composite mapping is unaffected because discarded frames advance
-    // neither bins_hz_acc nor pixel_index.
+    // CORRECT COMBINATION (this commit): drain-to-newest consumer + settle =
+    // SWEEP_SETTLE_FRAMES (1) AND no Hz credit during settle. Cost: 1
+    // discarded frame (~6.5 ms RF dwell) per slice step — the step cadence
+    // drops from 5 ticks to 2 (1 settle + 1 live); composite mapping is
+    // unaffected because discarded frames advance neither bins_hz_acc nor
+    // pixel_index. Detection sensitivity is UNCHANGED: the live frame is one
+    // full 6.5 ms FFT integration (trigger 63), only fresher (newest-queued
+    // instead of oldest-queued).
     static constexpr uint8_t STALE_FIFO_FRAMES = 3;
-    win.settle_frames_remaining_ =
-        static_cast<uint8_t>(SWEEP_SETTLE_FRAMES + STALE_FIFO_FRAMES);
+    (void)STALE_FIFO_FRAMES;  // backlog term: obsolete under drain-to-newest
+    win.settle_frames_remaining_ = SWEEP_SETTLE_FRAMES;
     (void)prefix;
 }
 

@@ -1599,9 +1599,33 @@ void DroneScanner::clear_lock_state() noexcept {
     lock_start_time_ = 0;
     confirm_start_time_ = 0;
     // Reset sweep frequency tracking so first sweep frame always resets median filter
+    // (per-window arrays: same behavior as the old shared last_sweep_freq_ = 0).
     last_sweep_freq_ = 0;
+    for (uint8_t i = 0; i < MAX_SWEEP_WINDOWS; ++i) {
+        last_sweep_freq_per_win_[i] = 0;
+        last_hyst_freq_per_win_[i] = 0;
+    }
     if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
         state_ = ScannerState::SCANNING;
+    }
+}
+
+void DroneScanner::reset_sweep_integrators() noexcept {
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    // Unconditional reset — no read-modify-write: any frame captured in the
+    // OTHER mode (different slice step, bandwidth, trigger, gain regime) is
+    // poison for the TBD envelope and the median window. The DB path owns the
+    // same reset-before-push ordering on frequency change, so after this call
+    // the first frame of the new mode rebuilds both integrators from scratch.
+    rssi_median_filter_.reset();
+    waterfall_history_.reset();
+    signal_present_ = false;
+    sweep_signal_present_ = false;
+    last_sweep_freq_ = 0;
+    last_hysteresis_freq_ = 0;
+    for (uint8_t i = 0; i < MAX_SWEEP_WINDOWS; ++i) {
+        last_sweep_freq_per_win_[i] = 0;
+        last_hyst_freq_per_win_[i] = 0;
     }
 }
 
@@ -2529,23 +2553,35 @@ void DroneScanner::process_spectrum_sweep(
     FreqHz f_min,
     FreqHz f_max
 ) noexcept {
+    // C2 guard: out-of-range window index must never kill sweep detection, and
+    // the per-window integrator arrays below are indexed by win_idx.
+    if (win_idx >= MAX_SWEEP_WINDOWS) return;
     current_frequency_ = center_freq;
 
-    // Per-frequency median filter and waterfall reset: only reset when the tuned
-    // frequency changes by MORE than half a sweep step. Across sweep passes,
-    // center_freq values for the same step are identical (f_center_ini + i *
-    // step_hz), but integer division rounding in step_hz could cause ±1 Hz
-    // variation. Using a tolerance of SWEEP_GAPLESS_STEP_MAX_HZ/2 (~4.4 MHz)
-    // ensures:
-    //   - Same step across passes: center_freq == last_sweep_freq_ → NO reset
-    //     → waterfall accumulates across passes → TBD fires after 3 passes
-    //   - Different step: |diff| > 4.4 MHz → RESET → prevents cross-frequency
-    //     contamination (integrating power from different RF frequencies)
-    // Stack: 0 bytes. Flash: ~16 bytes (one division + comparison).
+    // Per-frequency median filter and waterfall reset — PER SWEEP WINDOW.
+    // The old code compared center_freq against a SINGLE shared last_sweep_freq_.
+    // The UI round-robin alternates between up-to-4 windows, so with >1 window
+    // enabled EVERY step compared window A's frequency against window B's stale
+    // key (|diff| >> 4.4 MHz) and reset median + waterfall EVERY step:
+    //   - median (warm at 4 samples, window 7) could never warm → median_enabled
+    //     silently behaved as OFF in multi-window sweep;
+    //   - waterfall never accumulated more than 1 frame → is_warm(TBD_MIN_FRAMES)
+    //     was always false → TBD (the ~9 dB integration gain for weak signals)
+    //     NEVER fired in multi-window sweep.
+    // The per-window key fixes this with ZERO behavior change for single-window
+    // sweep (identical tolerance, identical reset policy, identical push order):
+    //   - Same window revisiting the same slice step (|diff| <= tolerance):
+    //     NO reset → waterfall accumulates across visits → TBD can fire;
+    //     median accumulates → warms after 4 revisits of the same step.
+    //   - Same window at a different slice step: RESET → prevents
+    //     cross-frequency contamination (unchanged safety property).
+    // last_sweep_freq_ (shared) is kept in sync for legacy readers and for
+    // clear_lock_state() semantics; it no longer drives the reset decision.
     constexpr FreqHz SWEEP_FREQ_TOLERANCE_HZ = SWEEP_GAPLESS_STEP_MAX_HZ / 2;
-    const FreqHz freq_diff = (center_freq > last_sweep_freq_)
-        ? (center_freq - last_sweep_freq_)
-        : (last_sweep_freq_ - center_freq);
+    FreqHz& last_win_freq = last_sweep_freq_per_win_[win_idx];
+    const FreqHz freq_diff = (center_freq > last_win_freq)
+        ? (center_freq - last_win_freq)
+        : (last_win_freq - center_freq);
     if (freq_diff > SWEEP_FREQ_TOLERANCE_HZ) {
         rssi_median_filter_.reset();
         // Reset temporal history on significant frequency change.
@@ -2555,14 +2591,21 @@ void DroneScanner::process_spectrum_sweep(
         // likewise needs several revisit cycles per frequency, so both
         // median_enabled and sweep TBD are slow integrators on wide windows.
         waterfall_history_.reset();
-        last_sweep_freq_ = center_freq;
+        last_win_freq = center_freq;
     }
+    last_sweep_freq_ = center_freq;
 
-    // Hysteresis reset: only when frequency changes (matches normal mode pattern at :730)
-    // Preserves signal_present_ state when revisiting the same frequency in sweep cycles
-    if (center_freq != last_hysteresis_freq_) {
-        signal_present_ = false;
-        last_hysteresis_freq_ = center_freq;
+    // Hysteresis reset — PER SWEEP WINDOW (same C2 reasoning as above): a
+    // shared key reset the presence state on every window alternation, so the
+    // sweep hysteresis state could never persist across revisits. The per-window
+    // key preserves the sweep presence bit when the SAME window revisits the
+    // same step. NOTE: this writes ONLY sweep_signal_present_ — the
+    // normal-mode signal_present_ is owned by process_spectrum_message() and
+    // must never be touched here (cross-mode state leak).
+    FreqHz& last_win_hyst = last_hyst_freq_per_win_[win_idx];
+    if (center_freq != last_win_hyst) {
+        sweep_signal_present_ = false;
+        last_win_hyst = center_freq;
     }
 
     // Feed waterfall history for sweep mode (runs without mutex — scanner thread stopped)
