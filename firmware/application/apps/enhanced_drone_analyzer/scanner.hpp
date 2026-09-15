@@ -2273,7 +2273,10 @@ private:
     // the RSSI threshold (Sens), and the narrowband guard's width elevation is
     // anchored to shape_gate_margin() inside tbd_peak_is_narrowband().
 
-    // No gain cache — use get_current_total_gain() directly to avoid stale values.
+    // P0-2 note: sweep path caches one frame_total_gain per
+    // process_spectrum_sweep() call; DB-scan helpers below intentionally keep
+    // per-call get_current_total_gain() reads (single peak each, no loop).
+    // No cross-frame gain cache — use get_current_total_gain() directly to avoid stale values.
 };
 
 } // namespace drone_analyzer

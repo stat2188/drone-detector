@@ -172,6 +172,10 @@ private:
         FreqHz f_center_ini{0};
         FreqHz pixel_step_hz{0};
         FreqHz step_hz{0};
+        // Cached Hz-per-usable-bin for the progress accumulator
+        // (step_hz / FFT_SWEEP_USABLE_BINS, computed once in init(); the
+        // per-frame UDIV in process_bins() is the P0-3 hot-path saving).
+        FreqHz effective_bin_size{0};
         FreqHz bins_hz_acc{0};
         uint16_t pixel_index{0};
         uint8_t pixel_max{0};

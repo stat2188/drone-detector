@@ -63,14 +63,18 @@ public:
     ) noexcept {
         GainSetting result{current_lna, current_vga, current_rf_amp};
 
-        // Rate limiting
+        // Rate limiting FIRST (P0-2 hot-path fix): the 236-bin scan below is
+        // wasted whenever fewer than 500 ms elapsed since the last change
+        // (~29 of 30 ticks at 60 fps). Unsigned subtraction stays correct
+        // across the ~49-day now_ms wrap.
         if ((now_ms - last_change_ms_) < MIN_CHANGE_INTERVAL_MS) {
             return result;
         }
 
         if (spectrum_256 == nullptr) return result;
 
-        // Analyze spectrum
+        // Analyze spectrum (runs ONLY when the rate gate above passed — the
+        // old order scanned first and discarded the result 29/30 ticks).
         uint32_t saturated_count = 0;
         uint32_t dead_count = 0;
         uint8_t max_power = 0;

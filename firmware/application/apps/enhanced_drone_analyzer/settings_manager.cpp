@@ -209,6 +209,13 @@ static void parse_settings_line(
         s.median_enabled = parse_bool();
 
     // --- Spectrum shape filter (clamped to valid ranges) ---
+    // AUDIT C2/a: margin floor 5 means a file value 0-4 is clamped to 5 —
+    // margin=0 ("margin filtering OFF") is unreachable via files AND via
+    // the UI (NumberField {5,200}). Step 3 treats margin 0 as disabled
+    // (`> 0 &&`), so 0 is a tested code path; the clamp below forces every
+    // such config onto margin 5, which Step 3 DOES enforce. No behavior
+    // change here (clamping preserves the pre-audit range contract), but
+    // operators wanting margin OFF must know neither UI nor file can give it.
     } else if (key_matches("spectrum_margin")) {
         const uint64_t v = parse_int();
         s.spectrum_margin = static_cast<uint8_t>((v < 5) ? 5 : (v > 200 ? 200 : v));
@@ -757,6 +764,10 @@ void SettingsFileManager::apply_to_config(
     config.miss_tolerance = s.miss_tolerance;
 
     // Spectrum shape filter parameters
+    // AUDIT C2/a: margin plumbing is lossless (0 passes through), but the
+    // file/UI layers above can never PRODUCE 0 (clamped to >= 5), so the
+    // Step 3 `margin == 0 -> disabled` path is reachable only via hand-made
+    // ScanConfig. Kept as-is; changing the clamp is a UX decision, not a bug.
     config.spectrum_margin = s.spectrum_margin;
     config.spectrum_min_width = s.spectrum_min_width;
     config.spectrum_max_width = s.spectrum_max_width;

@@ -1547,6 +1547,10 @@ ErrorCode DroneScanner::validate_config_internal(const ScanConfig& config) const
     if (config.spectrum_min_width < 1 || config.spectrum_max_width < 2) {
         return ErrorCode::INVALID_PARAMETER;
     }
+    // AUDIT C2/a: margin 0 = "no margin filtering" is a legitimate knob
+    // (UI no longer shows 0 but files can). Keep accepting it — Step 3
+    // treats margin 0 as disabled and the sensitive-mode floor (1) still
+    // applies. Note: shape_gate_margin() then scales ONLY the floor.
     if (config.confirm_count < CONFIRM_COUNT_MIN || config.confirm_count > CONFIRM_COUNT_MAX) {
         return ErrorCode::INVALID_PARAMETER;
     }
@@ -2040,12 +2044,18 @@ uint8_t DroneScanner::shape_gate_margin() const noexcept {
     // Sensitive mode opts out of scaling by design — the user explicitly
     // chose maximum weak-signal sensitivity, and scaling would partially
     // cancel the relaxation.
-    // Overflow-safe: base <= 200 (settings clamp), rssi_sens/2 <= ~15.
+    // Saturate to 255: base (up to 200 via settings clamp) + rssi_sens/2
+    // (up to ~15) cannot exceed 215 today, but keep the sum in uint16 and
+    // clamp so a future clamp change cannot reintroduce uint8 wraparound.
     const uint8_t base = effective_spectrum_margin();
     const int32_t rssi_sens = -(config_.rssi_threshold_dbm + 95);
-    return (!config_.sensitive_mode && rssi_sens > 0)
-        ? static_cast<uint8_t>(base + rssi_sens / 2)
-        : base;
+    if (!config_.sensitive_mode && rssi_sens > 0) {
+        const uint16_t scaled =
+            static_cast<uint16_t>(base) +
+            static_cast<uint16_t>(rssi_sens / 2);
+        return (scaled > 255) ? 255 : static_cast<uint8_t>(scaled);
+    }
+    return base;
 }
 
 bool DroneScanner::apply_shape_filters(
@@ -2134,7 +2144,14 @@ bool DroneScanner::apply_shape_filters(
     // max_width, causing false rejection. /2 narrows the threshold to the actual
     // peak region, producing a reliable width measurement.
     const uint8_t elevated_divisor = very_strong ? 2 : 3;
-    const uint8_t elevated_threshold = noise_floor + (peak_margin / elevated_divisor);
+    // Saturate to 255: noise_floor (0-255) + margin/2 (0-127) can exceed
+    // uint8 without this (e.g. floor 200 + 50 = 250 ok, but 255 + 60
+    // would wrap to 59 and corrupt the width measurement). uint16 holds
+    // the sum, clamp keeps the threshold in-range.
+    const uint16_t elevated_sum =
+        static_cast<uint16_t>(noise_floor) +
+        static_cast<uint16_t>(peak_margin / elevated_divisor);
+    const uint8_t elevated_threshold = (elevated_sum > 255) ? 255 : static_cast<uint8_t>(elevated_sum);
 
     const size_t upper_limit = data_size - edge_skip;
 
@@ -2176,7 +2193,21 @@ bool DroneScanner::apply_shape_filters(
     // threshold — width is now reliable enough to enforce.
     // Default (bypass disabled): max_width is ALWAYS enforced — the MaxW
     // value from Settings is authoritative at any signal strength.
-    if (!very_strong || peak_margin <= EXTREME_SIGNAL_MARGIN) {
+    // AUDIT B1: the old condition `!very_strong || peak_margin <=
+    // EXTREME_SIGNAL_MARGIN` silently disabled the WHOLE MaxW pair
+    // (fragment + emission extent) for every peak_margin > 96 even when the
+    // bypass flag was OFF. With Flat=0 at defaults, extreme WiFi/BT
+    // flat-tops then had NO width-domain filter at all. Below MaxW is
+    // enforced whenever the bypass flag is OFF, regardless of strength
+    // (the /2 elevated threshold keeps the measurement trustworthy).
+    if (config_.shape_bypass_enabled && peak_margin > EXTREME_SIGNAL_MARGIN) {
+        if (out_extent != nullptr) {
+            // Extreme-signal bypass: width checks skipped by explicit user opt-in.
+            // Degenerate peak-only extent — dedup consumers must not
+            // over-suppress bypassed signals.
+            *out_extent = SignalExtent{peak_idx, peak_idx};
+        }
+    } else {
         if (signal_width > config_.spectrum_max_width) return false;
 
         // Step 6b: EMISSION EXTENT (the real MaxW semantics).
@@ -2196,16 +2227,13 @@ bool DroneScanner::apply_shape_filters(
         if (out_extent != nullptr) {
             *out_extent = emission;
         }
-    } else if (out_extent != nullptr) {
-        // Extreme-signal bypass: width checks skipped by explicit user opt-in.
-        // Degenerate peak-only extent — dedup consumers must not
-        // over-suppress bypassed signals.
-        *out_extent = SignalExtent{peak_idx, peak_idx};
     }
 
     // Step 7: Peak sharpness (enforce inverted-V shape)
     // Sensitive mode: skip — at low SNR noise bins inflate avg_margin and the
     // peak/avg ratio becomes unreliable (same rationale as valley/flatness).
+    // NOTE: the field floor is 50 (OFF sentinel), so `> 50` here means
+    // "user actually set a sharpness filter". 50 itself disables.
     int32_t avg_margin = 0;
     if (config_.spectrum_peak_sharpness > 50 && !config_.sensitive_mode) {
         int32_t margin_sum = 0;
@@ -2240,7 +2268,15 @@ bool DroneScanner::apply_shape_filters(
     // Sensitive mode bypass: valley depth is unreliable for weak signals.
     if (config_.spectrum_valley_depth > 0 && !very_strong && !config_.sensitive_mode) {
         bool has_secondary_peak = false;
-        const uint8_t secondary_threshold = noise_floor + (peak_margin / 2);
+        // Saturate to 255: peak_margin/2 (0-127) added to noise_floor
+        // (0-255) can overflow uint8 (e.g. 255 + 60 -> 59 without this),
+        // which would lower the dual-peak bypass bar and misroute wideband
+        // signals into the valley filter.
+        const uint16_t secondary_sum =
+            static_cast<uint16_t>(noise_floor) +
+            static_cast<uint16_t>(peak_margin / 2);
+        const uint8_t secondary_threshold =
+            (secondary_sum > 255) ? 255 : static_cast<uint8_t>(secondary_sum);
         for (size_t i = left; i <= right && !has_secondary_peak; ++i) {
             if (has_dc_gap && i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
             if (i == peak_idx) continue;
@@ -2289,8 +2325,12 @@ bool DroneScanner::apply_shape_filters(
     // Sensitive mode skips flatness for WEAK signals (#1 cause of missed weak
     // FPV) but KEEPS it for very_strong peaks: with max_width/valley/symmetry
     // all bypassed at very_strong, disabling flatness too would let a
-    // close-range WiFi/BT flat-top pass unfiltered (sharpness ≈ 100 passes
-    // the default threshold).
+    // close-range WiFi/BT flat-top pass unfiltered.
+    // NOTE (audit): default spectrum_flatness IS 0 (disabled) and sensitive
+    // mode ALSO skips flatness on weak peaks — at defaults the ONLY case
+    // where flatness still runs is a VERY-STRONG peak in sensitive mode.
+    // Operators who enable Mar>0 MUST also set Flat>0, otherwise WiFi/BT at
+    // any range passes (see fix B1 below — MaxW no longer skips).
     if (config_.spectrum_flatness > 0 && peak_margin >= effective_flatness_min
         && (!config_.sensitive_mode || very_strong)) {
         // Denominator: signal width excluding DC spike bins (if present)
@@ -2617,7 +2657,12 @@ void DroneScanner::process_spectrum_sweep(
     // no candidate is collected that Step 3 would only reject, and every peak
     // the gate admits is guaranteed the same Step 4 width threshold.
     // Default margin=20 (~4 dB above noise); sensitive: 18 (~3.6 dB).
+    // P0-2: hoist the gain read out of the per-peak loop — the LNA/VGA/RF
+    // state is stable inside one frame, so one cached total_gain replaces
+    // the repeated get_current_total_gain() calls below (each of which
+    // re-reads receiver_model).
     const uint8_t cfg_margin = shape_gate_margin();
+    const int32_t frame_total_gain = get_current_total_gain();
 
     // Step 1: Compute noise floor (25th percentile of usable bins).
     // Shared for all peaks in this frame — computed once.
@@ -2727,7 +2772,11 @@ void DroneScanner::process_spectrum_sweep(
         last_peak_power_ = cfar_peaks[0].power;
     }
 
-    const int32_t total_gain = get_current_total_gain();
+    // P0-2: reuse the frame-level cached gain (frame_total_gain, read once
+    // near the candidate gate). receiver_model state is stable inside one
+    // frame; the old per-peak get_current_total_gain() re-read LNA/VGA/RF
+    // on every peak for an identical value.
+    const int32_t total_gain = frame_total_gain;
 
     // Tracks whether any peak survived shape analysis this frame. TBD below must
     // be gated on this: once single-frame detection tracked a signal, the
@@ -2803,7 +2852,9 @@ void DroneScanner::process_spectrum_sweep(
         }
 
         // Check if this bin was active in enough recent frames
-        const int32_t total_gain_tbd = get_current_total_gain();
+        // P0-2: same cached gain (identical value — gain cannot change
+        // mid-frame). Removes the last per-frame receiver_model re-read.
+        const int32_t total_gain_tbd = frame_total_gain;
         const int32_t tbd_raw_threshold = (config_.rssi_threshold_dbm + total_gain_tbd) * 5 + 255;
         const uint8_t threshold = static_cast<uint8_t>(
             (tbd_raw_threshold < 0) ? 0 : (tbd_raw_threshold > 255 ? 255 : tbd_raw_threshold));

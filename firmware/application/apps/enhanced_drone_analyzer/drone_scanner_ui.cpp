@@ -975,24 +975,30 @@ void DroneScannerUI::on_retune(FreqHz freq, uint32_t range) noexcept {
 
 void DroneScannerUI::apply_agc(const uint8_t* spectrum_data) noexcept {
     // Auto gain control: analyze spectrum and adjust RF frontend.
-    // Runs every frame to catch saturation quickly, but adjustments
-    // are rate-limited inside AutoGainControl (500ms) to prevent oscillation.
+    // P0-2: receiver_model reads are hoisted — the old code called
+    // lna()/vga()/rf_amp() up to TWICE (compute args + change compare), each
+    // of which may take the radio SPI mutex. One snapshot per tick, applied
+    // with the same values, removes the duplicate reads AND the TOCTOU
+    // where the compare saw different values than the compute.
     if (scanner_ptr_ == nullptr || !scanner_ptr_->is_adaptive_cfar_enabled()) return;
 
+    const uint8_t cur_lna = portapack::receiver_model.lna();
+    const uint8_t cur_vga = portapack::receiver_model.vga();
+    const bool cur_rf_amp = portapack::receiver_model.rf_amp();
     const auto gain = auto_gain_control_.compute_optimal(
         spectrum_data,
-        portapack::receiver_model.lna(),
-        portapack::receiver_model.vga(),
-        portapack::receiver_model.rf_amp(),
+        cur_lna,
+        cur_vga,
+        cur_rf_amp,
         chTimeNow()
     );
-    if (gain.lna != portapack::receiver_model.lna()) {
+    if (gain.lna != cur_lna) {
         portapack::receiver_model.set_lna(gain.lna);
     }
-    if (gain.vga != portapack::receiver_model.vga()) {
+    if (gain.vga != cur_vga) {
         portapack::receiver_model.set_vga(gain.vga);
     }
-    if (gain.rf_amp != portapack::receiver_model.rf_amp()) {
+    if (gain.rf_amp != cur_rf_amp) {
         portapack::receiver_model.set_rf_amp(gain.rf_amp);
     }
 }
@@ -1579,6 +1585,14 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
     }
     step_hz = range / frames;
 
+    // P0-3: cache the per-bin Hz credit ONCE per window. step_hz is fixed
+    // for the whole pass (gapless auto-derivation above), so the old
+    // `step_hz / 236` UDIV in process_bins() ran identically on EVERY
+    // frame. 236 = FFT_SWEEP_USABLE_BINS, the bins process_frame() actually
+    // visits ({2..119} ∪ {136..253}); each slice then advances pixel_index
+    // by exactly step_hz / pixel_step_hz.
+    effective_bin_size = step_hz / FFT_SWEEP_USABLE_BINS;
+
     // Linear frequency-to-pixel mapping: each of 240 pixels represents exactly
     // range/240 Hz. process_frame() discards excess pixels via the
     // pixel_index >= COMPOSITE_SIZE guard — overflow is harmless.
@@ -1621,9 +1635,10 @@ bool DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) 
     // advance bins_hz_acc either.
     //
     // PROGRESS ACCUMULATOR: each of 236 signal-carrying bins contributes
-    // effective_bin_size = step_hz / 236, so each slice advances pixel_index
-    // by exactly step_hz / pixel_step_hz pixels — scan-head pacing and the
-    // line_full completion check are unchanged.
+    // effective_bin_size (= step_hz / FFT_SWEEP_USABLE_BINS, cached in
+    // init()), so each slice advances pixel_index by exactly
+    // step_hz / pixel_step_hz pixels — scan-head pacing and the line_full
+    // completion check are unchanged.
     //
     // DATA PLACEMENT (true-position): each bin is written at the pixel its
     // REAL RF frequency maps to on the linear window scale,
@@ -1639,7 +1654,13 @@ bool DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) 
         --settle_frames_remaining_;
         return false;
     }
-    const FreqHz effective_bin_size = step_hz / 236;
+    // P0-3: use the value cached in init(). Falls back to a one-time
+    // division only for hand-built windows that never went through init()
+    // (a zero here would make process_frame() a silent no-op).
+    FreqHz effective_bin_size = this->effective_bin_size;
+    if (effective_bin_size == 0 && step_hz != 0) {
+        effective_bin_size = step_hz / FFT_SWEEP_USABLE_BINS;
+    }
     SweepProcessor::process_frame(
         spectrum,
         composite,

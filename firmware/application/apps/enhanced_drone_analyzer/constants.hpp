@@ -699,6 +699,16 @@ constexpr size_t FFT_USABLE_BINS = FFT_BIN_COUNT - (FFT_DC_SPIKE_END - FFT_DC_SP
 constexpr size_t FFT_USABLE_BINS_NARROW = FFT_BIN_COUNT - (FFT_DC_SPIKE_END - FFT_DC_SPIKE_START) - (2 * FFT_EDGE_SKIP_NARROW);
 
 /**
+ * @brief Signal-carrying bins visited by SweepProcessor::process_frame.
+ * @note The true-position painter skips edges {0,1} ∪ {254,255} and the
+ *       DC notch {120..135}: runs are {2..119} (118) ∪ {136..253} (118).
+ *       This is the denominator the sweep progress accumulator
+ *       (SweepWindow::effective_bin_size = step_hz / this) must use so each
+ *       slice advances pixel_index by exactly step_hz / pixel_step_hz.
+ */
+constexpr size_t FFT_SWEEP_USABLE_BINS = 236;
+
+/**
  * @brief Sweep slice bandwidth in Hz (20 MHz per slice)
  * @note MUST be defined BEFORE SWEEP_BIN_SIZE - C++ requires forward declaration
  */
