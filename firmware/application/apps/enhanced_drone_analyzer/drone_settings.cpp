@@ -104,7 +104,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , display_ptr_(display)
-    , original_config_(config)
     , settings_()
     , settings_dirty_(false) {
 
@@ -158,9 +157,18 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &field_threat_critical_,
     });
 
-    // Load persisted settings from SD card (overrides config-based defaults)
-    // If load fails, settings_ retains constructor defaults
-    (void)SettingsFileManager::load(settings_);
+    // Load persisted settings from the startup cache (g_workspace_settings —
+    // read from SD ONCE in DroneScannerUI). This removes the 556-byte File +
+    // FATFS stack peak and the heap churn from path temporaries on the
+    // view-push path (hard-fault mitigation).
+    // If the startup SD load failed, g_workspace_settings holds constructor
+    // DEFAULTS (not scanner state) — fall back to the live scanner config
+    // already extracted above, matching the pre-cache failed-load behavior.
+    // NOTE: external edits to eda_settings.txt are picked up on the next app
+    // start, not on every Settings open (documented trade-off).
+    if (g_workspace_settings_loaded) {
+        settings_ = g_workspace_settings;
+    }
 
     // Populate UI fields from loaded settings
     apply_settings_to_ui();
@@ -325,75 +333,22 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     };
 
     // SAVE button: apply to scanner + save to SD card
-    // FIX: Eliminated 160-byte exc[4][5] stack array by writing sweep fields
-    // directly to g_workspace_settings BEFORE apply_to_config() overwrites them.
-    // Stack budget: ~150 bytes (was ~310 bytes).
+    // Memory-optimized: the former 65-line preserve/overwrite/restore dance
+    // (three sweep-mirror copies + the 368-byte original_config_ view member)
+    // is replaced by ONE sweep sync into settings_ (see
+    // sync_sweep_mirror_from_scanner()). apply_to_config() copies
+    // settings_.sweep_* into the config, so the mirror must carry the
+    // scanner's LIVE sweep values — the Settings tab edits no sweep fields,
+    // and a stale file-backed mirror or a DEFAULTS reset would otherwise
+    // regress the scanner's sweep config on save.
     button_save_.on_select = [this](ui::Button&) {
         if (scanner_ptr_ != nullptr) {
-            // Read latest config from scanner (SWP may have changed sweep settings)
+            // Refresh from scanner first: SWP may have changed sweep settings
+            // earlier in this session. Scanner is the sweep source of truth.
             scanner_ptr_->get_config(g_workspace_cfg);
+            sync_sweep_mirror_from_scanner();
 
-            // Step 1: Write sweep fields DIRECTLY to g_workspace_settings (SD dest).
-            // This preserves them without a local exc[4][5] array on stack.
-            g_workspace_settings.sweep_start_freq = g_workspace_cfg.sweep_start_freq;
-            g_workspace_settings.sweep_end_freq = g_workspace_cfg.sweep_end_freq;
-            g_workspace_settings.sweep_step_freq = g_workspace_cfg.sweep_step_freq;
-            g_workspace_settings.sweep2_start_freq = g_workspace_cfg.sweep2_start_freq;
-            g_workspace_settings.sweep2_end_freq = g_workspace_cfg.sweep2_end_freq;
-            g_workspace_settings.sweep2_step_freq = g_workspace_cfg.sweep2_step_freq;
-            g_workspace_settings.sweep2_enabled = g_workspace_cfg.sweep2_enabled;
-            g_workspace_settings.sweep3_start_freq = g_workspace_cfg.sweep3_start_freq;
-            g_workspace_settings.sweep3_end_freq = g_workspace_cfg.sweep3_end_freq;
-            g_workspace_settings.sweep3_step_freq = g_workspace_cfg.sweep3_step_freq;
-            g_workspace_settings.sweep3_enabled = g_workspace_cfg.sweep3_enabled;
-            g_workspace_settings.sweep4_start_freq = g_workspace_cfg.sweep4_start_freq;
-            g_workspace_settings.sweep4_end_freq = g_workspace_cfg.sweep4_end_freq;
-            g_workspace_settings.sweep4_step_freq = g_workspace_cfg.sweep4_step_freq;
-            g_workspace_settings.sweep4_enabled = g_workspace_cfg.sweep4_enabled;
-            for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w)
-                for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
-                    // Both sides store the MHz mirror — direct POD copy.
-                    g_workspace_settings.sweep_det_win_start_mhz[w][i] =
-                        g_workspace_cfg.sweep_det_win_start_mhz[w][i];
-                    g_workspace_settings.sweep_det_win_end_mhz[w][i] =
-                        g_workspace_cfg.sweep_det_win_end_mhz[w][i];
-                    g_workspace_settings.sweep_det_win_name_idx[w][i] =
-                        g_workspace_cfg.sweep_det_win_name_idx[w][i];
-                }
-
-            // Step 2: Build updated config from original + user edits.
-            // This overwrites sweep fields in g_workspace_cfg — that's fine,
-            // we already preserved them in g_workspace_settings.
-            g_workspace_cfg = original_config_;
             SettingsFileManager::apply_to_config(settings_, g_workspace_cfg);
-
-            // Step 3: Restore sweep fields from g_workspace_settings into g_workspace_cfg
-            // so the scanner gets the correct sweep config via set_config().
-            g_workspace_cfg.sweep_start_freq = g_workspace_settings.sweep_start_freq;
-            g_workspace_cfg.sweep_end_freq = g_workspace_settings.sweep_end_freq;
-            g_workspace_cfg.sweep_step_freq = g_workspace_settings.sweep_step_freq;
-            g_workspace_cfg.sweep2_start_freq = g_workspace_settings.sweep2_start_freq;
-            g_workspace_cfg.sweep2_end_freq = g_workspace_settings.sweep2_end_freq;
-            g_workspace_cfg.sweep2_step_freq = g_workspace_settings.sweep2_step_freq;
-            g_workspace_cfg.sweep2_enabled = g_workspace_settings.sweep2_enabled;
-            g_workspace_cfg.sweep3_start_freq = g_workspace_settings.sweep3_start_freq;
-            g_workspace_cfg.sweep3_end_freq = g_workspace_settings.sweep3_end_freq;
-            g_workspace_cfg.sweep3_step_freq = g_workspace_settings.sweep3_step_freq;
-            g_workspace_cfg.sweep3_enabled = g_workspace_settings.sweep3_enabled;
-            g_workspace_cfg.sweep4_start_freq = g_workspace_settings.sweep4_start_freq;
-            g_workspace_cfg.sweep4_end_freq = g_workspace_settings.sweep4_end_freq;
-            g_workspace_cfg.sweep4_step_freq = g_workspace_settings.sweep4_step_freq;
-            g_workspace_cfg.sweep4_enabled = g_workspace_settings.sweep4_enabled;
-            for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w)
-                for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
-                    // Both sides store the MHz mirror — direct POD copy.
-                    g_workspace_cfg.sweep_det_win_start_mhz[w][i] =
-                        g_workspace_settings.sweep_det_win_start_mhz[w][i];
-                    g_workspace_cfg.sweep_det_win_end_mhz[w][i] =
-                        g_workspace_settings.sweep_det_win_end_mhz[w][i];
-                    g_workspace_cfg.sweep_det_win_name_idx[w][i] =
-                        g_workspace_settings.sweep_det_win_name_idx[w][i];
-                }
 
             const ErrorCode err = scanner_ptr_->set_config(g_workspace_cfg);
             if (err != ErrorCode::SUCCESS) {
@@ -736,11 +691,46 @@ void DroneSettingsView::normalize_threat_ladder(uint8_t edited_field) noexcept {
 }
 
 // ============================================================================
+// Sweep mirror sync — scanner config → settings_ sweep fields
+// ============================================================================
+
+void DroneSettingsView::sync_sweep_mirror_from_scanner() noexcept {
+    settings_.sweep_start_freq = g_workspace_cfg.sweep_start_freq;
+    settings_.sweep_end_freq = g_workspace_cfg.sweep_end_freq;
+    settings_.sweep_step_freq = g_workspace_cfg.sweep_step_freq;
+    settings_.sweep2_start_freq = g_workspace_cfg.sweep2_start_freq;
+    settings_.sweep2_end_freq = g_workspace_cfg.sweep2_end_freq;
+    settings_.sweep2_step_freq = g_workspace_cfg.sweep2_step_freq;
+    settings_.sweep2_enabled = g_workspace_cfg.sweep2_enabled;
+    settings_.sweep3_start_freq = g_workspace_cfg.sweep3_start_freq;
+    settings_.sweep3_end_freq = g_workspace_cfg.sweep3_end_freq;
+    settings_.sweep3_step_freq = g_workspace_cfg.sweep3_step_freq;
+    settings_.sweep3_enabled = g_workspace_cfg.sweep3_enabled;
+    settings_.sweep4_start_freq = g_workspace_cfg.sweep4_start_freq;
+    settings_.sweep4_end_freq = g_workspace_cfg.sweep4_end_freq;
+    settings_.sweep4_step_freq = g_workspace_cfg.sweep4_step_freq;
+    settings_.sweep4_enabled = g_workspace_cfg.sweep4_enabled;
+    for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
+        for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
+            // Both sides store the MHz mirror — direct POD copy.
+            settings_.sweep_det_win_start_mhz[w][i] =
+                g_workspace_cfg.sweep_det_win_start_mhz[w][i];
+            settings_.sweep_det_win_end_mhz[w][i] =
+                g_workspace_cfg.sweep_det_win_end_mhz[w][i];
+            settings_.sweep_det_win_name_idx[w][i] =
+                g_workspace_cfg.sweep_det_win_name_idx[w][i];
+        }
+    }
+}
+
+// ============================================================================
 // SD Card Save (via centralized SettingsFileManager)
 // ============================================================================
 
 void DroneSettingsView::save_settings_to_sd() noexcept {
-    (void)SettingsFileManager::save(scanner_ptr_, settings_);
+    // g_workspace_cfg doubles as the sweep-mirror scratch (was the 368-byte
+    // file-static s_sweep_cfg in settings_manager.cpp — BSS savings).
+    (void)SettingsFileManager::save(scanner_ptr_, settings_, g_workspace_cfg);
 }
 
 } // namespace drone_analyzer

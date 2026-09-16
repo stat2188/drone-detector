@@ -158,12 +158,18 @@ public:
      * @brief Save all settings (general + sweep) to SD card
      * @param scanner_ptr Scanner to read current config from (may be nullptr)
      * @param general_settings General settings to save
+     * @param sweep_scratch Caller-owned ScanConfig workspace for the sweep
+     *        mirror. Replaces the former 368-byte file-static s_sweep_cfg
+     *        (BSS savings). CONTENTS ARE OVERWRITTEN: scanner sweep config
+     *        when scanner_ptr != nullptr, else sweep fields copied from
+     *        general_settings. Callers pass g_workspace_cfg.
      * @return ErrorCode::SUCCESS if saved, error code otherwise
      * @note Reads sweep config from scanner if available, otherwise from general_settings
      */
     [[nodiscard]] static ErrorCode save(
         DroneScanner* scanner_ptr,
-        const SettingsStruct& general_settings
+        const SettingsStruct& general_settings,
+        ScanConfig& sweep_scratch
     ) noexcept;
 
     /**

@@ -113,7 +113,6 @@ private:
     DroneScanner* scanner_ptr_;
     DroneDisplay* display_ptr_;
 
-    ScanConfig original_config_;
     SettingsStruct settings_;
     bool settings_dirty_;
 
@@ -126,6 +125,17 @@ private:
     void apply_settings_to_ui() noexcept;
     void update_preview() noexcept;
     void save_settings_to_sd() noexcept;
+    /**
+     * @brief Copy sweep fields from g_workspace_cfg into settings_
+     * @pre g_workspace_cfg holds a fresh scanner config (get_config()).
+     * @note apply_to_config() copies settings_.sweep_* into the ScanConfig;
+     *       this sync makes the scanner the sweep source of truth so a stale
+     *       file-backed mirror (or a DEFAULTS reset) cannot regress the live
+     *       sweep config. Replaces the former 65-line preserve/overwrite/
+     *       restore dance in the SAVE handler and the 368-byte
+     *       original_config_ view member.
+     */
+    void sync_sweep_mirror_from_scanner() noexcept;
     void set_shape_filter_visibility(bool visible) noexcept;
     void normalize_threat_ladder(uint8_t edited_field) noexcept;
 };

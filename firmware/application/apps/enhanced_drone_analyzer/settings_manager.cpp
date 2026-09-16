@@ -11,9 +11,6 @@
 
 namespace drone_analyzer {
 
-// Shared static for UI-thread-only operations (saves ~368B function-local static)
-static ScanConfig s_sweep_cfg;
-
 // ============================================================================
 // SettingsStruct Implementation
 // ============================================================================
@@ -581,9 +578,14 @@ static void write_dw_slot(File& f, const char* key_start, const char* key_end,
 
 ErrorCode SettingsFileManager::save(
     DroneScanner* scanner_ptr,
-    const SettingsStruct& s
+    const SettingsStruct& s,
+    ScanConfig& sweep_scratch
 ) noexcept {
-    // Stack budget: use shared static to avoid ~368B on 4KB main thread stack
+    // Sweep mirror lives in the CALLER's workspace (passed as sweep_scratch,
+    // callers use g_workspace_cfg) instead of the former 368-byte file-static
+    // s_sweep_cfg: -368 B BSS and one less stale global. The local alias keeps
+    // the large serialization body below unchanged. UI-thread only.
+    ScanConfig& s_sweep_cfg = sweep_scratch;
     if (scanner_ptr != nullptr) {
         scanner_ptr->get_config(s_sweep_cfg);
     } else {

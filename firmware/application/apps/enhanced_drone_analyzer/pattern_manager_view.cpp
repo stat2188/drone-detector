@@ -14,6 +14,7 @@
 #include "pattern_matcher.hpp"
 #include "peak_detector.hpp"
 #include "constants.hpp"
+#include "heap_guard.hpp"
 
 namespace drone_analyzer {
 
@@ -97,6 +98,12 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
     };
 
     field_freq_mhz_.on_select = [this](ui::NumberField&) {
+        // Heap pre-flight: keypad is heap-allocated (operator new →
+        // chDbgPanic("Out of Memory") on exhaustion). Skip silently instead
+        // of crashing; the field keeps its current value.
+        if (!heap_can_allocate(KEYPAD_HEAP_GUARD_BYTES)) {
+            return;
+        }
         baseband::spectrum_streaming_stop();
         auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_freq_mhz_.value()) * 1000000ULL);

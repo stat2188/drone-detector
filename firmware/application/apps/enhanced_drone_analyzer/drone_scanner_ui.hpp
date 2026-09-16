@@ -273,6 +273,13 @@ private:
 extern ScanConfig g_workspace_cfg;
 extern SettingsStruct g_workspace_settings;
 
+// True when the startup SettingsFileManager::load() into g_workspace_settings
+// succeeded. Guards the Settings-view cached read: when false the workspace
+// holds constructor defaults (no settings file on SD), and DroneSettingsView
+// falls back to the live scanner config — matching the pre-cache behavior of
+// a failed SD load. UI-thread only, set once at startup.
+extern bool g_workspace_settings_loaded;
+
 // ============================================================================
 // g_workspace_cfg ownership invariant:
 //   - UI thread ONLY (message handlers, widget callbacks, keypad lambdas).

@@ -26,6 +26,7 @@
 #include "radio.hpp"
 
 #include "drone_scanner_ui.hpp"
+#include "heap_guard.hpp"
 
 namespace drone_analyzer {
 
@@ -40,6 +41,10 @@ static ScannerThread s_scanner_thread(s_scanner);
 // saving ~1,096 B of BSS.
 ScanConfig g_workspace_cfg;
 SettingsStruct g_workspace_settings;
+
+// Set once at startup when SettingsFileManager::load() filled the workspace
+// from SD. See drone_scanner_ui.hpp for the invariant. UI-thread only.
+bool g_workspace_settings_loaded = false;
 
 // INVARIANT: g_workspace_cfg is UI-thread-only. The scanner thread never reads
 // it (DroneScanner uses its internal config_ under DATA_MUTEX). All readers and
@@ -383,6 +388,18 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
+
+        // Heap pre-flight: DroneSettingsView (~35 widgets + Labels/options
+        // heap vectors) is heap-allocated by nav_.push() → operator new →
+        // chDbgPanic("Out of Memory") on exhaustion. Degrade to an inline
+        // (zero-heap) alert instead of a HardFault. Runs BEFORE any state
+        // change: a refused open leaves handlers, sweep mode and scanning
+        // untouched.
+        if (!heap_can_allocate(SETTINGS_HEAP_GUARD_BYTES)) {
+            show_alert("Not enough memory!", ERROR_DURATION_MS);
+            return;
+        }
+
         // CRITICAL: Unregister message handlers BEFORE pushing sub-view.
         // Both views register handlers for ChannelSpectrumConfig / DisplayFrameSync.
         // Without explicit unregister, MessageHandlerMap hits chDbgPanic("MsgDblReg").
@@ -430,6 +447,17 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
+
+        // Heap pre-flight: DroneSweepView (object + nested SweepWindowView +
+        // windows_[4] + heap option vectors) is heap-allocated by nav_.push()
+        // → operator new → chDbgPanic("Out of Memory") on exhaustion. Degrade
+        // to an inline (zero-heap) alert instead of a HardFault. Runs BEFORE
+        // any state change: a refused open leaves everything untouched.
+        if (!heap_can_allocate(SWEEP_HEAP_GUARD_BYTES)) {
+            show_alert("Not enough memory!", ERROR_DURATION_MS);
+            return;
+        }
+
         // CRITICAL: Unregister message handlers BEFORE pushing sub-view.
         // Both views register handlers for ChannelSpectrumConfig / DisplayFrameSync.
         // Without explicit unregister, MessageHandlerMap hits chDbgPanic("MsgDblReg").
@@ -539,6 +567,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     // Load all settings from SD card via centralized manager
     const ErrorCode load_err = SettingsFileManager::load(g_workspace_settings);
     if (load_err == ErrorCode::SUCCESS) {
+        g_workspace_settings_loaded = true;
         SettingsFileManager::apply_to_config(g_workspace_settings, g_workspace_cfg);
         // Apply volume from settings (not during parsing to avoid side-effects)
         portapack::receiver_model.set_normalized_headphone_volume(g_workspace_settings.volume);

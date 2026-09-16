@@ -7,6 +7,7 @@
 #include "scanner.hpp"
 #include "constants.hpp"
 #include "range_names.hpp"
+#include "heap_guard.hpp"
 #include "ui_receiver.hpp"
 #include "file.hpp"
 #include "file_path.hpp"
@@ -125,6 +126,13 @@ static void open_freq_keypad_push(
     FreqHz initial_hz,
     DroneScanner* scanner,
     ui::NumberField& target_field) noexcept {
+    // Heap pre-flight: FrequencyKeypadView is heap-allocated (nav.push →
+    // operator new → chDbgPanic("Out of Memory") on exhaustion). Degrade to a
+    // no-op — a modal would itself allocate, and this helper has no inline
+    // alert channel. The field simply keeps its current value.
+    if (!heap_can_allocate(KEYPAD_HEAP_GUARD_BYTES)) {
+        return;
+    }
     baseband::spectrum_streaming_stop();
     auto* new_view = nav.push<FrequencyKeypadView>(
         static_cast<rf::Frequency>(initial_hz));
@@ -430,7 +438,7 @@ void DroneSweepView::save_settings() noexcept {
     }
 
     SettingsFileManager::extract_from_config(g_workspace_cfg, g_workspace_settings);
-    (void)SettingsFileManager::save(scanner_ptr_, g_workspace_settings);
+    (void)SettingsFileManager::save(scanner_ptr_, g_workspace_settings, g_workspace_cfg);
 }
 
 void DroneSweepView::apply_defaults() noexcept {

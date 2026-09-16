@@ -610,7 +610,7 @@ SettingsManager Flow:
   1. Load: SettingsFileManager::load(settings) → read /EDA/SETTINGS.TXT
   2. Apply: SettingsFileManager::apply_to_config(settings, config) → ScanConfig
   3. Extract: SettingsFileManager::extract_from_config(config, settings) → reverse
-  4. Save: SettingsFileManager::save(scanner_ptr, settings) → write SD card
+  4. Save: SettingsFileManager::save(scanner_ptr, settings, sweep_scratch) → write SD card
 
 Threat Ladder Normalization:
   Enforces: low <= medium <= high <= critical
