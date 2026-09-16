@@ -3,6 +3,7 @@
 
 #include "settings_manager.hpp"
 #include "scanner.hpp"
+#include "range_names.hpp"
 #include "file.hpp"
 #include "file_path.hpp"
 #include "receiver_model.hpp"
@@ -134,6 +135,13 @@ static void parse_settings_line(
         // Clamp to the same ceiling the UI NumberFields enforce ({0, 7200}).
         const uint64_t v = parse_int();
         return (v > MAX_DET_WIN_MHZ) ? MAX_DET_WIN_MHZ : static_cast<uint32_t>(v);
+    };
+
+    auto parse_name_clamped = [&parse_int]() -> uint8_t {
+        // Detection-range LABEL index: anything outside [0, RANGE_NAME_COUNT)
+        // degrades to 0 (no label) instead of corrupting the RANGE_NAMES lookup.
+        const uint64_t v = parse_int();
+        return (v < RANGE_NAME_COUNT) ? static_cast<uint8_t>(v) : 0U;
     };
 
     auto parse_signed_int = [val_start, val_len]() -> int32_t {
@@ -343,6 +351,28 @@ static void parse_settings_line(
     } else if (key_matches("sw4_dw3_end_mhz")) { s.sweep_det_win_end_mhz[3][3] = parse_mhz_clamped();
     } else if (key_matches("sw4_dw4_start_mhz")) { s.sweep_det_win_start_mhz[3][4] = parse_mhz_clamped();
     } else if (key_matches("sw4_dw4_end_mhz")) { s.sweep_det_win_end_mhz[3][4] = parse_mhz_clamped();
+
+    // --- Sweep detection-window range LABELS (index into RANGE_NAMES; 0 = none) ---
+    } else if (key_matches("sw1_dw0_name")) { s.sweep_det_win_name_idx[0][0] = parse_name_clamped();
+    } else if (key_matches("sw1_dw1_name")) { s.sweep_det_win_name_idx[0][1] = parse_name_clamped();
+    } else if (key_matches("sw1_dw2_name")) { s.sweep_det_win_name_idx[0][2] = parse_name_clamped();
+    } else if (key_matches("sw1_dw3_name")) { s.sweep_det_win_name_idx[0][3] = parse_name_clamped();
+    } else if (key_matches("sw1_dw4_name")) { s.sweep_det_win_name_idx[0][4] = parse_name_clamped();
+    } else if (key_matches("sw2_dw0_name")) { s.sweep_det_win_name_idx[1][0] = parse_name_clamped();
+    } else if (key_matches("sw2_dw1_name")) { s.sweep_det_win_name_idx[1][1] = parse_name_clamped();
+    } else if (key_matches("sw2_dw2_name")) { s.sweep_det_win_name_idx[1][2] = parse_name_clamped();
+    } else if (key_matches("sw2_dw3_name")) { s.sweep_det_win_name_idx[1][3] = parse_name_clamped();
+    } else if (key_matches("sw2_dw4_name")) { s.sweep_det_win_name_idx[1][4] = parse_name_clamped();
+    } else if (key_matches("sw3_dw0_name")) { s.sweep_det_win_name_idx[2][0] = parse_name_clamped();
+    } else if (key_matches("sw3_dw1_name")) { s.sweep_det_win_name_idx[2][1] = parse_name_clamped();
+    } else if (key_matches("sw3_dw2_name")) { s.sweep_det_win_name_idx[2][2] = parse_name_clamped();
+    } else if (key_matches("sw3_dw3_name")) { s.sweep_det_win_name_idx[2][3] = parse_name_clamped();
+    } else if (key_matches("sw3_dw4_name")) { s.sweep_det_win_name_idx[2][4] = parse_name_clamped();
+    } else if (key_matches("sw4_dw0_name")) { s.sweep_det_win_name_idx[3][0] = parse_name_clamped();
+    } else if (key_matches("sw4_dw1_name")) { s.sweep_det_win_name_idx[3][1] = parse_name_clamped();
+    } else if (key_matches("sw4_dw2_name")) { s.sweep_det_win_name_idx[3][2] = parse_name_clamped();
+    } else if (key_matches("sw4_dw3_name")) { s.sweep_det_win_name_idx[3][3] = parse_name_clamped();
+    } else if (key_matches("sw4_dw4_name")) { s.sweep_det_win_name_idx[3][4] = parse_name_clamped();
 
     // --- Drone frequency match merge radius ---
     } else if (key_matches("freq_match_radius_mhz")) {
@@ -577,6 +607,7 @@ ErrorCode SettingsFileManager::save(
                 // ScanConfig and SettingsStruct share the MHz mirror — direct copy.
                 s_sweep_cfg.sweep_det_win_start_mhz[w][i] = s.sweep_det_win_start_mhz[w][i];
                 s_sweep_cfg.sweep_det_win_end_mhz[w][i] = s.sweep_det_win_end_mhz[w][i];
+                s_sweep_cfg.sweep_det_win_name_idx[w][i] = s.sweep_det_win_name_idx[w][i];
             }
         }
     }
@@ -673,6 +704,27 @@ ErrorCode SettingsFileManager::save(
             write_dw_slot(file, dw_keys_start[w][i], dw_keys_end[w][i],
                 s_sweep_cfg.sweep_det_win_start_mhz[w][i],
                 s_sweep_cfg.sweep_det_win_end_mhz[w][i]);
+        }
+    }
+
+    // Detection-window range LABELS (only meaningful for ACTIVE slots; 0 is
+    // never written — parse-side default keeps the file minimal).
+    static const char* dw_keys_name[4][DETECTION_WINDOWS_PER_WINDOW] = {
+        {"sw1_dw0_name", "sw1_dw1_name", "sw1_dw2_name", "sw1_dw3_name", "sw1_dw4_name"},
+        {"sw2_dw0_name", "sw2_dw1_name", "sw2_dw2_name", "sw2_dw3_name", "sw2_dw4_name"},
+        {"sw3_dw0_name", "sw3_dw1_name", "sw3_dw2_name", "sw3_dw3_name", "sw3_dw4_name"},
+        {"sw4_dw0_name", "sw4_dw1_name", "sw4_dw2_name", "sw4_dw3_name", "sw4_dw4_name"},
+    };
+    for (uint8_t w = 0; w < 4; ++w) {
+        for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
+            const uint8_t name_idx = s_sweep_cfg.sweep_det_win_name_idx[w][i];
+            if (name_idx == 0) continue;  // 0 = no label — nothing to persist
+            if (!is_det_win_slot_active(
+                    s_sweep_cfg.sweep_det_win_start_mhz[w][i],
+                    s_sweep_cfg.sweep_det_win_end_mhz[w][i])) {
+                continue;  // inactive slot — label is dormant, skip serialization
+            }
+            wl(file, dw_keys_name[w][i], static_cast<int64_t>(name_idx));
         }
     }
 
@@ -818,6 +870,7 @@ void SettingsFileManager::apply_to_config(
         for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
             config.sweep_det_win_start_mhz[w][i] = s.sweep_det_win_start_mhz[w][i];
             config.sweep_det_win_end_mhz[w][i] = s.sweep_det_win_end_mhz[w][i];
+            config.sweep_det_win_name_idx[w][i] = s.sweep_det_win_name_idx[w][i];
         }
     }
     config.rssi_decrease_cycles = s.rssi_decrease_cycles;
@@ -903,6 +956,7 @@ void SettingsFileManager::extract_from_config(
         for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
             s.sweep_det_win_start_mhz[w][i] = config.sweep_det_win_start_mhz[w][i];
             s.sweep_det_win_end_mhz[w][i] = config.sweep_det_win_end_mhz[w][i];
+            s.sweep_det_win_name_idx[w][i] = config.sweep_det_win_name_idx[w][i];
         }
     }
     s.rssi_decrease_cycles = config.rssi_decrease_cycles;

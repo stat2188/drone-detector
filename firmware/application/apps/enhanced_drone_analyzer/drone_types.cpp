@@ -1,5 +1,6 @@
 #include "constants.hpp"
 #include "drone_types.hpp"
+#include "range_names.hpp"
 #include <cstdint>
 #include <cstddef>
 
@@ -71,6 +72,7 @@ TrackedDrone::TrackedDrone() noexcept
     : frequency{0}
     , measured_frequency_{0}
     , drone_type{DroneType::UNKNOWN}
+    , label_idx_{0}
     , threat_level{ThreatLevel::NONE}
     , update_count{0}
     , last_seen{0}
@@ -103,6 +105,7 @@ TrackedDrone::TrackedDrone(
     : frequency{freq}
     , measured_frequency_{0}
     , drone_type{type}
+    , label_idx_{0}
     , threat_level{threat}
     , update_count{0}
     , last_seen{0}
@@ -311,6 +314,11 @@ void TrackedDrone::absorb_from(const TrackedDrone& other) noexcept {
     if (drone_type == DroneType::UNKNOWN && other.drone_type != DroneType::UNKNOWN) {
         drone_type = other.drone_type;
     }
+    // Detection-range label: adopt the absorbed drone's label when the
+    // survivor has none (consolidation must not blank a user-assigned name).
+    if (label_idx_ == 0 && other.label_idx_ != 0) {
+        label_idx_ = other.label_idx_;
+    }
     if (other.threat_level > threat_level) {
         threat_level = other.threat_level;
     }
@@ -468,7 +476,12 @@ DisplayDroneEntry::DisplayDroneEntry(const TrackedDrone& drone) noexcept
     , trend(drone.get_movement_trend())
     , last_rssi(drone.last_rssi_) {
     
-    const char* type_str = drone_type_to_string(drone.drone_type);
+    // Label precedence: a user-assigned detection-range label (SWP tab)
+    // overrides the generic type string — this is the fix for sweep-mode
+    // detections displaying "Unknown" (sweep creations keep DroneType::UNKNOWN).
+    const char* type_str = (drone.label_idx_ != 0)
+        ? range_name_to_string(drone.label_idx_)
+        : drone_type_to_string(drone.drone_type);
     size_t i = 0;
     while (i < DRONE_TYPE_NAME_LENGTH - 1 && type_str[i] != '\0') {
         type_name[i] = type_str[i];

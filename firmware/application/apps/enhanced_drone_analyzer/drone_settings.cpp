@@ -357,6 +357,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
                         g_workspace_cfg.sweep_det_win_start_mhz[w][i];
                     g_workspace_settings.sweep_det_win_end_mhz[w][i] =
                         g_workspace_cfg.sweep_det_win_end_mhz[w][i];
+                    g_workspace_settings.sweep_det_win_name_idx[w][i] =
+                        g_workspace_cfg.sweep_det_win_name_idx[w][i];
                 }
 
             // Step 2: Build updated config from original + user edits.
@@ -389,6 +391,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
                         g_workspace_settings.sweep_det_win_start_mhz[w][i];
                     g_workspace_cfg.sweep_det_win_end_mhz[w][i] =
                         g_workspace_settings.sweep_det_win_end_mhz[w][i];
+                    g_workspace_cfg.sweep_det_win_name_idx[w][i] =
+                        g_workspace_settings.sweep_det_win_name_idx[w][i];
                 }
 
             const ErrorCode err = scanner_ptr_->set_config(g_workspace_cfg);

@@ -19,8 +19,8 @@ struct ScanConfig;
 
 /**
  * @brief Per-window sweep configuration data (POD, no UI widgets)
- * @note SRAM: 112 bytes (3×FreqHz=24B + enabled=1+7pad + det_windows[5]×16=80B)
- *       Total for array[4]: 448 bytes BSS.
+ * @note SRAM: 117 bytes (3×FreqHz=24B + enabled=1+7pad + det_windows[5]×16=80B
+ *       + name_idx[5]=5B). Total for array[4]: ~468 bytes BSS.
  * @note Stored as std::array<WindowData, MAX_SWEEP_WINDOWS> in DroneSweepView
  *       to avoid duplicating widgets for each window.
  */
@@ -32,6 +32,9 @@ struct WindowData {
     // 5 inclusive detection ranges; slot active iff start>0 && end>0 &&
     // start<=end. All inactive (0/0) → detect over the ENTIRE window range.
     std::array<FreqRangeHz, DETECTION_WINDOWS_PER_WINDOW> det_windows{};
+    // Per-slot LABEL index into RANGE_NAMES (range_names.hpp); 0 = no label.
+    // Edited in the lower-half Range/Name selector; persisted per slot.
+    std::array<uint8_t, DETECTION_WINDOWS_PER_WINDOW> name_idx{};
 };
 
 /**
@@ -40,7 +43,7 @@ struct WindowData {
  *       window. DroneSweepView switches the data pointer to show different
  *       windows. (The sweep center pitch is auto-derived for gapless coverage —
  *       SweepWindow::init() ignores step_freq. See SWEEP_GAPLESS_STEP_MAX_HZ.)
- * @note SRAM: ~800 bytes (21 widgets × ~32 bytes each + labels)
+ * @note SRAM: ~900 bytes (24 widgets × ~32 bytes each + labels + 2 OptionsFields)
  *       vs old design: ~2,400 bytes (2 group views × 30 widgets × ~32 bytes)
  */
 class SweepWindowView : public ui::View {
@@ -115,6 +118,29 @@ public:
     ui::NumberField field_dw3_end_{{UI_POS_X(19), UI_POS_Y(4)}, 5, {0, 7200}, 1, ' '};
     ui::NumberField field_dw4_start_{{UI_POS_X(13), UI_POS_Y(5)}, 5, {0, 7200}, 1, ' '};
     ui::NumberField field_dw4_end_{{UI_POS_X(19), UI_POS_Y(5)}, 5, {0, 7200}, 1, ' '};
+
+    // Range-label editor — lower half (rows 8-9, below the SAVE/DEFAULTS row):
+    // pick the range slot (R1..R5 of THIS window), then scroll a hardcoded
+    // label from RANGE_NAMES (Flash-only strings). Detections landing in that
+    // slot's range show the label on the drone list instead of "Unknown".
+    ui::Labels labels_name_{
+        {{UI_POS_X(0), UI_POS_Y(8)}, "Range:", Color::white()},
+        {{UI_POS_X(0), UI_POS_Y(9)}, "Name:", Color::white()},
+    };
+    ui::OptionsField field_label_slot_{
+        {UI_POS_X(7), UI_POS_Y(8)},
+        4,
+        {
+            {"R1", 0},
+            {"R2", 1},
+            {"R3", 2},
+            {"R4", 3},
+            {"R5", 4},
+        }
+    };
+    // Options are built in the ctor from RANGE_NAMES (single source of truth).
+    ui::OptionsField field_label_name_{{UI_POS_X(7), UI_POS_Y(9)}, 10, {}};
+    uint8_t label_slot_{0};  // currently edited range slot (0-4)
 };
 
 /**

@@ -112,6 +112,12 @@ struct ScanConfig {
     // active ranges. The sweep spectrum is ALWAYS drawn fully (no masking).
     uint32_t sweep_det_win_start_mhz[MAX_SWEEP_WINDOWS][DETECTION_WINDOWS_PER_WINDOW]{};
     uint32_t sweep_det_win_end_mhz[MAX_SWEEP_WINDOWS][DETECTION_WINDOWS_PER_WINDOW]{};
+    // Detection-range LABELS — per-slot index into RANGE_NAMES (range_names.hpp);
+    // 0 = no label ("Unknown" displayed). Edited in the SWP tab (lower-half
+    // Range/Name editor), resolved at detection time by
+    // DroneScanner::resolve_det_win_label_internal().
+    // SRAM: +20 B — sizeof ~387 B, headroom inside the 512 B static_assert.
+    uint8_t sweep_det_win_name_idx[MAX_SWEEP_WINDOWS][DETECTION_WINDOWS_PER_WINDOW]{};
     uint8_t rssi_decrease_cycles{5};  // Normal mode: seconds of RSSI decrease before threat decay (sweep uses hardcoded MAX_SWEEP_CYCLES_MISSED)
     uint8_t freq_match_radius_mhz{DEFAULT_FREQ_MATCH_RADIUS_MHZ};  // 0-100, drone detection merge radius (0=disabled)
 
@@ -1761,6 +1767,19 @@ private:
      * @note Delegates to the pure SweepProcessor::is_detection_window_allowed().
      */
     [[nodiscard]] bool is_detection_window_allowed(uint8_t win_idx, FreqHz freq) const noexcept;
+
+    /**
+     * @brief Resolve the detection-range LABEL for a sweep peak frequency
+     * @param win_idx Sweep window index (0-3)
+     * @param freq_hz Peak frequency in Hz
+     * @return Index into RANGE_NAMES (range_names.hpp) of the FIRST active
+     *         detection-window slot whose range contains freq_hz; 0 when no
+     *         slot matches (→ drone list shows the plain type string).
+     * @note Sweep-only — mirrors the MHz-window gate semantics (same active
+     *       rule, same inclusive bounds, MHz resolution matching the SWP UI).
+     * @note O(5) integer compare, UI/scanner thread only, no I/O, no heap.
+     */
+    [[nodiscard]] uint8_t resolve_det_win_label_internal(uint8_t win_idx, FreqHz freq_hz) const noexcept;
 
     /**
      * @brief Internal: Analyze spectrum shape for U/V signal peaks

@@ -6,6 +6,7 @@
 #include "settings_manager.hpp"
 #include "scanner.hpp"
 #include "constants.hpp"
+#include "range_names.hpp"
 #include "ui_receiver.hpp"
 #include "file.hpp"
 #include "file_path.hpp"
@@ -17,6 +18,20 @@ namespace drone_analyzer {
 // Helpers: NumberField value in MHz/kHz → FreqHz
 static FreqHz read_mhz_field(const ui::NumberField& field) noexcept {
     return static_cast<FreqHz>(field.value()) * MHZ;
+}
+
+// Build the OptionsField entries for the range-label selector from the
+// Flash-resident RANGE_NAMES table (single source of truth). NOTE: heap use
+// is confined to the UI layer (std::string options), same pattern as the
+// "Win 1..4" selector — never touched from the scanner/DSP paths.
+static ui::OptionsField::options_t build_range_name_options() noexcept {
+    ui::OptionsField::options_t options;
+    options.reserve(RANGE_NAME_COUNT);
+    for (uint8_t i = 0; i < RANGE_NAME_COUNT; ++i) {
+        options.emplace_back(
+            RANGE_NAMES[i], static_cast<ui::OptionsField::value_t>(i));
+    }
+    return options;
 }
 
 // ============================================================================
@@ -147,6 +162,9 @@ SweepWindowView::SweepWindowView(NavigationView& nav, const Rect parent_rect, Dr
         &field_dw2_start_, &field_dw2_end_,   // r3 right
         &field_dw3_start_, &field_dw3_end_,   // r4 right
         &field_dw4_start_, &field_dw4_end_,   // r5 right
+        &labels_name_,                        // r8 Range:, r9 Name:
+        &field_label_slot_,                   // r8 slot selector R1..R5
+        &field_label_name_,                   // r9 label selector (RANGE_NAMES)
     });
 
     // on_select callbacks route through the bound window index
@@ -200,6 +218,27 @@ SweepWindowView::SweepWindowView(NavigationView& nav, const Rect parent_rect, Dr
         open_freq_keypad_push(nav_, dw_field_id(bound_index_, 4, true),
             static_cast<FreqHz>(field_dw4_end_.value()) * MHZ, scanner_ptr_, field_dw4_end_);
     };
+
+    // Range-label editor wiring (lower half).
+    field_label_name_.set_options(build_range_name_options());
+    // Slot selector: on switch, show the newly selected slot's current label.
+    field_label_slot_.on_change = [this](size_t, int32_t v) {
+        label_slot_ = (v >= 0 && v < DETECTION_WINDOWS_PER_WINDOW)
+            ? static_cast<uint8_t>(v) : 0U;
+        if (bound_data_ != nullptr) {
+            field_label_name_.set_by_value(
+                static_cast<int32_t>(bound_data_->name_idx[label_slot_]));
+        }
+    };
+    // Label selector: write straight into the bound WindowData (SAVE
+    // propagates it into ScanConfig + the settings file).
+    field_label_name_.on_change = [this](size_t, int32_t v) {
+        if (bound_data_ == nullptr) return;
+        if (label_slot_ >= DETECTION_WINDOWS_PER_WINDOW) return;
+        bound_data_->name_idx[label_slot_] =
+            (v >= 0 && v < static_cast<int32_t>(RANGE_NAME_COUNT))
+                ? static_cast<uint8_t>(v) : 0U;
+    };
 }
 
 void SweepWindowView::focus() {
@@ -235,6 +274,12 @@ void SweepWindowView::sync_to_widgets() noexcept {
     for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
         dw_start_fields[i]->set_value(static_cast<int32_t>(bound_data_->det_windows[i].start_hz / MHZ));
         dw_end_fields[i]->set_value(static_cast<int32_t>(bound_data_->det_windows[i].end_hz / MHZ));
+    }
+
+    // Label editor — reflect the selected slot's stored label index.
+    if (label_slot_ < DETECTION_WINDOWS_PER_WINDOW) {
+        field_label_name_.set_by_value(
+            static_cast<int32_t>(bound_data_->name_idx[label_slot_]));
     }
 }
 
@@ -298,6 +343,7 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
                 static_cast<FreqHz>(config.sweep_det_win_start_mhz[w][i]) * MHZ;
             windows_[w].det_windows[i].end_hz =
                 static_cast<FreqHz>(config.sweep_det_win_end_mhz[w][i]) * MHZ;
+            windows_[w].name_idx[i] = config.sweep_det_win_name_idx[w][i];
         }
     }
 
@@ -376,6 +422,7 @@ void DroneSweepView::save_settings() noexcept {
                     windows_[w].det_windows[i].start_hz / MHZ);
                 g_workspace_cfg.sweep_det_win_end_mhz[w][i] = static_cast<uint32_t>(
                     windows_[w].det_windows[i].end_hz / MHZ);
+                g_workspace_cfg.sweep_det_win_name_idx[w][i] = windows_[w].name_idx[i];
             }
         }
 
@@ -407,9 +454,11 @@ void DroneSweepView::apply_defaults() noexcept {
     windows_[3].enabled = false;
 
     // Zero all detection ranges → every sweep window detects its full range.
+    // Labels are reset too (0 = no label → "Unknown" fallback on the list).
     for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
         for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
             windows_[w].det_windows[i] = FreqRangeHz{};
+            windows_[w].name_idx[i] = 0;
         }
     }
 

@@ -126,6 +126,10 @@ struct SettingsStruct {
     // window's ENTIRE range; otherwise ONLY inside the active ranges.
     uint32_t sweep_det_win_start_mhz[MAX_SWEEP_WINDOWS][DETECTION_WINDOWS_PER_WINDOW]{};
     uint32_t sweep_det_win_end_mhz[MAX_SWEEP_WINDOWS][DETECTION_WINDOWS_PER_WINDOW]{};
+    // Detection-range LABELS — per-slot index into RANGE_NAMES (range_names.hpp);
+    // shared with ScanConfig (identical field), 0 = no label.
+    // SRAM: +20 B — sizeof ~380 B, headroom inside the 512 B static_assert.
+    uint8_t sweep_det_win_name_idx[MAX_SWEEP_WINDOWS][DETECTION_WINDOWS_PER_WINDOW]{};
     uint8_t rssi_decrease_cycles{5};  // Normal mode: seconds before RSSI decay (sweep uses hardcoded constant)
     uint8_t freq_match_radius_mhz{DEFAULT_FREQ_MATCH_RADIUS_MHZ};  // 0-100 MHz, drone detection merge radius (0=disabled)
 

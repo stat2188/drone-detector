@@ -263,6 +263,10 @@ struct TrackedDrone {
     FreqHz frequency;                    // 8 bytes (uint64_t)
     FreqHz measured_frequency_{0};       // 8 bytes — bin-corrected detected frequency for display
     DroneType drone_type;              // 1 byte (uint8_t)
+    uint8_t label_idx_{0};              // 1 byte — detection-range LABEL index
+                                        // (RANGE_NAMES, 0 = none). Fills the
+                                        // existing alignment pad → sizeof
+                                        // TrackedDrone stays ~160 B.
     ThreatLevel threat_level;           // 1 byte (uint8_t)
     uint8_t update_count;              // 1 byte
     SystemTime last_seen;              // 4 bytes (uint32_t on ChibiOS)

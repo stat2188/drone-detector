@@ -460,6 +460,22 @@ bool DroneScanner::is_detection_window_allowed(uint8_t win_idx, FreqHz freq) con
         DETECTION_WINDOWS_PER_WINDOW, freq);
 }
 
+uint8_t DroneScanner::resolve_det_win_label_internal(uint8_t win_idx, FreqHz freq_hz) const noexcept {
+    // Stack: ~16 bytes. Flash: ~120 bytes. O(5) integer compares, no division
+    // (MHz-domain compare matches the SWP editor and the det-window gate).
+    if (win_idx >= MAX_SWEEP_WINDOWS) return 0;  // guard: malformed index never labels
+    const uint32_t freq_mhz = static_cast<uint32_t>(freq_hz / MHZ);
+    for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
+        const uint32_t start_mhz = config_.sweep_det_win_start_mhz[win_idx][i];
+        const uint32_t end_mhz = config_.sweep_det_win_end_mhz[win_idx][i];
+        if (!is_det_win_slot_active(start_mhz, end_mhz)) continue;
+        if (freq_mhz >= start_mhz && freq_mhz <= end_mhz) {
+            return config_.sweep_det_win_name_idx[win_idx][i];
+        }
+    }
+    return 0;
+}
+
 ErrorCode DroneScanner::perform_scan_cycle() noexcept {
     if (!scanning_active_.test()) {
         return ErrorCode::SUCCESS;
@@ -2514,6 +2530,11 @@ void DroneScanner::apply_sweep_tracking(
     // range is dropped; when NO window is active, the full range is allowed.
     if (!is_detection_window_allowed(win_idx, peak_freq)) return;
 
+    // Detection-range label (SWP "Name" selector). Resolved on EVERY visit so
+    // a rename in the SWP tab applies live to already-tracked drones.
+    // 0 = no label → the drone list falls back to the type string ("Unknown").
+    const uint8_t det_label_idx = resolve_det_win_label_internal(win_idx, peak_freq);
+
     // Mahalanobis gate
     bool mahalanobis_rejected = false;
     bool drone_created_here = false;
@@ -2549,6 +2570,7 @@ void DroneScanner::apply_sweep_tracking(
                 /*init_sweep_mode=*/true, /*classify_drone_type=*/false);
             if (add_err == ErrorCode::SUCCESS) {
                 TrackedDrone& drone = tracked_drones_[out_idx];
+                drone.label_idx_ = det_label_idx;
                 // First detection: always mark as increasing to prevent immediate decay
                 drone.rssi_increased_ = true;
                 drone.sweep_cycles_missed_ = 0;
@@ -2582,6 +2604,7 @@ void DroneScanner::apply_sweep_tracking(
         if (drone_idx < tracked_count_) {
             tracked_drones_[drone_idx].update_cycle_peak(peak_rssi);
             tracked_drones_[drone_idx].mark_seen(chTimeNow(), peak_rssi);
+            tracked_drones_[drone_idx].label_idx_ = det_label_idx;
         }
     }
 }
