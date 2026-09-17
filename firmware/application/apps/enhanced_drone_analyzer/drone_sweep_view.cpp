@@ -20,19 +20,12 @@ static FreqHz read_mhz_field(const ui::NumberField& field) noexcept {
     return static_cast<FreqHz>(field.value()) * MHZ;
 }
 
-// Build the OptionsField entries for the range-label selector from the
-// Flash-resident RANGE_NAMES table (single source of truth). NOTE: heap use
-// is confined to the UI layer (std::string options), same pattern as the
-// "Win 1..4" selector — never touched from the scanner/DSP paths.
-static ui::OptionsField::options_t build_range_name_options() noexcept {
-    ui::OptionsField::options_t options;
-    options.reserve(RANGE_NAME_COUNT);
-    for (uint8_t i = 0; i < RANGE_NAME_COUNT; ++i) {
-        options.emplace_back(
-            RANGE_NAMES[i], static_cast<ui::OptionsField::value_t>(i));
-    }
-    return options;
-}
+// NOTE: the range-label selectors (field_label_slot_ / field_label_name_) use
+// ui::StaticOptionField over Flash-resident tables (see drone_sweep_view.hpp).
+// The previous ui::OptionsField + runtime-built std::vector<std::string>
+// options allocated ~1.1 KB of heap on EVERY SWP open; after a few open/close
+// cycles the heap fragmented until nav.push<FrequencyKeypadView> failed with
+// OOM — the keyboard would not open in the SWP tab. Zero heap now.
 
 // ============================================================================
 // Sweep field ID → config mapping (for FrequencyKeypadView callbacks)
@@ -219,8 +212,8 @@ SweepWindowView::SweepWindowView(NavigationView& nav, const Rect parent_rect, Dr
             static_cast<FreqHz>(field_dw4_end_.value()) * MHZ, scanner_ptr_, field_dw4_end_);
     };
 
-    // Range-label editor wiring (lower half).
-    field_label_name_.set_options(build_range_name_options());
+    // Range-label editor wiring (lower half). Both selectors are zero-heap
+    // StaticOptionFields over Flash tables — no allocation happens here.
     // Slot selector: on switch, show the newly selected slot's current label.
     field_label_slot_.on_change = [this](size_t, int32_t v) {
         label_slot_ = (v >= 0 && v < DETECTION_WINDOWS_PER_WINDOW)

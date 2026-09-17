@@ -285,6 +285,144 @@ class LiveDateTime : public Widget {
     std::string text{};
 };
 
+/**
+ * @brief Zero-heap replacement for ui::OptionsField over static Flash tables.
+ *
+ * @details
+ * ui::OptionsField stores its options as std::vector<std::pair<std::string,
+ * int32_t>>, which allocates one heap block for the vector plus one heap
+ * block per option name. Each block carries a ChibiOS allocation header, so
+ * an 18-entry selector (e.g. the SWP range-label "Name:" field) burns
+ * ~600-800 B of the application heap ON TOP of the View object itself.
+ *
+ * StaticOptionField stores NO string data at all: it points directly at a
+ * caller-owned, NUL-terminated string table (typically constexpr, Flash-
+ * resident). SRAM cost: 16 bytes (2 pointers + index + length), zero heap.
+ *
+ * @note Strings are NOT copied — the table must outlive this widget
+ *       (constexpr/global storage is guaranteed; std::string temporaries
+ *       and stack buffers are NOT acceptable table owners).
+ * @note Drop-in for OptionsField usage where the name set is compile-time:
+ *       same paint()/focus/encoder/keyboard contract as ui::OptionsField
+ *       (see OptionsField::paint/on_encoder in ui_widget.cpp).
+ * @note Heap: 0 bytes. Stack: ~40 B (paint/on_encoder, no recursion).
+ */
+class StaticOptionField : public Widget {
+   public:
+    using value_t = int32_t;
+
+    /** @brief Immutable (name → value) option table owned by the caller. */
+    struct Option {
+        const char* name; /**< NUL-terminated, static storage duration. */
+        value_t value;    /**< Value reported through on_change(). */
+    };
+
+    std::function<void(size_t, value_t)> on_change{};
+    std::function<void(size_t)> on_show_options{};
+
+    /**
+     * @brief Construct a focusable, zero-heap option selector.
+     * @param parent_pos Position relative to the parent view.
+     * @param length Display width in font cells (8 px each), as OptionsField.
+     * @param options Pointer to a static table of count options.
+     * @param count Number of entries in the options table (0 = empty).
+     * @param initial_index Initially selected index (clamped to the table).
+     * @param centered Horizontally center the drawn name inside the field.
+     * @note options must have static storage duration (Flash .rodata is ideal).
+     */
+    StaticOptionField(
+        Point parent_pos,
+        size_t length,
+        const Option* const options,
+        size_t count,
+        size_t initial_index = 0,
+        bool centered = false);
+
+    StaticOptionField(const StaticOptionField&) = delete;
+    StaticOptionField& operator=(const StaticOptionField&) = delete;
+
+    /** @brief Read-only view of the bound static option table. */
+    const Option* options() const { return options_; }
+
+    /** @brief Number of options in the bound table. */
+    size_t options_count() const { return options_count_; }
+
+    /** @brief Rebind to another static option table (no allocation). */
+    void set_options(const Option* const new_options, const size_t count) {
+        options_ = new_options;
+        options_count_ = count;
+        selected_index_ = 0;
+        set_selected_index(0, true);
+        set_dirty();
+    }
+
+    size_t selected_index() const { return selected_index_; }
+
+    /** @brief Name of the selected option ("" when the table is empty). */
+    const char* selected_index_name() const {
+        return (options_ != nullptr && selected_index_ < options_count_)
+                   ? options_[selected_index_].name
+                   : "";
+    }
+
+    /** @brief Value of the selected option (0 when the table is empty). */
+    value_t selected_index_value() const {
+        return (options_ != nullptr && selected_index_ < options_count_)
+                   ? options_[selected_index_].value
+                   : 0;
+    }
+
+    /**
+     * @brief Select by index, optionally firing on_change.
+     * @param new_index Target index (ignored when out of range).
+     * @param trigger_change Fire on_change even when the index is unchanged.
+     */
+    void set_selected_index(const size_t new_index, const bool trigger_change = true) {
+        if (new_index < options_count_) {
+            if (new_index != selected_index_ || trigger_change) {
+                selected_index_ = new_index;
+                if (on_change) {
+                    on_change(selected_index_, options_[selected_index_].value);
+                }
+                set_dirty();
+            }
+        }
+    }
+
+    /** @brief Select the option whose value equals v (fallback: index 0). */
+    void set_by_value(value_t v) {
+        if (options_ == nullptr) {
+            return;
+        }
+        for (size_t i = 0; i < options_count_; ++i) {
+            if (options_[i].value == v) {
+                set_selected_index(i);
+                return;
+            }
+        }
+        set_selected_index(0);
+    }
+
+    void set_by_nearest_value(value_t v);
+
+    void paint(Painter& painter) override;
+
+    void on_focus() override;
+    bool on_encoder(const EncoderEvent delta) override;
+    bool on_keyboard(const KeyboardEvent event) override;
+    bool on_touch(const TouchEvent event) override;
+
+    void getAccessibilityText(std::string& result) override;
+    void getWidgetName(std::string& result) override;
+
+   private:
+    const Option* options_;       /**< Static table (NOT owned, never freed). */
+    size_t options_count_;        /**< Entries in the static table. */
+    const size_t length_;         /**< Display width in 8 px font cells. */
+    size_t selected_index_{0};
+    bool centered_{false};        /**< Center name inside the display width. */
+};
+
 class BigFrequency : public Widget {
    public:
     BigFrequency(Rect parent_rect, rf::Frequency frequency);

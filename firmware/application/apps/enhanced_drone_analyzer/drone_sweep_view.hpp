@@ -10,12 +10,54 @@
 
 #include "drone_types.hpp"
 #include "constants.hpp"
+#include "range_names.hpp"
 
 namespace drone_analyzer {
 
 // Forward declarations to avoid heavy scanner.hpp include
 class DroneScanner;
 struct ScanConfig;
+
+// ============================================================================
+// Flash-resident option tables for the SWP selectors (zero heap).
+//
+// These feed ui::StaticOptionField — names live in .rodata, values are plain
+// ints, and NOTHING is copied into the heap at view construction time. They
+// replace the previous std::vector<std::pair<std::string, int32_t>> options
+// of ui::OptionsField, which allocated ~1.1 KB of heap on EVERY SWP open
+// (fragmenting the arena until the FrequencyKeypadView push failed).
+// ============================================================================
+constexpr size_t SWEEP_WINDOW_OPTION_COUNT = 4;
+constexpr ui::StaticOptionField::Option kSweepWindowOptions[SWEEP_WINDOW_OPTION_COUNT] = {
+    {"Win 1", 0},
+    {"Win 2", 1},
+    {"Win 3", 2},
+    {"Win 4", 3},
+};
+
+constexpr size_t SWEEP_RANGE_SLOT_OPTION_COUNT = 5;
+constexpr ui::StaticOptionField::Option kSweepRangeSlotOptions[SWEEP_RANGE_SLOT_OPTION_COUNT] = {
+    {"R1", 0},
+    {"R2", 1},
+    {"R3", 2},
+    {"R4", 3},
+    {"R5", 4},
+};
+
+constexpr size_t SWEEP_RANGE_NAME_OPTION_COUNT = RANGE_NAME_COUNT;
+static_assert(SWEEP_RANGE_NAME_OPTION_COUNT > 0, "RANGE_NAMES table must not be empty");
+constexpr ui::StaticOptionField::Option kSweepRangeNameOptions[SWEEP_RANGE_NAME_OPTION_COUNT] = {
+    {RANGE_NAMES[0], 0}, {RANGE_NAMES[1], 1},  {RANGE_NAMES[2], 2},  {RANGE_NAMES[3], 3},
+    {RANGE_NAMES[4], 4}, {RANGE_NAMES[5], 5},  {RANGE_NAMES[6], 6},  {RANGE_NAMES[7], 7},
+    {RANGE_NAMES[8], 8}, {RANGE_NAMES[9], 9},  {RANGE_NAMES[10], 10}, {RANGE_NAMES[11], 11},
+    {RANGE_NAMES[12], 12}, {RANGE_NAMES[13], 13}, {RANGE_NAMES[14], 14}, {RANGE_NAMES[15], 15},
+    {RANGE_NAMES[16], 16}, {RANGE_NAMES[17], 17},
+};
+static_assert(kSweepRangeNameOptions[0].value == 0, "label index 0 must map to \"no label\"");
+// The initializer list above is hand-expanded — catch drift vs RANGE_NAME_COUNT.
+static_assert(sizeof(kSweepRangeNameOptions) / sizeof(kSweepRangeNameOptions[0]) ==
+                  SWEEP_RANGE_NAME_OPTION_COUNT,
+    "kSweepRangeNameOptions must list every RANGE_NAMES entry (SWP name selector)");
 
 /**
  * @brief Per-window sweep configuration data (POD, no UI widgets)
@@ -43,7 +85,9 @@ struct WindowData {
  *       window. DroneSweepView switches the data pointer to show different
  *       windows. (The sweep center pitch is auto-derived for gapless coverage —
  *       SweepWindow::init() ignores step_freq. See SWEEP_GAPLESS_STEP_MAX_HZ.)
- * @note SRAM: ~900 bytes (24 widgets × ~32 bytes each + labels + 2 OptionsFields)
+ * @note SRAM: ~840 bytes (24 widgets × ~30 bytes each + labels + 2 zero-heap
+ *       StaticOptionFields; the old ui::OptionsField pair cost ~1.1 KB of
+ *       HEAP per SWP open on top of that — see StaticOptionField docs)
  *       vs old design: ~2,400 bytes (2 group views × 30 widgets × ~32 bytes)
  */
 class SweepWindowView : public ui::View {
@@ -127,19 +171,20 @@ public:
         {{UI_POS_X(0), UI_POS_Y(8)}, "Range:", Color::white()},
         {{UI_POS_X(0), UI_POS_Y(9)}, "Name:", Color::white()},
     };
-    ui::OptionsField field_label_slot_{
+    // Slot selector R1..R5 over a Flash-resident table — Heap: 0 B.
+    ui::StaticOptionField field_label_slot_{
         {UI_POS_X(7), UI_POS_Y(8)},
         4,
-        {
-            {"R1", 0},
-            {"R2", 1},
-            {"R3", 2},
-            {"R4", 3},
-            {"R5", 4},
-        }
-    };
-    // Options are built in the ctor from RANGE_NAMES (single source of truth).
-    ui::OptionsField field_label_name_{{UI_POS_X(7), UI_POS_Y(9)}, 10, {}};
+        kSweepRangeSlotOptions,
+        SWEEP_RANGE_SLOT_OPTION_COUNT};
+    // Label selector over the Flash-resident RANGE_NAMES table — Heap: 0 B.
+    // (Was ui::OptionsField: 18 heap blocks per SWP open starved the
+    // FrequencyKeypadView allocation on 128 KB SRAM.)
+    ui::StaticOptionField field_label_name_{
+        {UI_POS_X(7), UI_POS_Y(9)},
+        10,
+        kSweepRangeNameOptions,
+        SWEEP_RANGE_NAME_OPTION_COUNT};
     uint8_t label_slot_{0};  // currently edited range slot (0-4)
 };
 
@@ -178,17 +223,13 @@ private:
     // Single reusable view (~480 bytes) — bound to windows_[selected]
     SweepWindowView sweep_view_;
 
-    // Window selector — positioned above "-- Window --" label
-    ui::OptionsField field_window_select_{
+    // Window selector — positioned above "-- Window --" label.
+    // Flash-resident table + StaticOptionField — Heap: 0 B (was ~180 B).
+    ui::StaticOptionField field_window_select_{
         {UI_POS_X(0), UI_POS_Y(1)},
         5,
-        {
-            {"Win 1", 0},
-            {"Win 2", 1},
-            {"Win 3", 2},
-            {"Win 4", 3},
-        }
-    };
+        kSweepWindowOptions,
+        SWEEP_WINDOW_OPTION_COUNT};
 
     // Buttons — row 8, directly below the detection-window grid: Down from the
     // bottom row (dw4 / Enabled) lands on them in one predictable step instead

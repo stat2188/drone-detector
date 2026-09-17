@@ -2004,6 +2004,104 @@ bool OptionsField::on_touch(const TouchEvent event) {
     return true;
 }
 
+/* StaticOptionField (zero-heap) ******************************************/
+/* SRAM: 16 B/instance. Heap: 0 B (names come from a Flash-resident table). */
+
+StaticOptionField::StaticOptionField(
+    Point parent_pos,
+    size_t length,
+    const Option* const options,
+    size_t count,
+    size_t initial_index,
+    bool centered)
+    : Widget{{parent_pos, {8 * static_cast<int>(length), 16}}},
+      options_{options},
+      options_count_{count},
+      length_{length},
+      centered_{centered} {
+    set_focusable(true);
+    if (options_count_ != 0 && initial_index >= options_count_) {
+        initial_index = 0;
+    }
+    selected_index_ = initial_index;
+}
+
+void StaticOptionField::getAccessibilityText(std::string& result) {
+    result = selected_index_name();
+}
+
+void StaticOptionField::getWidgetName(std::string& result) {
+    result = "StaticOptionField";
+}
+
+void StaticOptionField::set_by_nearest_value(value_t v) {
+    if (options_ == nullptr || options_count_ == 0) {
+        return;
+    }
+    size_t best_index = 0;
+    int32_t min_diff = INT32_MAX;
+    for (size_t i = 0; i < options_count_; ++i) {
+        const int32_t diff = abs(v - options_[i].value);
+        if (diff < min_diff) {
+            min_diff = diff;
+            best_index = i;
+        }
+    }
+    set_selected_index(best_index);
+}
+
+void StaticOptionField::paint(Painter& painter) {
+    const auto paint_style = has_focus() ? style().invert() : style();
+
+    painter.fill_rectangle(
+        {screen_rect().location(), {(int)length_ * 8, 16}},
+        Theme::getInstance()->bg_darkest->background);
+
+    std::string_view name = selected_index_name();
+    if (name.length() > length_) {
+        name = name.substr(0, length_);
+    }
+
+    Point draw_pos = screen_pos();
+    if (centered_) {
+        const int text_width = (int)name.length() * 8;
+        const int available_width = (int)length_ * 8;
+        draw_pos = {draw_pos.x() + (available_width - text_width) / 2, draw_pos.y()};
+    }
+
+    painter.draw_string(draw_pos, paint_style, name);
+}
+
+void StaticOptionField::on_focus() {
+    if (on_show_options) {
+        on_show_options(selected_index_);
+    }
+}
+
+bool StaticOptionField::on_encoder(const EncoderEvent delta) {
+    int32_t new_value = (int32_t)selected_index() + delta;
+    if (new_value < 0) {
+        new_value = (int32_t)options_count_ - 1;
+    } else if ((size_t)new_value >= options_count_) {
+        new_value = 0;
+    }
+    set_selected_index((size_t)new_value);
+    return true;
+}
+
+bool StaticOptionField::on_keyboard(const KeyboardEvent key) {
+    if (key == '+' || key == ' ' || key == 10) return on_encoder(1);
+    if (key == '-' || key == 8) return on_encoder(-1);
+    return false;
+}
+
+bool StaticOptionField::on_touch(const TouchEvent event) {
+    if (event.type == TouchEvent::Type::Start) {
+        focus();
+    }
+    return true;
+}
+
 /* TextEdit ***********************************************************/
 
 TextEdit::TextEdit(
