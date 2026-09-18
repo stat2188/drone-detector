@@ -37,7 +37,7 @@ struct WindowData {
     std::array<uint8_t, DETECTION_WINDOWS_PER_WINDOW> name_idx{};
 };
 /**
- * @brief Zero-heap selector over the Flash-resident RANGE_NAMES table.
+ * @brief Zer0-heap selector over the Flash-resident RANGE_NAMES table.
  *
  * Drop-in replacement for an OptionsField whose options vector would cost
  * ~1.1 KB of heap (std::vector + 18 std::string slots) — the exact
