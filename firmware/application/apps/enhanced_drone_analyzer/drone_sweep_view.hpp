@@ -36,6 +36,54 @@ struct WindowData {
     // Edited in the lower-half Range/Name selector; persisted per slot.
     std::array<uint8_t, DETECTION_WINDOWS_PER_WINDOW> name_idx{};
 };
+/**
+ * @brief Zero-heap selector over the Flash-resident RANGE_NAMES table.
+ *
+ * Drop-in replacement for an OptionsField whose options vector would cost
+ * ~1.1 KB of heap (std::vector + 18 std::string slots) — the exact
+ * allocation that starved the SWP-tab frequency keypad after the
+ * detection-range-labels commit (23bc0a40).
+ *
+ * @note API mirrors ui::OptionsField (on_change(size_t, int32_t),
+ *       set_by_value(), set_selected_index()) so the existing wiring
+ *       compiles unchanged. Value space == index space into RANGE_NAMES.
+ * @note Heap: 0 B. SRAM: ~40 B (member of SweepWindowView). Flash: ~200 B.
+ * @note UI-thread only (paint / encoder / touch) — same contract as every
+ *       other selector widget in this view.
+ */
+class RangeNameSelector : public ui::Widget {
+public:
+    using value_t = int32_t;
+
+    std::function<void(size_t, value_t)> on_change{};
+
+    RangeNameSelector(ui::Point parent_pos, size_t length) noexcept
+        : ui::Widget{{parent_pos, {8 * static_cast<int>(length), 16}}},
+          length_{length} {
+        set_focusable(true);
+    }
+
+    RangeNameSelector(const RangeNameSelector&) = delete;
+    RangeNameSelector& operator=(const RangeNameSelector&) = delete;
+
+    [[nodiscard]] value_t value() const noexcept {
+        return static_cast<value_t>(selected_index_);
+    }
+
+    void set_selected_index(size_t new_index, bool trigger_change = true) noexcept;
+    void set_by_value(value_t v) noexcept;
+
+    void paint(ui::Painter& painter) override;
+    bool on_encoder(const ui::EncoderEvent delta) override;
+    bool on_keyboard(const ui::KeyboardEvent key) override;
+    bool on_touch(const ui::TouchEvent event) override;
+    void on_focus() override;
+    void on_blur() override;
+
+private:
+    const size_t length_;
+    size_t selected_index_{0};
+};
 
 /**
  * @brief Single-window sweep configuration view (reuses widgets for all 4 windows)
@@ -43,8 +91,10 @@ struct WindowData {
  *       window. DroneSweepView switches the data pointer to show different
  *       windows. (The sweep center pitch is auto-derived for gapless coverage —
  *       SweepWindow::init() ignores step_freq. See SWEEP_GAPLESS_STEP_MAX_HZ.)
- * @note SRAM: ~900 bytes (24 widgets × ~32 bytes each + labels + 2 OptionsFields)
- *       vs old design: ~2,400 bytes (2 group views × 30 widgets × ~32 bytes)
+ * @note SRAM: ~900 bytes heap (24 widgets × ~32 bytes each + labels
+ *       + 1 OptionsField + RangeNameSelector). The range-label selector is
+ *       zero-heap (Flash strings) — it replaced a second OptionsField whose
+ *       18-entry options vector cost ~1.1 KB of heap.
  */
 class SweepWindowView : public ui::View {
 public:
@@ -138,8 +188,11 @@ public:
             {"R5", 4},
         }
     };
-    // Options are built in the ctor from RANGE_NAMES (single source of truth).
-    ui::OptionsField field_label_name_{{UI_POS_X(7), UI_POS_Y(9)}, 10, {}};
+    // Zero-heap selector: draws the label straight from the Flash-resident
+    // RANGE_NAMES table — no options vector, no std::string (saves ~1.1 KB
+    // of heap vs an OptionsField with 18 entries; that vector was the
+    // allocation that starved the SWP-tab frequency keypad).
+    RangeNameSelector field_label_name_{{UI_POS_X(7), UI_POS_Y(9)}, 10};
     uint8_t label_slot_{0};  // currently edited range slot (0-4)
 };
 

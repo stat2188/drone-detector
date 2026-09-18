@@ -598,7 +598,7 @@ void DroneScannerUI::on_show() {
     if (baseband_needs_restore_ && !composite_active_) {
         baseband_needs_restore_ = false;
         // CRITICAL: shutdown() first to reset baseband_image_running flag.
-        // Sub-views (PatternManagerView) stop streaming but never call shutdown(),
+        // Sub-views stop streaming but never call shutdown(),
         // leaving baseband_image_running = true. Without shutdown(), run_image()
         // panics with "BBRunning".
         baseband::shutdown();

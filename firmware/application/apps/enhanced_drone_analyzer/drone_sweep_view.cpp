@@ -20,18 +20,99 @@ static FreqHz read_mhz_field(const ui::NumberField& field) noexcept {
     return static_cast<FreqHz>(field.value()) * MHZ;
 }
 
-// Build the OptionsField entries for the range-label selector from the
-// Flash-resident RANGE_NAMES table (single source of truth). NOTE: heap use
-// is confined to the UI layer (std::string options), same pattern as the
-// "Win 1..4" selector — never touched from the scanner/DSP paths.
-static ui::OptionsField::options_t build_range_name_options() noexcept {
-    ui::OptionsField::options_t options;
-    options.reserve(RANGE_NAME_COUNT);
-    for (uint8_t i = 0; i < RANGE_NAME_COUNT; ++i) {
-        options.emplace_back(
-            RANGE_NAMES[i], static_cast<ui::OptionsField::value_t>(i));
+// ============================================================================
+// RangeNameSelector — zero-heap replacement for an 18-entry OptionsField
+// ============================================================================
+// OptionsField stores its options as std::vector<std::pair<std::string,int>>
+// (~1.1 KB of heap for RANGE_NAMES, plus a second transient vector inside
+// set_options()). RANGE_NAMES is a compile-time Flash table, so the selector
+// needs only one index: the label string is resolved at paint time via
+// range_name_to_string(). Value space IS the index space — set_by_value() /
+// on_change() keep the exact OptionsField API (size_t, int32_t), so the
+// existing wiring compiles unchanged.
+// Heap: 0 B. SRAM: ~40 B (inside SweepWindowView). Flash: ~200 B.
+
+constexpr size_t range_name_max_len() noexcept {
+    size_t max_len = 0;
+    for (size_t i = 0; i < RANGE_NAME_COUNT; ++i) {
+        size_t len = 0;
+        while (RANGE_NAMES[i][len] != '\0') ++len;
+        if (len > max_len) max_len = len;
     }
-    return options;
+    return max_len;
+}
+
+static_assert(range_name_max_len() <= 10,
+    "RANGE_NAMES entry no longer fits the 10-char field_label_name_ selector");
+
+void RangeNameSelector::set_selected_index(
+    const size_t new_index, const bool trigger_change) noexcept {
+    if (new_index >= RANGE_NAME_COUNT) return;
+    if (new_index != selected_index_ || trigger_change) {
+        selected_index_ = new_index;
+        if (on_change) {
+            on_change(selected_index_, static_cast<int32_t>(selected_index_));
+        }
+        set_dirty();
+    }
+}
+
+void RangeNameSelector::set_by_value(const value_t v) noexcept {
+    // Value space IS the index space: RANGE_NAMES[i] <-> i.
+    set_selected_index(
+        (v >= 0 && v < static_cast<value_t>(RANGE_NAME_COUNT))
+            ? static_cast<size_t>(v) : 0U);
+}
+
+bool RangeNameSelector::on_encoder(const ui::EncoderEvent delta) {
+    // Wrap in both directions (parity with ui::OptionsField::on_encoder).
+    int32_t new_value = static_cast<int32_t>(selected_index_) + delta;
+    if (new_value < 0) {
+        new_value = static_cast<int32_t>(RANGE_NAME_COUNT) - 1;
+    } else if (static_cast<size_t>(new_value) >= RANGE_NAME_COUNT) {
+        new_value = 0;
+    }
+    set_selected_index(static_cast<size_t>(new_value));
+    return true;
+}
+
+bool RangeNameSelector::on_keyboard(const ui::KeyboardEvent key) {
+    // Parity with ui::OptionsField::on_keyboard.
+    if (key == '+' || key == ' ' || key == 10) return on_encoder(1);
+    if (key == '-' || key == 8) return on_encoder(-1);
+    return false;
+}
+
+bool RangeNameSelector::on_touch(const ui::TouchEvent event) {
+    // Parity with ui::OptionsField::on_touch: tap = focus only, the value is
+    // edited with the encoder (same UX as the R1..R5 slot selector above).
+    if (event.type == ui::TouchEvent::Type::Start) {
+        focus();
+    }
+    return true;
+}
+
+void RangeNameSelector::on_focus() {
+    set_dirty();  // repaint with the focused (inverted) style
+}
+
+void RangeNameSelector::on_blur() {
+    set_dirty();  // repaint without the focused style
+}
+
+void RangeNameSelector::paint(ui::Painter& painter) {
+    const auto paint_style = has_focus() ? style().invert() : style();
+
+    // Dark background box erases the previous (possibly longer) label —
+    // mirrors ui::OptionsField::paint().
+    painter.fill_rectangle(
+        {screen_rect().location(), {static_cast<ui::Dim>(length_ * 8), 16}},
+        Theme::getInstance()->bg_darkest->background);
+
+    // Label lives in Flash (range_names.hpp) — zero heap, zero copy.
+    painter.draw_string(
+        screen_pos(), paint_style,
+        range_name_to_string(static_cast<uint8_t>(selected_index_)));
 }
 
 // ============================================================================
@@ -219,8 +300,8 @@ SweepWindowView::SweepWindowView(NavigationView& nav, const Rect parent_rect, Dr
             static_cast<FreqHz>(field_dw4_end_.value()) * MHZ, scanner_ptr_, field_dw4_end_);
     };
 
-    // Range-label editor wiring (lower half).
-    field_label_name_.set_options(build_range_name_options());
+    // Range-label editor wiring (lower half). Zero heap: the selector draws
+    // labels straight from the Flash-resident RANGE_NAMES table.
     // Slot selector: on switch, show the newly selected slot's current label.
     field_label_slot_.on_change = [this](size_t, int32_t v) {
         label_slot_ = (v >= 0 && v < DETECTION_WINDOWS_PER_WINDOW)

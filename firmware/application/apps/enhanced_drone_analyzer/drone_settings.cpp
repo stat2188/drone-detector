@@ -326,74 +326,50 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
 
     // SAVE button: apply to scanner + save to SD card
     // FIX: Eliminated 160-byte exc[4][5] stack array by writing sweep fields
-    // directly to g_workspace_settings BEFORE apply_to_config() overwrites them.
+    // directly to settings_ BEFORE apply_to_config() overwrites them.
     // Stack budget: ~150 bytes (was ~310 bytes).
     button_save_.on_select = [this](ui::Button&) {
         if (scanner_ptr_ != nullptr) {
             // Read latest config from scanner (SWP may have changed sweep settings)
             scanner_ptr_->get_config(g_workspace_cfg);
 
-            // Step 1: Write sweep fields DIRECTLY to g_workspace_settings (SD dest).
-            // This preserves them without a local exc[4][5] array on stack.
-            g_workspace_settings.sweep_start_freq = g_workspace_cfg.sweep_start_freq;
-            g_workspace_settings.sweep_end_freq = g_workspace_cfg.sweep_end_freq;
-            g_workspace_settings.sweep_step_freq = g_workspace_cfg.sweep_step_freq;
-            g_workspace_settings.sweep2_start_freq = g_workspace_cfg.sweep2_start_freq;
-            g_workspace_settings.sweep2_end_freq = g_workspace_cfg.sweep2_end_freq;
-            g_workspace_settings.sweep2_step_freq = g_workspace_cfg.sweep2_step_freq;
-            g_workspace_settings.sweep2_enabled = g_workspace_cfg.sweep2_enabled;
-            g_workspace_settings.sweep3_start_freq = g_workspace_cfg.sweep3_start_freq;
-            g_workspace_settings.sweep3_end_freq = g_workspace_cfg.sweep3_end_freq;
-            g_workspace_settings.sweep3_step_freq = g_workspace_cfg.sweep3_step_freq;
-            g_workspace_settings.sweep3_enabled = g_workspace_cfg.sweep3_enabled;
-            g_workspace_settings.sweep4_start_freq = g_workspace_cfg.sweep4_start_freq;
-            g_workspace_settings.sweep4_end_freq = g_workspace_cfg.sweep4_end_freq;
-            g_workspace_settings.sweep4_step_freq = g_workspace_cfg.sweep4_step_freq;
-            g_workspace_settings.sweep4_enabled = g_workspace_cfg.sweep4_enabled;
+            // Step 1: Write sweep fields DIRECTLY to settings_ — the struct
+            // that is BOTH saved to SD (save_settings_to_sd) AND applied to
+            // the config below (apply_to_config copies sweep fields from
+            // settings_ into g_workspace_cfg). One stash, two consumers —
+            // no third round-trip needed.
+            settings_.sweep_start_freq = g_workspace_cfg.sweep_start_freq;
+            settings_.sweep_end_freq = g_workspace_cfg.sweep_end_freq;
+            settings_.sweep_step_freq = g_workspace_cfg.sweep_step_freq;
+            settings_.sweep2_start_freq = g_workspace_cfg.sweep2_start_freq;
+            settings_.sweep2_end_freq = g_workspace_cfg.sweep2_end_freq;
+            settings_.sweep2_step_freq = g_workspace_cfg.sweep2_step_freq;
+            settings_.sweep2_enabled = g_workspace_cfg.sweep2_enabled;
+            settings_.sweep3_start_freq = g_workspace_cfg.sweep3_start_freq;
+            settings_.sweep3_end_freq = g_workspace_cfg.sweep3_end_freq;
+            settings_.sweep3_step_freq = g_workspace_cfg.sweep3_step_freq;
+            settings_.sweep3_enabled = g_workspace_cfg.sweep3_enabled;
+            settings_.sweep4_start_freq = g_workspace_cfg.sweep4_start_freq;
+            settings_.sweep4_end_freq = g_workspace_cfg.sweep4_end_freq;
+            settings_.sweep4_step_freq = g_workspace_cfg.sweep4_step_freq;
+            settings_.sweep4_enabled = g_workspace_cfg.sweep4_enabled;
             for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w)
                 for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
                     // Both sides store the MHz mirror — direct POD copy.
-                    g_workspace_settings.sweep_det_win_start_mhz[w][i] =
+                    settings_.sweep_det_win_start_mhz[w][i] =
                         g_workspace_cfg.sweep_det_win_start_mhz[w][i];
-                    g_workspace_settings.sweep_det_win_end_mhz[w][i] =
+                    settings_.sweep_det_win_end_mhz[w][i] =
                         g_workspace_cfg.sweep_det_win_end_mhz[w][i];
-                    g_workspace_settings.sweep_det_win_name_idx[w][i] =
+                    settings_.sweep_det_win_name_idx[w][i] =
                         g_workspace_cfg.sweep_det_win_name_idx[w][i];
                 }
 
             // Step 2: Build updated config from original + user edits.
-            // This overwrites sweep fields in g_workspace_cfg — that's fine,
-            // we already preserved them in g_workspace_settings.
+            // apply_to_config() copies the (now-fresh) sweep fields from
+            // settings_ into g_workspace_cfg, so the scanner receives the
+            // correct sweep config via set_config().
             g_workspace_cfg = original_config_;
             SettingsFileManager::apply_to_config(settings_, g_workspace_cfg);
-
-            // Step 3: Restore sweep fields from g_workspace_settings into g_workspace_cfg
-            // so the scanner gets the correct sweep config via set_config().
-            g_workspace_cfg.sweep_start_freq = g_workspace_settings.sweep_start_freq;
-            g_workspace_cfg.sweep_end_freq = g_workspace_settings.sweep_end_freq;
-            g_workspace_cfg.sweep_step_freq = g_workspace_settings.sweep_step_freq;
-            g_workspace_cfg.sweep2_start_freq = g_workspace_settings.sweep2_start_freq;
-            g_workspace_cfg.sweep2_end_freq = g_workspace_settings.sweep2_end_freq;
-            g_workspace_cfg.sweep2_step_freq = g_workspace_settings.sweep2_step_freq;
-            g_workspace_cfg.sweep2_enabled = g_workspace_settings.sweep2_enabled;
-            g_workspace_cfg.sweep3_start_freq = g_workspace_settings.sweep3_start_freq;
-            g_workspace_cfg.sweep3_end_freq = g_workspace_settings.sweep3_end_freq;
-            g_workspace_cfg.sweep3_step_freq = g_workspace_settings.sweep3_step_freq;
-            g_workspace_cfg.sweep3_enabled = g_workspace_settings.sweep3_enabled;
-            g_workspace_cfg.sweep4_start_freq = g_workspace_settings.sweep4_start_freq;
-            g_workspace_cfg.sweep4_end_freq = g_workspace_settings.sweep4_end_freq;
-            g_workspace_cfg.sweep4_step_freq = g_workspace_settings.sweep4_step_freq;
-            g_workspace_cfg.sweep4_enabled = g_workspace_settings.sweep4_enabled;
-            for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w)
-                for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
-                    // Both sides store the MHz mirror — direct POD copy.
-                    g_workspace_cfg.sweep_det_win_start_mhz[w][i] =
-                        g_workspace_settings.sweep_det_win_start_mhz[w][i];
-                    g_workspace_cfg.sweep_det_win_end_mhz[w][i] =
-                        g_workspace_settings.sweep_det_win_end_mhz[w][i];
-                    g_workspace_cfg.sweep_det_win_name_idx[w][i] =
-                        g_workspace_settings.sweep_det_win_name_idx[w][i];
-                }
 
             const ErrorCode err = scanner_ptr_->set_config(g_workspace_cfg);
             if (err != ErrorCode::SUCCESS) {

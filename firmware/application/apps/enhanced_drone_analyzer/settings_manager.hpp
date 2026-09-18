@@ -159,7 +159,14 @@ public:
      * @param scanner_ptr Scanner to read current config from (may be nullptr)
      * @param general_settings General settings to save
      * @return ErrorCode::SUCCESS if saved, error code otherwise
-     * @note Reads sweep config from scanner if available, otherwise from general_settings
+     * @note Sweep fields (windows 1-4 + detection-range MHz mirrors + labels)
+     *       are taken from general_settings DIRECTLY — callers must keep them
+     *       in sync with the scanner before calling:
+     *       DroneSweepView::save_settings() runs extract_from_config() first;
+     *       DroneSettingsView::button_save_ stashes the scanner's sweep
+     *       fields into settings_ (Step 1) before save_settings_to_sd().
+     *       There is intentionally NO file-scope ScanConfig scratch copy
+     *       here anymore (was: 384 B of BSS).
      */
     [[nodiscard]] static ErrorCode save(
         DroneScanner* scanner_ptr,

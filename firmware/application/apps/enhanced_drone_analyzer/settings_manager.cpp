@@ -11,9 +11,6 @@
 
 namespace drone_analyzer {
 
-// Shared static for UI-thread-only operations (saves ~368B function-local static)
-static ScanConfig s_sweep_cfg;
-
 // ============================================================================
 // SettingsStruct Implementation
 // ============================================================================
@@ -583,34 +580,16 @@ ErrorCode SettingsFileManager::save(
     DroneScanner* scanner_ptr,
     const SettingsStruct& s
 ) noexcept {
-    // Stack budget: use shared static to avoid ~368B on 4KB main thread stack
-    if (scanner_ptr != nullptr) {
-        scanner_ptr->get_config(s_sweep_cfg);
-    } else {
-        s_sweep_cfg.sweep_start_freq = s.sweep_start_freq;
-        s_sweep_cfg.sweep_end_freq = s.sweep_end_freq;
-        s_sweep_cfg.sweep_step_freq = s.sweep_step_freq;
-        s_sweep_cfg.sweep2_start_freq = s.sweep2_start_freq;
-        s_sweep_cfg.sweep2_end_freq = s.sweep2_end_freq;
-        s_sweep_cfg.sweep2_step_freq = s.sweep2_step_freq;
-        s_sweep_cfg.sweep2_enabled = s.sweep2_enabled;
-        s_sweep_cfg.sweep3_start_freq = s.sweep3_start_freq;
-        s_sweep_cfg.sweep3_end_freq = s.sweep3_end_freq;
-        s_sweep_cfg.sweep3_step_freq = s.sweep3_step_freq;
-        s_sweep_cfg.sweep3_enabled = s.sweep3_enabled;
-        s_sweep_cfg.sweep4_start_freq = s.sweep4_start_freq;
-        s_sweep_cfg.sweep4_end_freq = s.sweep4_end_freq;
-        s_sweep_cfg.sweep4_step_freq = s.sweep4_step_freq;
-        s_sweep_cfg.sweep4_enabled = s.sweep4_enabled;
-        for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
-            for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
-                // ScanConfig and SettingsStruct share the MHz mirror — direct copy.
-                s_sweep_cfg.sweep_det_win_start_mhz[w][i] = s.sweep_det_win_start_mhz[w][i];
-                s_sweep_cfg.sweep_det_win_end_mhz[w][i] = s.sweep_det_win_end_mhz[w][i];
-                s_sweep_cfg.sweep_det_win_name_idx[w][i] = s.sweep_det_win_name_idx[w][i];
-            }
-        }
-    }
+    // Sweep-source contract: ALL sweep fields (windows 1-4 + detection-range
+    // MHz mirrors + labels) are read from `s` directly. Callers guarantee `s`
+    // is sweep-fresh:
+    //   - DroneSweepView::save_settings() runs extract_from_config() first;
+    //   - DroneSettingsView::button_save_ stashes the scanner's sweep fields
+    //     into `settings_` (Step 1) before calling save_settings_to_sd().
+    // This removes the file-scope ScanConfig duplicate (384 B of BSS, i.e.
+    // 384 B of heap on this platform) that shadowed g_workspace_cfg
+    // byte-for-byte.
+    (void)scanner_ptr;
 
     File file;
     ensure_directory(settings_dir);
@@ -664,27 +643,27 @@ ErrorCode SettingsFileManager::save(
     wl(file, "miss_tolerance", static_cast<int64_t>(s.miss_tolerance));
 
     // Sweep window 1
-    wl(file, "sweep_start_mhz", static_cast<int64_t>(s_sweep_cfg.sweep_start_freq / 1000000ULL));
-    wl(file, "sweep_end_mhz", static_cast<int64_t>(s_sweep_cfg.sweep_end_freq / 1000000ULL));
-    wl(file, "sweep_step_khz", static_cast<int64_t>(s_sweep_cfg.sweep_step_freq / 1000ULL));
+    wl(file, "sweep_start_mhz", static_cast<int64_t>(s.sweep_start_freq / 1000000ULL));
+    wl(file, "sweep_end_mhz", static_cast<int64_t>(s.sweep_end_freq / 1000000ULL));
+    wl(file, "sweep_step_khz", static_cast<int64_t>(s.sweep_step_freq / 1000ULL));
 
     // Sweep window 2
-    wl(file, "sweep2_start_mhz", static_cast<int64_t>(s_sweep_cfg.sweep2_start_freq / 1000000ULL));
-    wl(file, "sweep2_end_mhz", static_cast<int64_t>(s_sweep_cfg.sweep2_end_freq / 1000000ULL));
-    wl(file, "sweep2_step_khz", static_cast<int64_t>(s_sweep_cfg.sweep2_step_freq / 1000ULL));
-    wbool(file, "sweep2_enabled", s_sweep_cfg.sweep2_enabled);
+    wl(file, "sweep2_start_mhz", static_cast<int64_t>(s.sweep2_start_freq / 1000000ULL));
+    wl(file, "sweep2_end_mhz", static_cast<int64_t>(s.sweep2_end_freq / 1000000ULL));
+    wl(file, "sweep2_step_khz", static_cast<int64_t>(s.sweep2_step_freq / 1000ULL));
+    wbool(file, "sweep2_enabled", s.sweep2_enabled);
 
     // Sweep window 3
-    wl(file, "sweep3_start_mhz", static_cast<int64_t>(s_sweep_cfg.sweep3_start_freq / 1000000ULL));
-    wl(file, "sweep3_end_mhz", static_cast<int64_t>(s_sweep_cfg.sweep3_end_freq / 1000000ULL));
-    wl(file, "sweep3_step_khz", static_cast<int64_t>(s_sweep_cfg.sweep3_step_freq / 1000ULL));
-    wbool(file, "sweep3_enabled", s_sweep_cfg.sweep3_enabled);
+    wl(file, "sweep3_start_mhz", static_cast<int64_t>(s.sweep3_start_freq / 1000000ULL));
+    wl(file, "sweep3_end_mhz", static_cast<int64_t>(s.sweep3_end_freq / 1000000ULL));
+    wl(file, "sweep3_step_khz", static_cast<int64_t>(s.sweep3_step_freq / 1000ULL));
+    wbool(file, "sweep3_enabled", s.sweep3_enabled);
 
     // Sweep window 4
-    wl(file, "sweep4_start_mhz", static_cast<int64_t>(s_sweep_cfg.sweep4_start_freq / 1000000ULL));
-    wl(file, "sweep4_end_mhz", static_cast<int64_t>(s_sweep_cfg.sweep4_end_freq / 1000000ULL));
-    wl(file, "sweep4_step_khz", static_cast<int64_t>(s_sweep_cfg.sweep4_step_freq / 1000ULL));
-    wbool(file, "sweep4_enabled", s_sweep_cfg.sweep4_enabled);
+    wl(file, "sweep4_start_mhz", static_cast<int64_t>(s.sweep4_start_freq / 1000000ULL));
+    wl(file, "sweep4_end_mhz", static_cast<int64_t>(s.sweep4_end_freq / 1000000ULL));
+    wl(file, "sweep4_step_khz", static_cast<int64_t>(s.sweep4_step_freq / 1000ULL));
+    wbool(file, "sweep4_enabled", s.sweep4_enabled);
 
     // Sweep detection windows (4 windows x 5 ranges; MHz; only active slots written)
     static const char* dw_keys_start[4][DETECTION_WINDOWS_PER_WINDOW] = {
@@ -702,8 +681,8 @@ ErrorCode SettingsFileManager::save(
     for (uint8_t w = 0; w < 4; ++w) {
         for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
             write_dw_slot(file, dw_keys_start[w][i], dw_keys_end[w][i],
-                s_sweep_cfg.sweep_det_win_start_mhz[w][i],
-                s_sweep_cfg.sweep_det_win_end_mhz[w][i]);
+                s.sweep_det_win_start_mhz[w][i],
+                s.sweep_det_win_end_mhz[w][i]);
         }
     }
 
@@ -717,11 +696,11 @@ ErrorCode SettingsFileManager::save(
     };
     for (uint8_t w = 0; w < 4; ++w) {
         for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
-            const uint8_t name_idx = s_sweep_cfg.sweep_det_win_name_idx[w][i];
+            const uint8_t name_idx = s.sweep_det_win_name_idx[w][i];
             if (name_idx == 0) continue;  // 0 = no label — nothing to persist
             if (!is_det_win_slot_active(
-                    s_sweep_cfg.sweep_det_win_start_mhz[w][i],
-                    s_sweep_cfg.sweep_det_win_end_mhz[w][i])) {
+                    s.sweep_det_win_start_mhz[w][i],
+                    s.sweep_det_win_end_mhz[w][i])) {
                 continue;  // inactive slot — label is dormant, skip serialization
             }
             wl(file, dw_keys_name[w][i], static_cast<int64_t>(name_idx));
