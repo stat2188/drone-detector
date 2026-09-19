@@ -16,6 +16,126 @@
 
 namespace drone_analyzer {
 
+namespace {
+
+// ============================================================================
+// CfarModeSelector — zero-heap replacement for the 7-entry ui::OptionsField
+// ============================================================================
+// ui::OptionsField stores its options as
+// std::vector<std::pair<std::string, int32_t>> (~196 B of heap for 7 entries,
+// plus transient reallocations inside set_options()). The CFAR option table
+// is compile-time Flash data, so the selector keeps a single index and
+// resolves the label string at paint time. Heap: 0 B.
+
+struct CfarOption {
+    const char* name;
+    int32_t value;
+};
+
+// Order MUST match the CFARMode enum sequence (constants.hpp): value == index.
+constexpr CfarOption CFAR_OPTIONS[] = {
+    {"OFF", static_cast<int32_t>(CFARMode::OFF)},
+    {"CA", static_cast<int32_t>(CFARMode::CA)},
+    {"GO", static_cast<int32_t>(CFARMode::GO)},
+    {"SO", static_cast<int32_t>(CFARMode::SO)},
+    {"HYBRID", static_cast<int32_t>(CFARMode::HYBRID)},
+    {"OS", static_cast<int32_t>(CFARMode::OS)},
+    {"VI", static_cast<int32_t>(CFARMode::VI)},
+};
+constexpr size_t CFAR_OPTION_COUNT = sizeof(CFAR_OPTIONS) / sizeof(CFAR_OPTIONS[0]);
+
+constexpr size_t cfar_option_max_len() noexcept {
+    size_t max_len = 0;
+    for (size_t i = 0; i < CFAR_OPTION_COUNT; ++i) {
+        size_t len = 0;
+        while (CFAR_OPTIONS[i].name[len] != '\0') ++len;
+        if (len > max_len) max_len = len;
+    }
+    return max_len;
+}
+
+// The selector paints inside a length*8 px box; a longer label would overflow
+// into the neighbouring "Ref:" field (kept in sync with the widget length 7).
+static_assert(cfar_option_max_len() <= 7,
+    "CFAR option name no longer fits the CfarModeSelector box");
+
+}  // namespace
+
+// CfarModeSelector — OptionsField-compatible API, zero heap ------------------
+
+void CfarModeSelector::set_selected_index(
+    const size_t new_index, const bool trigger_change) noexcept {
+    if (new_index >= CFAR_OPTION_COUNT) return;
+    if (new_index != selected_index_ || trigger_change) {
+        selected_index_ = new_index;
+        if (on_change) {
+            on_change(selected_index_, CFAR_OPTIONS[selected_index_].value);
+        }
+        set_dirty();
+    }
+}
+
+void CfarModeSelector::set_by_value(const value_t v) noexcept {
+    // Linear scan over a 7-entry Flash table — value space is tiny.
+    for (size_t i = 0; i < CFAR_OPTION_COUNT; ++i) {
+        if (CFAR_OPTIONS[i].value == v) {
+            set_selected_index(i);
+            return;
+        }
+    }
+    set_selected_index(0);  // unknown value → OFF (CFARMode::OFF == 0)
+}
+
+bool CfarModeSelector::on_encoder(const ui::EncoderEvent delta) {
+    // Wrap in both directions (parity with ui::OptionsField::on_encoder).
+    int32_t new_value = static_cast<int32_t>(selected_index_) + delta;
+    if (new_value < 0) {
+        new_value = static_cast<int32_t>(CFAR_OPTION_COUNT) - 1;
+    } else if (static_cast<size_t>(new_value) >= CFAR_OPTION_COUNT) {
+        new_value = 0;
+    }
+    set_selected_index(static_cast<size_t>(new_value));
+    return true;
+}
+
+bool CfarModeSelector::on_keyboard(const ui::KeyboardEvent key) {
+    // Parity with ui::OptionsField::on_keyboard.
+    if (key == '+' || key == ' ' || key == 10) return on_encoder(1);
+    if (key == '-' || key == 8) return on_encoder(-1);
+    return false;
+}
+
+bool CfarModeSelector::on_touch(const ui::TouchEvent event) {
+    // Parity with ui::OptionsField::on_touch: tap = focus only, the value is
+    // edited with the encoder.
+    if (event.type == ui::TouchEvent::Type::Start) {
+        focus();
+    }
+    return true;
+}
+
+void CfarModeSelector::on_focus() {
+    set_dirty();  // repaint with the focused (inverted) style
+}
+
+void CfarModeSelector::on_blur() {
+    set_dirty();  // repaint without the focused style
+}
+
+void CfarModeSelector::paint(ui::Painter& painter) {
+    const auto paint_style = has_focus() ? style().invert() : style();
+
+    // Dark background box erases the previous (possibly longer) label —
+    // mirrors ui::OptionsField::paint().
+    painter.fill_rectangle(
+        {screen_rect().location(), {static_cast<ui::Dim>(length_ * 8), 16}},
+        Theme::getInstance()->bg_darkest->background);
+
+    // Option name lives in Flash (CFAR_OPTIONS) — zero heap, zero copy.
+    painter.draw_string(
+        screen_pos(), paint_style, CFAR_OPTIONS[selected_index_].name);
+}
+
 // ============================================================================
 // DroneSettingsView Constructor / Destructor
 // ============================================================================
@@ -89,15 +209,9 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , field_threat_medium_({UI_POS_X(11), UI_POS_Y(16)}, 4, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
     , field_threat_high_({UI_POS_X(19), UI_POS_Y(16)}, 4, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
     , field_threat_critical_({UI_POS_X(26), UI_POS_Y(16)}, 4, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
-    , field_cfar_mode_({UI_POS_X(4), UI_POS_Y(0)}, 7, {
-        {"OFF", static_cast<int32_t>(CFARMode::OFF)},
-        {"CA", static_cast<int32_t>(CFARMode::CA)},
-        {"GO", static_cast<int32_t>(CFARMode::GO)},
-        {"SO", static_cast<int32_t>(CFARMode::SO)},
-        {"HYBRID", static_cast<int32_t>(CFARMode::HYBRID)},
-        {"OS", static_cast<int32_t>(CFARMode::OS)},
-        {"VI", static_cast<int32_t>(CFARMode::VI)},
-    })
+    // Zero-heap selector over the Flash CFAR_OPTIONS table (was an
+    // ui::OptionsField with 7 options ≈ 196 B of heap + transient reallocs).
+    , field_cfar_mode_({UI_POS_X(4), UI_POS_Y(0)}, 7)
     , field_cfar_ref_cells_({UI_POS_X(14), UI_POS_Y(0)}, 2, {4, 64}, 4, ' ')
     , field_cfar_guard_cells_({UI_POS_X(20), UI_POS_Y(0)}, 1, {0, 8}, 1, ' ')
     , field_cfar_threshold_({UI_POS_X(25), UI_POS_Y(0)}, 3, {10, 100}, 5, ' ')
@@ -373,7 +487,13 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
 
             const ErrorCode err = scanner_ptr_->set_config(g_workspace_cfg);
             if (err != ErrorCode::SUCCESS) {
-                nav_.display_modal("Error", "Invalid settings.\nCheck min<=max\nand valid ranges.");
+                // Lazy static: ONE heap allocation on first open instead of a
+                // fresh temporary per open. Framework ModalMessageView copies
+                // the message anyway (title_/message_ are std::string), so a
+                // temporary literal here would double the per-open cost.
+                static const std::string k_invalid_settings_msg{
+                    "Invalid settings.\nCheck min<=max\nand valid ranges."};
+                nav_.display_modal("Error", k_invalid_settings_msg);
                 return;
             }
         }
@@ -390,7 +510,11 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     };
 
     button_about_.on_select = [this](ui::Button&) {
-        nav_.display_modal("About",
+        // Lazy static (~190 B): one heap allocation on first open instead of
+        // two per open (source temporary + ModalMessageView copy). Content is
+        // intentionally NOT shortened to <=15-char lines — the per-paint
+        // split_string() vector cost is framework-side and unaffected.
+        static const std::string k_about_msg{
             "Author: Kuznetsov Maxim\n"
             "Orenburg\n"
             "Card: 2202 20202 5787 1695\n"
@@ -398,7 +522,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             "TON: UQCdtMxQB5zbQBOICkY90l\n"
             "TQQqcs8V-V28Bf2AGvl8xOc5HR\n"
             "Telegram: @max_ai_master\n"
-            "TM PowerHamster2188");
+            "TM PowerHamster2188"};
+        nav_.display_modal("About", k_about_msg);
     };
 
     // Median filter toggle (spike rejection on RSSI samples)

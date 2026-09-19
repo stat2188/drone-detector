@@ -17,6 +17,10 @@ namespace drone_analyzer {
 class DroneScanner;
 struct ScanConfig;
 
+// Opaque declaration — defined in drone_sweep_view.cpp (dense & ordered:
+// W1_START..W4_END, then W1_DW0_FROM..W4_DW4_TO). Only the .cpp decodes ids.
+enum class SweepFieldID : uint8_t;
+
 /**
  * @brief Per-window sweep configuration data (POD, no UI widgets)
  * @note SRAM: 117 bytes (3×FreqHz=24B + enabled=1+7pad + det_windows[5]×16=80B
@@ -31,11 +35,31 @@ struct WindowData {
     bool enabled{false};
     // 5 inclusive detection ranges; slot active iff start>0 && end>0 &&
     // start<=end. All inactive (0/0) → detect over the ENTIRE window range.
+    // SWP invariant: every active slot is clamped into the window's own
+    // [min(start_freq, end_freq), max(start_freq, end_freq)] span — see
+    // clamp_det_mhz_to_window() / sanitize_det_ranges() in drone_sweep_view.cpp.
     std::array<FreqRangeHz, DETECTION_WINDOWS_PER_WINDOW> det_windows{};
     // Per-slot LABEL index into RANGE_NAMES (range_names.hpp); 0 = no label.
     // Edited in the lower-half Range/Name selector; persisted per slot.
     std::array<uint8_t, DETECTION_WINDOWS_PER_WINDOW> name_idx{};
 };
+/**
+ * @brief Snapshot of the sweep-window bounds (MHz) handed to the keypad
+ * @note Captured BY VALUE when the keypad is pushed. The keypad is modal, so
+ *       the window bounds cannot change between push and the on_changed
+ *       callback. min_mhz/max_mhz > 0 marks "clamp enabled" — the default
+ *       {0, 0} is used for the window Start/End fields themselves (they
+ *       DEFINE the clamp window and must stay free).
+ */
+struct DetRangeWindowClamp {
+    int32_t min_mhz{0};
+    int32_t max_mhz{0};
+
+    [[nodiscard]] constexpr bool active() const noexcept {
+        return min_mhz > 0 && max_mhz > 0;
+    }
+};
+
 /**
  * @brief Zer0-heap selector over the Flash-resident RANGE_NAMES table.
  *
@@ -115,14 +139,79 @@ public:
     /**
      * @brief Read current widget values back into the bound WindowData
      * @note Called by DroneSweepView before save
+     * @note SWP bugfix: detection-range values are sanitized against the
+     *       WIDGET Start/End bounds on every sync — a range outside the
+     *       window's scan range is reset into [min(Start, End), max(Start, End)]
+     *       before it reaches WindowData, ScanConfig or the settings file.
      */
     void sync_from_widgets() noexcept;
 
     /**
      * @brief Write WindowData values into widgets
      * @note Called after bind() and by DroneSweepView after loading config
+     * @note Sync runs with per-widget on_change suppressed — the data side is
+     *       already normalized; see sanitize_det_ranges() / sanitize_window_det_ranges()
      */
     void sync_to_widgets() noexcept;
+
+    /**
+     * @brief Frequency-keypad callback — invoked from the pushed keypad view
+     * @param field_id Exact SweepFieldID that opened the keypad
+     * @param f Frequency confirmed on the keypad (Hz)
+     * @note Detection-range fields are clamped into the CURRENT window bounds
+     *       before the value reaches the widget or the config mirror (SWP
+     *       bugfix); window Start/End fields store the raw value.
+     * @note ZERO-HEAP CLOSURE CONTRACT: on_changed captures {SweepFieldID (1 B),
+     *       SweepWindowView* (4 B)} = 8 B — exactly std::function's inline
+     *       storage (GCC 9.2.1 bits/std_function.h, _M_max_size =
+     *       sizeof(_Nocopy_types) = 8 B on ARM32) → no operator new /
+     *       chHeapAlloc per keypad open.
+     */
+    void on_freq_keypad_done(SweepFieldID field_id, rf::Frequency f) noexcept;
+
+    /**
+     * @brief Clamp one detection-range bound into the bound window's range
+     * @param field The From/To NumberField whose widget value is corrected
+     * @param entered_mhz The just-entered widget value, MHz (0 = slot OFF)
+     * @note Widget-entry guard (encoder / keyboard steps): a value outside the
+     *       bound window's [Start, End] is reset to the window min/max. The
+     *       correction set_value() re-fires on_change only when the value
+     *       differs, so the clamp terminates at depth 2. 0 passes through —
+     *       the documented slot-OFF sentinel (is_det_win_slot_active).
+     */
+    void clamp_det_field_to_window(ui::NumberField& field, int32_t entered_mhz) noexcept;
+
+    /**
+     * @brief Clamp all 10 detection-range bounds into the widget window bounds
+     * @note Invoked whenever the window Start/End fields change: previously
+     *       valid ranges are re-clamped into the new scan range, restoring the
+     *       "ranges always live inside the window" invariant.
+     * @note Call after sync_from_widgets() on switch/save (widget bounds read).
+     * @return true if at least one field changed (caller may repaint)
+     */
+    bool sanitize_det_ranges() noexcept;
+
+  private:
+    /**
+     * @brief Reload the label selector from the bound data (slot-clamped)
+     */
+    void refresh_label_selector() noexcept;
+
+    /**
+     * @brief Clamp snapshot for the modal frequency keypad (MHz)
+     * @return {min(Start, End), max(Start, End)} of the CURRENT widget values,
+     *         or {0, 0} when no window data is bound (clamp disabled)
+     */
+    DetRangeWindowClamp det_range_clamp() const noexcept;
+
+    /**
+     * @brief Resolve a detection-range bound widget by slot index
+     * @param slot 0..4 (R1..R5)
+     * @param is_end true → To field, false → From field
+     * @note Lets the on_select closures capture only {this, slot} = 8 B —
+     *       std::function inline storage, zero heap.
+     */
+    ui::NumberField* dw_field_(uint8_t slot, bool is_end) noexcept;
 
     NavigationView& nav_;
     DroneScanner* scanner_ptr_;
@@ -147,6 +236,10 @@ public:
     // Detection windows — right side (5 ranges × From/To), rows 0-5.
     // A range is OFF when BOTH fields are 0 (default); when at least one range
     // is ON, detections outside every ON range are ignored (scanner-side gate).
+    // SWP bugfix: any non-zero From/To entry is clamped into the enclosing
+    // window's [Start, End] scan range on every entry path (encoder, keypad,
+    // settings load) — a range outside the window is reset to the window
+    // min/max instead of silently gating a band the sweep never visits.
     ui::Labels labels_dw_{
         {{UI_POS_X(13), UI_POS_Y(0)}, "From", Color::white()},
         {{UI_POS_X(19), UI_POS_Y(0)}, "To", Color::white()},
@@ -254,6 +347,17 @@ private:
     void switch_to_window(uint8_t index) noexcept;
     void save_settings() noexcept;
     void apply_defaults() noexcept;
+
+    /**
+     * @brief Normalize the freshly loaded workspace config (SWP bugfix)
+     * @note Configs persisted by older firmware may contain detection ranges
+     *       OUTSIDE their window's scan range (the old UI accepted any value
+     *       in {0, 7200} MHz). Before the data reaches the widgets, every
+     *       range is clamped into [min(Start, End), max(Start, End)] of its
+     *       window (0 = slot OFF passes through). The first SAVE then
+     *       rewrites the healed values into the settings file.
+     */
+    void sanitize_window_det_ranges() noexcept;
 };
 
 } // namespace drone_analyzer

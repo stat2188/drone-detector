@@ -116,6 +116,40 @@ void RangeNameSelector::paint(ui::Painter& painter) {
 }
 
 // ============================================================================
+// Detection-range ↔ sweep-window clamp (SWP-tab bugfix)
+// ============================================================================
+// The five detection ranges (R1..R5) of a sweep window must never extend
+// outside that window's [Start, End] scan range. Previously the From/To
+// NumberFields accepted any value in {0, 7200} MHz, so a range entered
+// outside the window silently gated detection into a band the sweep never
+// visits and persisted the invalid value into the settings file. The clamp
+// below is the single rule applied on every entry path: widget encoder /
+// keyboard steps, the on-screen frequency keypad, and the config load in
+// the DroneSweepView constructor.
+
+/**
+ * @brief Clamp one detection-range bound into the enclosing sweep window
+ * @param value_mhz Bound as entered, MHz (0 = slot OFF — passed through)
+ * @param win_a_mhz Window Start, MHz
+ * @param win_b_mhz Window End, MHz (order-agnostic; inverted windows tolerated)
+ * @return value_mhz forced into [min(win_a, win_b), max(win_a, win_b)];
+ *         0 is returned unchanged — the documented slot-OFF sentinel
+ *         (constants.hpp::is_det_win_slot_active) must stay reachable.
+ * @note MHz domain: every UI-side store (WindowData, ScanConfig/SettingsStruct
+ *       MHz mirror, displayed NumberField values) is MHz-quantized, so the
+ *       clamp and the display always agree with no rounding drift.
+ */
+[[nodiscard]] static constexpr int32_t clamp_det_mhz_to_window(
+    const int32_t value_mhz, const int32_t win_a_mhz, const int32_t win_b_mhz) noexcept {
+    if (value_mhz == 0) {
+        return 0;  // 0 = slot OFF — always legal, never clamped
+    }
+    const int32_t lo = (win_a_mhz < win_b_mhz) ? win_a_mhz : win_b_mhz;
+    const int32_t hi = (win_a_mhz < win_b_mhz) ? win_b_mhz : win_a_mhz;
+    return (value_mhz < lo) ? lo : (value_mhz > hi) ? hi : value_mhz;
+}
+
+// ============================================================================
 // Sweep field ID → config mapping (for FrequencyKeypadView callbacks)
 // ============================================================================
 
@@ -200,21 +234,25 @@ static SweepFieldID end_field_id(uint8_t w) noexcept {
 // ============================================================================
 // Helper: open frequency keypad with nav.push() — returns to sweep view on Done
 // ============================================================================
+// ZERO-HEAP CLOSURE CONTRACT (verified against GCC 9.2.1 bits/std_function.h):
+// std::function's inline storage on ARM32 is _M_max_size = sizeof(_Nocopy_types)
+// = 8 B. Any closure larger than 8 B falls back to operator new → chHeapAlloc
+// (common/chibios_cpp.cpp) — one allocation per keypad open, and the exact
+// allocation that starved the SWP-tab keypad before the RangeNameSelector
+// commit (23bc0a40). The closure below captures {SweepFieldID (1 B),
+// SweepWindowView* (4 B)} = 8 B, alignment 4 → stored locally, zero heap.
+// All per-field work (target widget lookup, window-bound clamp, config mirror
+// write, scanner update) lives in SweepWindowView::on_freq_keypad_done().
 static void open_freq_keypad_push(
     NavigationView& nav,
     SweepFieldID field_id,
     FreqHz initial_hz,
-    DroneScanner* scanner,
-    ui::NumberField& target_field) noexcept {
+    SweepWindowView& host) noexcept {
     baseband::spectrum_streaming_stop();
     auto* new_view = nav.push<FrequencyKeypadView>(
         static_cast<rf::Frequency>(initial_hz));
-    new_view->on_changed = [field_id, scanner, &target_field](rf::Frequency f) {
-        set_config_field_by_id(field_id, f);
-        target_field.set_value(static_cast<int32_t>(f / MHZ));
-        if (scanner != nullptr) {
-            (void)scanner->set_config(g_workspace_cfg);
-        }
+    new_view->on_changed = [field_id, &host](rf::Frequency f) {
+        host.on_freq_keypad_done(field_id, f);
     };
 }
 
@@ -248,57 +286,63 @@ SweepWindowView::SweepWindowView(NavigationView& nav, const Rect parent_rect, Dr
         &field_label_name_,                   // r9 label selector (RANGE_NAMES)
     });
 
-    // on_select callbacks route through the bound window index
+    // on_select callbacks route through the bound window index.
+    // SWP bugfix: on_change on Start/End re-clamps ALL 10 detection-range
+    // fields into the NEW window span — previously valid ranges are reset to
+    // the window min/max the moment the user shrinks or moves the scan
+    // window. set_value(..., false) suppresses the per-field widget clamp.
+    // All keypad closures are ≤ 8 B ([this] = 4 B / [field_id, &host] = 8 B)
+    // → std::function inline storage, ZERO heap (see open_freq_keypad_push).
     field_start_.on_select = [this](NumberField&) {
         open_freq_keypad_push(nav_, start_field_id(bound_index_),
-            static_cast<FreqHz>(field_start_.value()) * MHZ, scanner_ptr_, field_start_);
+            static_cast<FreqHz>(field_start_.value()) * MHZ, *this);
     };
     field_end_.on_select = [this](NumberField&) {
         open_freq_keypad_push(nav_, end_field_id(bound_index_),
-            static_cast<FreqHz>(field_end_.value()) * MHZ, scanner_ptr_, field_end_);
+            static_cast<FreqHz>(field_end_.value()) * MHZ, *this);
     };
+    field_start_.on_change = [this](int32_t) { (void)sanitize_det_ranges(); };
+    field_end_.on_change = [this](int32_t) { (void)sanitize_det_ranges(); };
 
-    // Detection-window range fields (5 × From/To)
-    field_dw0_start_.on_select = [this](NumberField&) {
-        open_freq_keypad_push(nav_, dw_field_id(bound_index_, 0, false),
-            static_cast<FreqHz>(field_dw0_start_.value()) * MHZ, scanner_ptr_, field_dw0_start_);
-    };
-    field_dw0_end_.on_select = [this](NumberField&) {
-        open_freq_keypad_push(nav_, dw_field_id(bound_index_, 0, true),
-            static_cast<FreqHz>(field_dw0_end_.value()) * MHZ, scanner_ptr_, field_dw0_end_);
-    };
-    field_dw1_start_.on_select = [this](NumberField&) {
-        open_freq_keypad_push(nav_, dw_field_id(bound_index_, 1, false),
-            static_cast<FreqHz>(field_dw1_start_.value()) * MHZ, scanner_ptr_, field_dw1_start_);
-    };
-    field_dw1_end_.on_select = [this](NumberField&) {
-        open_freq_keypad_push(nav_, dw_field_id(bound_index_, 1, true),
-            static_cast<FreqHz>(field_dw1_end_.value()) * MHZ, scanner_ptr_, field_dw1_end_);
-    };
-    field_dw2_start_.on_select = [this](NumberField&) {
-        open_freq_keypad_push(nav_, dw_field_id(bound_index_, 2, false),
-            static_cast<FreqHz>(field_dw2_start_.value()) * MHZ, scanner_ptr_, field_dw2_start_);
-    };
-    field_dw2_end_.on_select = [this](NumberField&) {
-        open_freq_keypad_push(nav_, dw_field_id(bound_index_, 2, true),
-            static_cast<FreqHz>(field_dw2_end_.value()) * MHZ, scanner_ptr_, field_dw2_end_);
-    };
-    field_dw3_start_.on_select = [this](NumberField&) {
-        open_freq_keypad_push(nav_, dw_field_id(bound_index_, 3, false),
-            static_cast<FreqHz>(field_dw3_start_.value()) * MHZ, scanner_ptr_, field_dw3_start_);
-    };
-    field_dw3_end_.on_select = [this](NumberField&) {
-        open_freq_keypad_push(nav_, dw_field_id(bound_index_, 3, true),
-            static_cast<FreqHz>(field_dw3_end_.value()) * MHZ, scanner_ptr_, field_dw3_end_);
-    };
-    field_dw4_start_.on_select = [this](NumberField&) {
-        open_freq_keypad_push(nav_, dw_field_id(bound_index_, 4, false),
-            static_cast<FreqHz>(field_dw4_start_.value()) * MHZ, scanner_ptr_, field_dw4_start_);
-    };
-    field_dw4_end_.on_select = [this](NumberField&) {
-        open_freq_keypad_push(nav_, dw_field_id(bound_index_, 4, true),
-            static_cast<FreqHz>(field_dw4_end_.value()) * MHZ, scanner_ptr_, field_dw4_end_);
-    };
+    // Detection-window range fields (5 × From/To).
+    // SWP bugfix: the NumberField's static range is {0, 7200} MHz — it knows
+    // nothing about the enclosing scan window. on_change feeds every widget
+    // step (encoder / keyboard) back through clamp_det_field_to_window(),
+    // which writes the corrected value back via set_value() when the user
+    // picked a bound outside the window. set_value() re-fires on_change only
+    // when the value actually differs → the correction pass finds the value
+    // already inside the window and the loop terminates at depth 2.
+    // Keypad entry is clamped separately (see open_freq_keypad_push).
+    field_dw0_start_.on_change = [this](int32_t v) { clamp_det_field_to_window(field_dw0_start_, v); };
+    field_dw0_end_.on_change = [this](int32_t v) { clamp_det_field_to_window(field_dw0_end_, v); };
+    field_dw1_start_.on_change = [this](int32_t v) { clamp_det_field_to_window(field_dw1_start_, v); };
+    field_dw1_end_.on_change = [this](int32_t v) { clamp_det_field_to_window(field_dw1_end_, v); };
+    field_dw2_start_.on_change = [this](int32_t v) { clamp_det_field_to_window(field_dw2_start_, v); };
+    field_dw2_end_.on_change = [this](int32_t v) { clamp_det_field_to_window(field_dw2_end_, v); };
+    field_dw3_start_.on_change = [this](int32_t v) { clamp_det_field_to_window(field_dw3_start_, v); };
+    field_dw3_end_.on_change = [this](int32_t v) { clamp_det_field_to_window(field_dw3_end_, v); };
+    field_dw4_start_.on_change = [this](int32_t v) { clamp_det_field_to_window(field_dw4_start_, v); };
+    field_dw4_end_.on_change = [this](int32_t v) { clamp_det_field_to_window(field_dw4_end_, v); };
+    // Detection-range keypad entry (5 × From/To): one data-driven loop — the
+    // enum is dense (W{N}_DW{slot}_{FROM|TO}) and on_freq_keypad_done() decodes
+    // the slot arithmetically. Closure budget: [this, i] = 8 B — exactly the
+    // std::function inline storage → ZERO heap (see open_freq_keypad_push).
+    {
+        ui::NumberField* const dw_start_fields[DETECTION_WINDOWS_PER_WINDOW] = {
+            &field_dw0_start_, &field_dw1_start_, &field_dw2_start_, &field_dw3_start_, &field_dw4_start_};
+        ui::NumberField* const dw_end_fields[DETECTION_WINDOWS_PER_WINDOW] = {
+            &field_dw0_end_, &field_dw1_end_, &field_dw2_end_, &field_dw3_end_, &field_dw4_end_};
+        for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
+            dw_start_fields[i]->on_select = [this, i](NumberField&) {
+                open_freq_keypad_push(nav_, dw_field_id(bound_index_, i, false),
+                    static_cast<FreqHz>(dw_field_(i, false)->value()) * MHZ, *this);
+            };
+            dw_end_fields[i]->on_select = [this, i](NumberField&) {
+                open_freq_keypad_push(nav_, dw_field_id(bound_index_, i, true),
+                    static_cast<FreqHz>(dw_field_(i, true)->value()) * MHZ, *this);
+            };
+        }
+    }
 
     // Range-label editor wiring (lower half). Zero heap: the selector draws
     // labels straight from the Flash-resident RANGE_NAMES table.
@@ -306,17 +350,18 @@ SweepWindowView::SweepWindowView(NavigationView& nav, const Rect parent_rect, Dr
     field_label_slot_.on_change = [this](size_t, int32_t v) {
         label_slot_ = (v >= 0 && v < DETECTION_WINDOWS_PER_WINDOW)
             ? static_cast<uint8_t>(v) : 0U;
-        if (bound_data_ != nullptr) {
-            field_label_name_.set_by_value(
-                static_cast<int32_t>(bound_data_->name_idx[label_slot_]));
-        }
+        refresh_label_selector();
     };
     // Label selector: write straight into the bound WindowData (SAVE
     // propagates it into ScanConfig + the settings file).
+    // Hardened: the stored index is clamped before use (load-time normalization
+    // guarantees < DETECTION_WINDOWS_PER_WINDOW; zero-cost defensive check).
     field_label_name_.on_change = [this](size_t, int32_t v) {
         if (bound_data_ == nullptr) return;
-        if (label_slot_ >= DETECTION_WINDOWS_PER_WINDOW) return;
-        bound_data_->name_idx[label_slot_] =
+        const uint8_t slot = (label_slot_ < DETECTION_WINDOWS_PER_WINDOW)
+            ? label_slot_
+            : static_cast<uint8_t>(DETECTION_WINDOWS_PER_WINDOW - 1);
+        bound_data_->name_idx[slot] =
             (v >= 0 && v < static_cast<int32_t>(RANGE_NAME_COUNT))
                 ? static_cast<uint8_t>(v) : 0U;
     };
@@ -332,6 +377,11 @@ void SweepWindowView::bind(WindowData* data, uint8_t window_index) noexcept {
     if (data != nullptr) {
         char label_buf[20];
         // 12 chars → x0..95: must stay clear of the "From" header at x104.
+        // Zero-alloc invariant: labels_ was constructed with 3 entries
+        // (capacity 3), every text here is <= 15 chars ("-- Win 4 --" = 11)
+        // → libstdc++ reuses the vector buffer and SSO strings on every
+        // set_labels call — NO heap after construction. Keep the entry count
+        // at 3 and texts <= 15 chars, or each bind() re-allocates again.
         snprintf(label_buf, sizeof(label_buf), "-- Win %d --", static_cast<int>(window_index) + 1);
         labels_.set_labels({
             {{UI_POS_X(0), UI_POS_Y(0)}, label_buf, Color::white()},
@@ -344,24 +394,30 @@ void SweepWindowView::bind(WindowData* data, uint8_t window_index) noexcept {
 
 void SweepWindowView::sync_to_widgets() noexcept {
     if (bound_data_ == nullptr) return;
-    field_start_.set_value(static_cast<int32_t>(bound_data_->start_freq / MHZ));
-    field_end_.set_value(static_cast<int32_t>(bound_data_->end_freq / MHZ));
+    // on_change suppressed on Start/End as well: sanitize_det_ranges() must
+    // not run against the intermediate state (Start already updated, End
+    // still stale from the previous window). The bound WindowData is already
+    // normalized — see sanitize_window_det_ranges() / sync_from_widgets().
+    field_start_.set_value(static_cast<int32_t>(bound_data_->start_freq / MHZ), false);
+    field_end_.set_value(static_cast<int32_t>(bound_data_->end_freq / MHZ), false);
     check_enabled_.set_value(bound_data_->enabled);
 
     ui::NumberField* dw_start_fields[DETECTION_WINDOWS_PER_WINDOW] = {
         &field_dw0_start_, &field_dw1_start_, &field_dw2_start_, &field_dw3_start_, &field_dw4_start_};
     ui::NumberField* dw_end_fields[DETECTION_WINDOWS_PER_WINDOW] = {
         &field_dw0_end_, &field_dw1_end_, &field_dw2_end_, &field_dw3_end_, &field_dw4_end_};
+    // Sync with on_change suppressed: the widget-side clamp
+    // (clamp_det_field_to_window) must NOT re-fire here — values coming from
+    // the bound WindowData have already been normalized by the constructor's
+    // sanitize_window_det_ranges() pass (load-time normalization), and
+    // re-writing inside set_value's own on_change would recurse.
     for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
-        dw_start_fields[i]->set_value(static_cast<int32_t>(bound_data_->det_windows[i].start_hz / MHZ));
-        dw_end_fields[i]->set_value(static_cast<int32_t>(bound_data_->det_windows[i].end_hz / MHZ));
+        dw_start_fields[i]->set_value(static_cast<int32_t>(bound_data_->det_windows[i].start_hz / MHZ), false);
+        dw_end_fields[i]->set_value(static_cast<int32_t>(bound_data_->det_windows[i].end_hz / MHZ), false);
     }
 
     // Label editor — reflect the selected slot's stored label index.
-    if (label_slot_ < DETECTION_WINDOWS_PER_WINDOW) {
-        field_label_name_.set_by_value(
-            static_cast<int32_t>(bound_data_->name_idx[label_slot_]));
-    }
+    refresh_label_selector();
 }
 
 void SweepWindowView::sync_from_widgets() noexcept {
@@ -370,15 +426,168 @@ void SweepWindowView::sync_from_widgets() noexcept {
     bound_data_->end_freq = read_mhz_field(field_end_);
     bound_data_->enabled = check_enabled_.value();
 
+    // SWP bugfix: the bound window bounds from the WIDGETS (not the stale
+    // WindowData copies — sync_from_widgets runs BEFORE those are updated on
+    // switch/save). sanitize_det_ranges() then clamps every range outside
+    // [min(Start, End), max(Start, End)] back into the window, so the stored
+    // data can never drift outside the visible scan range.
+    const FreqHz win_a_hz = static_cast<FreqHz>(field_start_.value()) * MHZ;
+    const FreqHz win_b_hz = static_cast<FreqHz>(field_end_.value()) * MHZ;
+    const FreqHz lo_hz = (win_a_hz < win_b_hz) ? win_a_hz : win_b_hz;
+    const FreqHz hi_hz = (win_a_hz < win_b_hz) ? win_b_hz : win_a_hz;
+
     const ui::NumberField* dw_start_fields[DETECTION_WINDOWS_PER_WINDOW] = {
         &field_dw0_start_, &field_dw1_start_, &field_dw2_start_, &field_dw3_start_, &field_dw4_start_};
     const ui::NumberField* dw_end_fields[DETECTION_WINDOWS_PER_WINDOW] = {
         &field_dw0_end_, &field_dw1_end_, &field_dw2_end_, &field_dw3_end_, &field_dw4_end_};
     for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
-        bound_data_->det_windows[i].start_hz =
-            static_cast<FreqHz>(dw_start_fields[i]->value()) * MHZ;
-        bound_data_->det_windows[i].end_hz =
-            static_cast<FreqHz>(dw_end_fields[i]->value()) * MHZ;
+        FreqHz s_hz = static_cast<FreqHz>(dw_start_fields[i]->value()) * MHZ;
+        FreqHz e_hz = static_cast<FreqHz>(dw_end_fields[i]->value()) * MHZ;
+        if (s_hz != 0) {
+            s_hz = (s_hz < lo_hz) ? lo_hz : (s_hz > hi_hz) ? hi_hz : s_hz;
+        }
+        if (e_hz != 0) {
+            e_hz = (e_hz < lo_hz) ? lo_hz : (e_hz > hi_hz) ? hi_hz : e_hz;
+        }
+        bound_data_->det_windows[i].start_hz = s_hz;
+        bound_data_->det_windows[i].end_hz = e_hz;
+    }
+}
+
+// ----------------------------------------------------------------------------
+// SWP bugfix helpers — detection ranges must stay inside the scan window
+// ----------------------------------------------------------------------------
+
+void SweepWindowView::clamp_det_field_to_window(
+    ui::NumberField& field, const int32_t entered_mhz) noexcept {
+    if (bound_data_ == nullptr) return;
+    // [min, max] of the CURRENT window bounds (order-agnostic: a window
+    // edited to Start > End still clamps into the real span instead of
+    // collapsing every range to a degenerate empty interval).
+    const DetRangeWindowClamp c = det_range_clamp();
+    if (!c.active()) return;  // unreachable: bound_data_ != nullptr ⇒ window loaded
+    const int32_t clamped = clamp_det_mhz_to_window(entered_mhz, c.min_mhz, c.max_mhz);
+    if (clamped == entered_mhz) return;  // inside the window — nothing to fix
+    // Re-fires on_change ONLY if the value differs (ui_widget.cpp) → the
+    // correction pass sees the value already inside the window and returns.
+    // Recursion depth: exactly 2.
+    field.set_value(clamped);
+}
+
+bool SweepWindowView::sanitize_det_ranges() noexcept {
+    if (bound_data_ == nullptr) return false;
+    // Widget bounds are authoritative here: on switch/save this runs right
+    // after sync_from_widgets(), which wrote the widget values into the bound
+    // window bounds — always in sync, no stale-copy hazard.
+    const int32_t win_a = field_start_.value();
+    const int32_t win_b = field_end_.value();
+    const int32_t lo = (win_a < win_b) ? win_a : win_b;
+    const int32_t hi = (win_a < win_b) ? win_b : win_a;
+
+    ui::NumberField* fields[2 * DETECTION_WINDOWS_PER_WINDOW] = {
+        &field_dw0_start_, &field_dw0_end_,
+        &field_dw1_start_, &field_dw1_end_,
+        &field_dw2_start_, &field_dw2_end_,
+        &field_dw3_start_, &field_dw3_end_,
+        &field_dw4_start_, &field_dw4_end_};
+
+    bool changed = false;
+    for (uint8_t i = 0; i < (2 * DETECTION_WINDOWS_PER_WINDOW); ++i) {
+        const int32_t entered = fields[i]->value();
+        const int32_t clamped = clamp_det_mhz_to_window(entered, lo, hi);
+        if (clamped != entered) {
+            // set_value suppresses on_change → no widget-clamp ping-pong.
+            fields[i]->set_value(clamped, false);
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+void SweepWindowView::refresh_label_selector() noexcept {
+    if (bound_data_ == nullptr) return;
+    const uint8_t slot = (label_slot_ < DETECTION_WINDOWS_PER_WINDOW)
+        ? label_slot_
+        : static_cast<uint8_t>(DETECTION_WINDOWS_PER_WINDOW - 1);
+    field_label_name_.set_by_value(
+        static_cast<int32_t>(bound_data_->name_idx[slot]));
+}
+
+DetRangeWindowClamp SweepWindowView::det_range_clamp() const noexcept {
+    if (bound_data_ == nullptr) return {};  // clamp disabled
+    const int32_t win_a = field_start_.value();
+    const int32_t win_b = field_end_.value();
+    return {(win_a < win_b) ? win_a : win_b,
+            (win_a < win_b) ? win_b : win_a};
+}
+
+ui::NumberField* SweepWindowView::dw_field_(
+    const uint8_t slot, const bool is_end) noexcept {
+    // slot < DETECTION_WINDOWS_PER_WINDOW by construction (loop index / decoded
+    // dense enum); clamped defensively so the helper can never index OOB.
+    const uint8_t s = (slot < DETECTION_WINDOWS_PER_WINDOW)
+        ? slot
+        : static_cast<uint8_t>(DETECTION_WINDOWS_PER_WINDOW - 1);
+    switch (s) {
+        case 0: return is_end ? &field_dw0_end_ : &field_dw0_start_;
+        case 1: return is_end ? &field_dw1_end_ : &field_dw1_start_;
+        case 2: return is_end ? &field_dw2_end_ : &field_dw2_start_;
+        case 3: return is_end ? &field_dw3_end_ : &field_dw3_start_;
+        default: return is_end ? &field_dw4_end_ : &field_dw4_start_;
+    }
+}
+
+void SweepWindowView::on_freq_keypad_done(
+    const SweepFieldID field_id, const rf::Frequency f) noexcept {
+    if (bound_data_ == nullptr) return;
+
+    // Resolve the target widget arithmetically (the enum is dense & ordered):
+    //   ids 0..7   → window bounds:  even = START, odd = END (W{N}_START/END)
+    //   ids 8..47  → detection ranges: rel = id - W1_DW0_FROM,
+    //                window = rel/10, slot = (rel%10)/2, odd = TO
+    // Only the BOUND window's widgets are ever edited (the keypad is opened
+    // from the bound window and is modal), so the widget side ignores the
+    // window sub-index — set_config_field_by_id() still writes the exact id.
+    ui::NumberField* target = nullptr;
+    bool is_det_range = false;
+
+    const uint8_t id = static_cast<uint8_t>(field_id);
+    if (id >= static_cast<uint8_t>(SweepFieldID::W1_DW0_FROM)) {
+        static constexpr uint8_t SLOTS_PER_WINDOW = 2 * DETECTION_WINDOWS_PER_WINDOW;  // 10
+        const uint8_t rel = static_cast<uint8_t>(
+            id - static_cast<uint8_t>(SweepFieldID::W1_DW0_FROM));
+        const uint8_t slot = static_cast<uint8_t>((rel % SLOTS_PER_WINDOW) / 2U);
+        const bool to_field = ((rel % SLOTS_PER_WINDOW) % 2U) != 0U;
+
+        ui::NumberField* const dw_start_fields[DETECTION_WINDOWS_PER_WINDOW] = {
+            &field_dw0_start_, &field_dw1_start_, &field_dw2_start_, &field_dw3_start_, &field_dw4_start_};
+        ui::NumberField* const dw_end_fields[DETECTION_WINDOWS_PER_WINDOW] = {
+            &field_dw0_end_, &field_dw1_end_, &field_dw2_end_, &field_dw3_end_, &field_dw4_end_};
+        target = to_field ? dw_end_fields[slot] : dw_start_fields[slot];
+        is_det_range = true;
+    } else {
+        target = ((id % 2U) == 0U) ? &field_start_ : &field_end_;
+    }
+
+    if (target == nullptr) return;
+
+    if (is_det_range) {
+        // SWP bugfix: reset to the window min/max when the user picked a value
+        // outside the scan window. Clamp is read at callback time (the keypad
+        // is modal — the bounds cannot change while it is open).
+        const DetRangeWindowClamp c = det_range_clamp();
+        const int32_t clamped_mhz = clamp_det_mhz_to_window(
+            static_cast<int32_t>(f / MHZ), c.min_mhz, c.max_mhz);
+        set_config_field_by_id(field_id, static_cast<FreqHz>(clamped_mhz) * MHZ);
+        target->set_value(clamped_mhz);
+    } else {
+        // Window Start/End entry: raw keypad value, as before.
+        set_config_field_by_id(field_id, f);
+        target->set_value(static_cast<int32_t>(f / MHZ));
+    }
+
+    if (scanner_ptr_ != nullptr) {
+        (void)scanner_ptr_->set_config(g_workspace_cfg);
     }
 }
 
@@ -433,6 +642,12 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
         switch_to_window(static_cast<uint8_t>(v));
     };
 
+    // SWP bugfix: configs saved by older firmware may carry detection ranges
+    // outside their window's scan range (the old UI accepted any value in
+    // {0, 7200} MHz). Normalize BEFORE the first bind so the widgets never
+    // display out-of-window ranges; the first SAVE heals the settings file.
+    sanitize_window_det_ranges();
+
     // Bind to window 0
     sweep_view_.bind(&windows_[0], 0);
 
@@ -464,6 +679,32 @@ void DroneSweepView::switch_to_window(uint8_t index) noexcept {
 
     selected_window_ = index;
     sweep_view_.bind(&windows_[index], index);
+}
+
+void DroneSweepView::sanitize_window_det_ranges() noexcept {
+    // Load-time normalization (SWP bugfix). Every detection range of every
+    // window is forced into its window's [min(Start, End), max(Start, End)]
+    // span; 0/0 (slot OFF) passes through untouched. Operates on the MHz
+    // domain — identical to what the widgets display and what the MHz mirror
+    // in ScanConfig / the settings file stores. In-place, no heap, O(4×5).
+    for (uint8_t w = 0; w < NUM_WINDOWS; ++w) {
+        const FreqHz win_a = windows_[w].start_freq;
+        const FreqHz win_b = windows_[w].end_freq;
+        const FreqHz lo_hz = (win_a < win_b) ? win_a : win_b;
+        const FreqHz hi_hz = (win_a < win_b) ? win_b : win_a;
+        for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
+            FreqHz s_hz = windows_[w].det_windows[i].start_hz;
+            FreqHz e_hz = windows_[w].det_windows[i].end_hz;
+            if (s_hz != 0) {
+                s_hz = (s_hz < lo_hz) ? lo_hz : (s_hz > hi_hz) ? hi_hz : s_hz;
+            }
+            if (e_hz != 0) {
+                e_hz = (e_hz < lo_hz) ? lo_hz : (e_hz > hi_hz) ? hi_hz : e_hz;
+            }
+            windows_[w].det_windows[i].start_hz = s_hz;
+            windows_[w].det_windows[i].end_hz = e_hz;
+        }
+    }
 }
 
 // ============================================================================

@@ -82,7 +82,11 @@ private:
     ScannerThread* scanner_thread_{nullptr};
 
     ui::Labels labels_{
-        {{UI_POS_X(0), UI_POS_Y(0)}, "LNA   VGA   AMP  ", Color::white()},
+        // 15 chars — exactly the SSO limit. The old "LNA   VGA   AMP  " (17)
+        // forced a heap allocation inside std::string on EVERY app open.
+        // Trailing pad spaces removed: they were invisible and pushed the
+        // literal over the SSO boundary. Field columns are untouched.
+        {{UI_POS_X(0), UI_POS_Y(0)}, "LNA   VGA   AMP", Color::white()},
     };
 
     ui::LNAGainField field_lna_{{UI_POS_X(4), 0}};

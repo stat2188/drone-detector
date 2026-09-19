@@ -24,6 +24,55 @@ namespace drone_analyzer {
 class DroneScanner;
 class DroneDisplay;
 
+/**
+ * @brief Zero-heap CFAR-mode selector over a compile-time options table
+ * @note Drop-in replacement for ui::OptionsField with the 7 CFAR options.
+ *       ui::OptionsField stores its options as
+ *       std::vector<std::pair<std::string, int32_t>> (~196 B of heap for 7
+ *       entries, plus a transient reallocation inside set_options()). The
+ *       CFAR option table is compile-time Flash data, so this selector keeps
+ *       a single index and resolves the label string at paint time.
+ * @note API mirrors ui::OptionsField (on_change(size_t, int32_t),
+ *       set_by_value(), value()) so the existing wiring compiles unchanged.
+ * @note Heap: 0 B. SRAM: ~44 B (member of DroneSettingsView). Flash: ~250 B.
+ * @note UI-thread only (paint / encoder / touch) — same contract as every
+ *       other selector widget in this view.
+ */
+class CfarModeSelector : public ui::Widget {
+public:
+    using value_t = int32_t;
+
+    // OptionsField-compatible callback: (selected_index, option_value).
+    std::function<void(size_t, value_t)> on_change{};
+
+    CfarModeSelector(ui::Point parent_pos, size_t length) noexcept
+        : ui::Widget{{parent_pos, {8 * static_cast<int>(length), 16}}},
+          length_{length} {
+        set_focusable(true);
+    }
+
+    CfarModeSelector(const CfarModeSelector&) = delete;
+    CfarModeSelector& operator=(const CfarModeSelector&) = delete;
+
+    [[nodiscard]] value_t value() const noexcept {
+        return static_cast<value_t>(selected_index_);
+    }
+
+    void set_selected_index(size_t new_index, bool trigger_change = true) noexcept;
+    void set_by_value(value_t v) noexcept;
+
+    void paint(ui::Painter& painter) override;
+    bool on_encoder(const ui::EncoderEvent delta) override;
+    bool on_keyboard(const ui::KeyboardEvent key) override;
+    bool on_touch(const ui::TouchEvent event) override;
+    void on_focus() override;
+    void on_blur() override;
+
+private:
+    const size_t length_;
+    size_t selected_index_{0};
+};
+
 class DroneSettingsView : public ui::View {
 public:
     explicit DroneSettingsView(NavigationView& nav, const ScanConfig& config, DroneScanner* scanner_ptr, DroneDisplay* display = nullptr) noexcept;
@@ -103,8 +152,9 @@ private:
     ui::NumberField field_threat_high_;
     ui::NumberField field_threat_critical_;
 
-    // CFAR detection controls
-    ui::OptionsField field_cfar_mode_;
+    // CFAR detection controls (field_cfar_mode_ is a zero-heap selector over
+    // the Flash CFAR_OPTIONS table — see CfarModeSelector in this header)
+    CfarModeSelector field_cfar_mode_;
     ui::NumberField field_cfar_ref_cells_;
     ui::NumberField field_cfar_guard_cells_;
     ui::NumberField field_cfar_threshold_;
