@@ -276,7 +276,10 @@ private:
 
     // Reusable buffers for refresh_ui() (class members instead of static locals)
     DisplayData refresh_display_data_{};
-    TrackedDrone refresh_drones_[MAX_DISPLAYED_DRONES]{};  // BSS, not stack (saves 2,304B stack)
+    // BSS, not stack (saves 2,304B stack). Scratch copy of the scanner's top-N
+    // priority selection; entries below DISPLAY_MIN_THREAT are dropped while
+    // copying into refresh_display_data_ (tracking itself is unaffected).
+    TrackedDrone refresh_drones_[MAX_DISPLAYED_DRONES]{};
     char refresh_status_buf_[MAX_TEXT_LENGTH]{};
 
     /**

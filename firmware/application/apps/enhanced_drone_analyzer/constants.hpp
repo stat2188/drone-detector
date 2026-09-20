@@ -74,6 +74,25 @@ constexpr size_t MAX_TRACKED_DRONES = 25;
 constexpr size_t MAX_DISPLAYED_DRONES = 12;
 
 /**
+ * @brief Minimum threat level copied into the render snapshot (drone list)
+ * @note RENDER GATE ONLY — it never affects tracking. A tracked drone below
+ *       this level keeps its RSSI history, trend hysteresis, sweep-cycle
+ *       counters, decay clocks, Mahalanobis stats and eviction priority; it
+ *       is merely skipped when building the UI snapshot, so it costs nothing
+ *       to render (no DisplayDroneEntry construction, no insertion-sort
+ *       compares, no 100 Hz memcmp, no per-row draw).
+ * @note ThreatLevel::NONE is the "tracked but not classified" state: a weak
+ *       creation sample or a decayed threat lands there. Without this gate
+ *       those entries paint as gray rows (COLOR_UNKNOWN_THREAT) in the
+ *       detection list.
+ * @note ORDERING IS LOAD-BEARING: DroneScanner::get_tracked_drones() returns
+ *       priority order with threat_level descending, so every gated-out entry
+ *       ranked strictly below every kept one — the filter can never displace
+ *       a LOW+ drone from the visible top-N rows.
+ */
+constexpr ThreatLevel DISPLAY_MIN_THREAT = ThreatLevel::LOW;
+
+/**
  * @brief Frequency match radius for drone tracking (Hz)
  * @note A detection landing within this distance of an existing tracked drone
  *       UPDATES that entry (nearest match) instead of spawning a duplicate.
@@ -1671,6 +1690,9 @@ static_assert(DRONE_TYPE_NAME_LENGTH == 16,
     "DRONE_TYPE_NAME_LENGTH changed — update type_name[16] in DisplayDroneEntry");
 static_assert(MAX_DISPLAYED_DRONES == 12,
     "MAX_DISPLAYED_DRONES changed — update drones[12] in DisplayData");
+static_assert(DISPLAY_MIN_THREAT > ThreatLevel::NONE,
+    "DISPLAY_MIN_THREAT must stay above NONE — NONE rows are tracked but hidden "
+    "from the detection list (gray-row regression guard)");
 
 } // namespace drone_analyzer
 

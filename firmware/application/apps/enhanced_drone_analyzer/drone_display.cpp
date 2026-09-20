@@ -250,7 +250,14 @@ void DroneDisplay::paint(Painter& painter) {
     const bool show_spec = (spectrum_visible_ && spectrum_data_size_ > 0) ||
                            (composite_mode_ && composite_data_ != nullptr && composite_data_size_ > 0);
     const bool show_tl = timeline_visible_;
-    const bool show_list = (drone_list_visible_ && display_data_.drone_count > 0);
+    // NOTE: the list region stays reserved whenever the list is ENABLED,
+    // independent of how many entries exist, and it is repainted on every
+    // DIRTY_DRONES — see the DIRTY_DRONES block below. Gating that draw on
+    // `drone_count > 0` was a stale-row defect: when the visible list emptied
+    // (all tracked drones below DISPLAY_MIN_THREAT, or all decayed),
+    // DIRTY_DRONES was raised but the draw call was skipped, so the previous
+    // rows stayed painted on the panel forever. render_drone_list(count == 0)
+    // is the clear path that paints the background plus the "No drones" hint.
 
     if (show_spec && (dirty_flags_ & DIRTY_SPEC_ANY)) {
         if (composite_mode_ && composite_data_ != nullptr && composite_data_size_ > 0) {
@@ -298,11 +305,18 @@ void DroneDisplay::paint(Painter& painter) {
     }
     if (show_tl) y_offset += layout.timeline_h;
 
-    if (show_list && layout.drone_h > 0 && (dirty_flags_ & DIRTY_DRONES)) {
+    // Keyed on drone_list_visible_ (NOT on drone_count > 0): when every tracked
+    // drone falls below DISPLAY_MIN_THREAT the render snapshot drains to zero
+    // and this must still run ONCE so render_drone_list() takes its empty branch
+    // and clears the area — nothing else paints over it (status_h == 0, and
+    // drone_h does not depend on drone_count). The clear runs exactly once per
+    // transition because update_display_data() raises DIRTY_DRONES only on an
+    // actual snapshot change and paint() clears the flags at the end.
+    if (drone_list_visible_ && layout.drone_h > 0 && (dirty_flags_ & DIRTY_DRONES)) {
         render_drone_list(painter, display_data_.drones, display_data_.drone_count,
                           ox, y_offset, w, layout.drone_h);
     }
-    if (show_list && layout.drone_h > 0) y_offset += layout.drone_h;
+    if (drone_list_visible_ && layout.drone_h > 0) y_offset += layout.drone_h;
 
     if (layout.status_h > 0 && (dirty_flags_ & DIRTY_STATUS)) {
         render_status_bar(painter, status_text_, ox, y_offset, w, layout.status_h);

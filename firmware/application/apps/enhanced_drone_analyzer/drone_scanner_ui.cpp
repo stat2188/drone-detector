@@ -897,14 +897,32 @@ void DroneScannerUI::refresh_ui() noexcept {
 
         {
             const size_t count = scanner_ptr_->get_tracked_drones(refresh_drones_, MAX_DISPLAYED_DRONES);
-            refresh_display_data_.drone_count = count;
 
+            // RENDER GATE: copy only entries at or above DISPLAY_MIN_THREAT into
+            // the render snapshot. Tracking is untouched — a NONE-threat drone
+            // stays alive in the scanner (history, trend, sweep-cycle counters,
+            // decay clocks, Mahalanobis, eviction priority), it just costs zero
+            // render time: no DisplayDroneEntry construction, no sort compares
+            // for it, no 100 Hz memcmp bytes and no gray row on screen.
+            //
+            // Safe either way: order is preserved by stable in-place
+            // compaction. Today get_tracked_drones() runs a selection sort on
+            // threat-first priority, so entries arrive threat-descending and
+            // every skip is already the tail — but the scan deliberately does
+            // NOT break early, so a future change to the scanner's ordering
+            // cannot silently hide a LOW+ drone behind a filtered one.
+            // Stack: ~8 bytes. O(count), count <= MAX_DISPLAYED_DRONES.
+            size_t shown = 0;
             for (size_t i = 0; i < count; ++i) {
-                refresh_display_data_.drones[i] = DisplayDroneEntry(refresh_drones_[i]);
+                if (refresh_drones_[i].threat_level < DISPLAY_MIN_THREAT) continue;
+                refresh_display_data_.drones[shown] = DisplayDroneEntry(refresh_drones_[i]);
+                ++shown;
             }
+            refresh_display_data_.drone_count = shown;
 
             // Sort by COMPOSITE priority descending — threat level first (CRITICAL
-            // → HIGH → MEDIUM → LOW → NONE), then RECENT signal strength (latest
+            // → HIGH → MEDIUM → LOW; NONE is gated out above so it never reaches
+            // this list), then RECENT signal strength (latest
             // sample, stronger first), then freshness (newer last_seen first,
             // wrap-safe). The key EXACTLY matches the scanner's eviction and
             // top-N selector (recent_strength()/has_higher_priority()): equal-
@@ -914,7 +932,10 @@ void DroneScannerUI::refresh_ui() noexcept {
             // priority order, so this mostly stabilizes; the sort is retained as
             // a defense against out-of-order buffers and MUST use the same key
             // so it never undoes the scanner's ranking.
-            for (size_t i = 1; i < count; ++i) {
+            // Bounded by `shown`, NOT `count`: slots [shown..count-1] were never
+            // written this tick (stale BSS from earlier ticks) and must not be
+            // pulled into the visible range by the sort.
+            for (size_t i = 1; i < shown; ++i) {
                 const DisplayDroneEntry key = refresh_display_data_.drones[i];
                 size_t j = i;
                 while (j > 0) {
@@ -937,7 +958,7 @@ void DroneScannerUI::refresh_ui() noexcept {
             // Cap to visible maximum — entries beyond this are never rendered.
             // Sort ensures highest-threat entries are at indices [0..capped-1].
             const uint16_t visible_cap = drone_display_.max_visible_drones();
-            if (visible_cap > 0 && count > visible_cap) {
+            if (visible_cap > 0 && shown > visible_cap) {
                 refresh_display_data_.drone_count = visible_cap;
             }
         }
