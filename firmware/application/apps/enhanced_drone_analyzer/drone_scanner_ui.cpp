@@ -1757,11 +1757,23 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
     // The center pitch is AUTO-DERIVED so each slice's notch is fully covered
     // by the neighbouring slice's active bins: step <= SWEEP_GAPLESS_STEP_MAX_HZ
     // (8,828,125 Hz) ⇒ every frequency is probed by >= 2 slices and no blind
-    // band exists anywhere. The user-facing sweep_step_freq is intentionally
-    // ignored: any other pitch either recreates the notches (step > 8.83 MHz)
-    // or wastes dwell for no benefit (step < 8.83 MHz).
+    // band exists anywhere. A user pitch SMALLER than the maximum only adds
+    // overlap (honored below via eff_step); a LARGER pitch would reopen the
+    // notches and stays clamped.
     static constexpr FreqHz MAX_STEP_HZ = SWEEP_GAPLESS_STEP_MAX_HZ;
-    uint16_t frames = (range + MAX_STEP_HZ - 1) / MAX_STEP_HZ;
+    // USER STEP HONORED (dense-only): a user pitch SMALLER than the gapless
+    // maximum only adds overlap (more dwell per Hz, no blind bands), so honor
+    // it — the SWP "Stp" knob now visibly changes sweep speed/resolution.
+    // A pitch LARGER than the maximum would reopen the 1.8 MHz DC-notch dead
+    // zones at every slice center (the ~10% blind-band bug the gapless pitch
+    // was built to kill), so it stays clamped to MAX_STEP_HZ. step == 0
+    // (unset/default file value) means "auto gapless".
+    // SRAM/Stack: 0B extra. Behavior for step >= MAX: bit-identical to before.
+    FreqHz eff_step = step;
+    if (eff_step == 0 || eff_step > MAX_STEP_HZ) {
+        eff_step = MAX_STEP_HZ;
+    }
+    uint16_t frames = (range + eff_step - 1) / eff_step;
     // SWEEP_MIN_SLICES floor: a single slice ALWAYS leaves its 23-bin DC notch
     // (center − 7 .. center + 16 bins ≈ 1.8 MHz) undetected — no neighbour
     // exists to cover it. With >= 2 slices the pitch drops below the gapless
@@ -1792,7 +1804,9 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
         pixel_step_hz = 1;
     }
 
-    (void)step;  // user pitch intentionally ignored (gapless auto-derivation)
+    // eff_step consumed above (dense-only user pitch + gapless clamp).
+    // NOTE: step_hz REMAINS the gapless-derived value — the user pitch only
+    // selects the slice count, never the blind-notch geometry.
 
     // First-slice placement — EDGE-BLIND FIX:
     // Slice detection coverage is ASYMMETRIC around the center (see the

@@ -2629,8 +2629,11 @@ void DroneScanner::apply_sweep_tracking(
 
         if (drone_found) {
             MahalanobisStatistics& stats = tracked_drones_[drone_idx].get_mahalanobis_stats();
+            // Validate the PEAK frequency (peak-vs-previous-peak drift), not
+            // the slice center: center jumps up to 8.8 MHz per retune and
+            // would collapse the stability feature on every step.
             if (!mahalanobis_detector_.validate(
-                peak_rssi, center_freq, stats, config_.mahalanobis_threshold_x10
+                peak_rssi, peak_freq, stats, config_.mahalanobis_threshold_x10
             )) {
                 mahalanobis_rejected = true;
             } else {
@@ -2885,6 +2888,13 @@ void DroneScanner::process_spectrum_sweep(
     // Step 3: Process each CFAR peak through shape analysis + tracking.
     // Only the strongest peak feeds the median filter (prevents cross-frequency
     // contamination of the per-frequency smoothing accumulator).
+    // SPECTRUM-DETECTION BYPASS: when the user disables spectrum shape
+    // detection (spectrum_detection_enabled=false), skip apply_shape_filters()
+    // here and track purely by RSSI threshold (enforced inside
+    // apply_sweep_tracking()). Previously the 12-step shape chain always ran
+    // in sweep, so OFF behaved identically to ON — the checkbox was dead in
+    // sweep while working in DB scan (process_spectrum_message gates there).
+    const bool bypass_shape = !config_.spectrum_detection_enabled;
     for (size_t p = 0; p < peak_count; ++p) {
         const size_t peak_index = cfar_peaks[p].bin;
 
@@ -2906,7 +2916,11 @@ void DroneScanner::process_spectrum_sweep(
         // identical in both modes by construction. Edge skip matches the
         // candidate-collection region (FFT_EDGE_SKIP_NARROW = 6 bins).
         int32_t shape_rssi = RSSI_MIN_DBM;
-        if (!analyze_spectrum_shape_impl(
+        if (bypass_shape) {
+            // RSSI-only path: same dBm conversion as the shape path's RSSI
+            // output, no width/sharpness/valley gates. Stack: 0B extra.
+            shape_rssi = spectrum_value_to_dbm(cfar_peaks[p].power, total_gain);
+        } else if (!analyze_spectrum_shape_impl(
                 spectrum, peak_index, cfar_peaks[p].power,
                 noise_floor, shape_rssi, FFT_EDGE_SKIP_NARROW, total_gain)) {
             continue;  // This peak rejected by shape filter — try next peak

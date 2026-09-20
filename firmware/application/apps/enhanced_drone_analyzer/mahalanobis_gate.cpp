@@ -32,14 +32,23 @@ bool MahalanobisDetector::validate(
         return true;
     }
 
-    // Use actual drift from history instead of degenerate center_freq comparison
+    // Use actual drift from history: validate the PEAK frequency against the
+    // previous peak (stored by update_statistics / apply_sweep_tracking), NOT
+    // the slice center. The old call passed center_freq here, so every sweep
+    // step (up to 8.8 MHz retune) looked like a giant drift and the stability
+    // feature collapsed — the gate either always-fired or (with the old
+    // unreachable threshold scale) never-fired.
     FeatureVector sample = extract_features(rssi, frequency, frequency, stats.last_tuned_frequency);
-    int32_t distance_sq = compute_distance_squared(sample, stats);
+    int32_t distance_sq_x10 = compute_distance_squared(sample, stats);
 
-    int32_t threshold_sq = static_cast<int32_t>(threshold_x10) * threshold_x10;
-    threshold_sq = (threshold_sq * Q_SCALE) / 100;
+    // Threshold is D² ×10 in raw feature units (compute_distance_squared
+    // returns D²×10). threshold_x10 is the user D² setting ×10, so the
+    // comparison needs no rescale: thr=40 (D²=4.0) rejects samples with
+    // D² > 4.0. Old code multiplied by Q_SCALE (×256) — at default 40 the
+    // gate needed D² > 1024 of max ~512, i.e. it could NEVER reject.
+    const int32_t threshold = static_cast<int32_t>(threshold_x10);
 
-    return distance_sq < threshold_sq;
+    return distance_sq_x10 < threshold;
 }
 
 void MahalanobisDetector::update_statistics(
@@ -61,38 +70,34 @@ void MahalanobisDetector::update_statistics(
         stats.sample_count = MAHALANOBIS_HISTORY_SIZE;
     }
 
+    // EXACT recompute from the 8-sample ring (replaces the broken incremental
+    // Welford: the old `variance += (delta*delta2)/(n-1)` ADDED the per-sample
+    // term to the accumulator instead of tracking M2, so variance grew without
+    // bound and D² decayed to 0 for long-tracked drones — the gate slowly
+    // became pass-through. n <= 8: 16 MACs, ~40 cycles, no drift.
+    // Stack: ~16B. No division by zero (n >= 1 guarded below).
+    const uint8_t n = (stats.sample_count < MAHALANOBIS_HISTORY_SIZE) ? stats.sample_count : MAHALANOBIS_HISTORY_SIZE;
     for (uint8_t i = 0; i < MAHALANOBIS_DIMENSIONS; ++i) {
-        const uint8_t n = (stats.sample_count < MAHALANOBIS_HISTORY_SIZE) ? stats.sample_count : MAHALANOBIS_HISTORY_SIZE;
-
-        if (n < 2) {
-            stats.mean[i] = sample[i];
-            continue;
+        int32_t sum = 0;
+        for (uint8_t s = 0; s < n; ++s) sum += stats.history[s][i];
+        const int16_t mean = (n > 0) ? static_cast<int16_t>(sum / n) : sample[i];
+        stats.mean[i] = mean;
+        int32_t var = 0;
+        for (uint8_t s = 0; s < n; ++s) {
+            const int32_t d = static_cast<int32_t>(stats.history[s][i]) - mean;
+            var += d * d;
         }
-
-        int32_t delta = sample[i] - stats.mean[i];
-        stats.mean[i] += delta / n;
-        int32_t delta2 = sample[i] - stats.mean[i];
-        stats.variance[i] += (delta * delta2) / (n - 1);
+        // variance[] is int16_t (struct layout fixed for BSS budget): clamp
+        // the pathological alternating-extremes case (~75k) to 32767 instead
+        // of wrapping negative (which would invert the distance term).
+        int32_t v = (n > 1) ? (var / (n - 1)) : 0;
+        if (v > 32767) v = 32767;
+        stats.variance[i] = static_cast<int16_t>(v);
     }
 
-    // Store current tuned frequency for next drift measurement
+    // Store current PEAK frequency for next drift measurement (validate()
+    // compares peak-vs-previous-peak; center_freq is kept for API compat).
     stats.last_tuned_frequency = tuned_freq;
-
-    // Variance decay: prevents unbounded accumulation while preserving
-    // statistical discrimination for long-tracked drones.
-    // Decay factor: 31/32 = 3.125% per event, every MAHALANOBIS_VARIANCE_DECAY_INTERVAL samples.
-    // After 256 samples: retention ≈ 88%. After 1024: ≈ 72%.
-    // Old behavior (15/16 every 16): After 256: ≈ 36%. After 1024: ≈ 13%.
-    // The gentler decay prevents the gate from becoming overly aggressive
-    // and falsely rejecting valid long-tracked drones.
-    if (stats.sample_count > 0 && (stats.sample_count % MAHALANOBIS_VARIANCE_DECAY_INTERVAL) == 0) {
-        for (uint8_t i = 0; i < MAHALANOBIS_DIMENSIONS; ++i) {
-            stats.variance[i] = (stats.variance[i] * 31) / 32;
-            if (stats.variance[i] < MAHALANOBIS_MIN_VARIANCE) {
-                stats.variance[i] = MAHALANOBIS_MIN_VARIANCE;
-            }
-        }
-    }
 }
 
 // ============================================================================
@@ -113,8 +118,7 @@ MahalanobisDetector::FeatureVector MahalanobisDetector::extract_features(
     );
 
     int32_t rssi_norm = rssi_clamped - MAHALANOBIS_RSSI_MIN_DBM;
-    rssi_norm = (rssi_norm * 255) / (MAHALANOBIS_RSSI_MAX_DBM - MAHALANOBIS_RSSI_MIN_DBM);
-    rssi_norm = q_multiply_safe(rssi_norm, Q_SCALE) / 255;
+    rssi_norm = (rssi_norm * 256) / (MAHALANOBIS_RSSI_MAX_DBM - MAHALANOBIS_RSSI_MIN_DBM);
     features[0] = static_cast<int16_t>(rssi_norm);
 
     // center_freq parameter is kept for API compatibility but unused for stability calculation
@@ -131,14 +135,16 @@ MahalanobisDetector::FeatureVector MahalanobisDetector::extract_features(
         }
     }
 
-    // Convert drift to stability metric (Q8.8)
-    // Stability = 256 when drift = 0 (no frequency change)
-    // Stability decreases linearly with drift, minimum = 0 when drift >= FREQUENCY_BANDWIDTH_HZ
-    int32_t stability = Q_SCALE;
+    // Convert drift to stability metric (raw 0..256 units, NOT Q8.8 — the
+    // statistics layer works in raw units since the recompute fix).
+    // Stability = 256 when drift = 0 (no frequency change); decreases
+    // linearly with drift, 0 when drift >= FREQUENCY_BANDWIDTH_HZ.
+    int32_t stability = 256;
     if (abs_diff < FREQUENCY_BANDWIDTH_HZ) {
-        int32_t bandwidth_delta = static_cast<int32_t>(FREQUENCY_BANDWIDTH_HZ - abs_diff);
-        stability = q_multiply_safe(bandwidth_delta, Q_SCALE);
-        stability = stability / FREQUENCY_BANDWIDTH_HZ;
+        stability = static_cast<int32_t>(
+            ((FREQUENCY_BANDWIDTH_HZ - abs_diff) * 256) / FREQUENCY_BANDWIDTH_HZ);
+    } else {
+        stability = 0;
     }
     features[1] = static_cast<int16_t>(stability);
 
@@ -149,31 +155,29 @@ int32_t MahalanobisDetector::compute_distance_squared(
     const FeatureVector& sample,
     const MahalanobisStatistics& stats
 ) const noexcept {
-    int32_t distance_sq = 0;
+    // Diagonal-covariance Mahalanobis distance in RAW feature units:
+    //   D² = Σ (diff² / var), returned ×10 for the threshold compare.
+    // diff ∈ [-256, 256] → diff² ≤ 65536 → ×10 = 655360 (fits int32).
+    // var floored at 64 (std ≈ 8 raw units ≈ 0.6 dB RSSI / 3% stability):
+    // tight enough to reject real outliers, loose enough that Q-noise
+    // (±1 unit from integer truncation in extract_features) never fires it.
+    // Old code mixed Q8.8 scaling (diff²/Q then ×Q/var with var clamped to
+    // 256..32767): a 32-unit RSSI jump scored D² ≈ 8 — invisible against the
+    // old threshold (≈1024 at default 40). Now it scores ≈160 vs thr 40.
+    int32_t distance_x10 = 0;
 
     for (uint8_t i = 0; i < MAHALANOBIS_DIMENSIONS; ++i) {
-        int32_t diff_Q = sample[i] - stats.mean[i];
-
-        int64_t diff_sq_64 = static_cast<int64_t>(diff_Q) * diff_Q;
-        diff_sq_64 /= Q_SCALE;
-
+        const int32_t diff = static_cast<int32_t>(sample[i]) - stats.mean[i];
         int32_t var = stats.variance[i];
-        if (var < MAHALANOBIS_MIN_VARIANCE) {
-            var = MAHALANOBIS_MIN_VARIANCE;
-        }
-        if (var > 32767) {
-            var = 32767;
+        if (var < 64) {
+            var = 64;
         }
 
-        int32_t diff_sq = static_cast<int32_t>(diff_sq_64);
-        int64_t term_64 = static_cast<int64_t>(diff_sq) * Q_SCALE;
-        term_64 /= var;
-
-        int32_t term = static_cast<int32_t>(term_64);
-        distance_sq += term;
+        const int32_t diff_sq = diff * diff;  // ≤ 65536, no overflow
+        distance_x10 += (diff_sq * 10) / var;
     }
 
-    return distance_sq;
+    return distance_x10;
 }
 
 } // namespace drone_analyzer

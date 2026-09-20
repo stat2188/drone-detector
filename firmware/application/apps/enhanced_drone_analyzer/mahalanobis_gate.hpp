@@ -88,6 +88,7 @@ public:
         stats.history = {};
         stats.sample_count = 0;
         stats.history_index = 0;
+        stats.last_tuned_frequency = 0;
     }
 
 private:
@@ -100,9 +101,9 @@ private:
      * @return Feature vector in Q8.8 format
      *
      * @note Frequency stability is computed as actual drift from previous measurement:
-     *       stability = Q_SCALE * (1 - abs(current_freq - last_freq) / FREQUENCY_BANDWIDTH_HZ)
-     *       This provides true discrimination instead of the degenerate case where
-     *       center_freq == tuned_freq (always returns Q_SCALE)
+     *       stability = 256 * (1 - abs(current_freq - last_freq) / FREQUENCY_BANDWIDTH_HZ)
+     *       (raw 0..256 units). This provides true discrimination instead of the
+     *       degenerate case where center_freq == tuned_freq (always 256).
      */
     [[nodiscard]] FeatureVector extract_features(
         RssiValue rssi,
@@ -112,13 +113,13 @@ private:
     ) const noexcept;
 
     /**
-     * @brief Compute squared Mahalanobis distance
-     * @param sample Sample feature vector (Q8.8)
-     * @param stats Statistics (mean and variance in Q8.8)
-     * @return D²_M in Q8.8 format
+     * @brief Compute squared Mahalanobis distance (diagonal covariance)
+     * @param sample Sample feature vector (raw 0..256 units)
+     * @param stats Statistics (mean and variance in raw units squared)
+     * @return D²_M ×10 (e.g., 160 = 16.0) in raw feature units
      *
-     * @note Clamps variance to MAHALANOBIS_MIN_VARIANCE to avoid division by 0
-     * @note Uses overflow-safe arithmetic to prevent integer overflow in extreme cases
+     * @note Variance floored at 64 (std 8 units) to avoid division by 0.
+     * @note Uses overflow-safe arithmetic (diff²×10 <= 655360 fits int32).
      */
     [[nodiscard]] int32_t compute_distance_squared(
         const FeatureVector& sample,

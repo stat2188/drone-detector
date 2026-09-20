@@ -1329,16 +1329,19 @@ constexpr uint8_t MAHALANOBIS_Q_FORMAT = 8;
 constexpr int32_t MAHALANOBIS_Q_SCALE = 256;
 
 /**
- * @brief Minimum variance for clamping (1.0 in Q8.8 = 256)
+ * @brief Minimum variance for clamping (LEGACY Q8.8 constant, kept for API compat)
+ * @note The statistics layer now works in raw feature units (0..256); the
+ *       live floor is 64 inside compute_distance_squared(). This constant is
+ *       no longer consumed — do NOT reintroduce it into the distance path
+ *       (256 raw units = std 16 = a dead gate).
  */
 constexpr int32_t MAHALANOBIS_MIN_VARIANCE = 256;
 
 /**
- * @brief Variance decay interval (samples between decay events)
- * @note Decay occurs every N samples with factor 31/32 (3.125% per event)
- *       After 256 samples: retention ≈ 88% (vs old 36% with 15/16 every 16)
- *       After 1024 samples: retention ≈ 72% (vs old 13%)
- *       This prevents overly aggressive gate tightening during long scans.
+ * @brief Variance decay interval (UNUSED since exact-recompute fix, kept for compat)
+ * @note update_statistics() recomputes mean/variance exactly from the 8-sample
+ *       ring on every call, so there is nothing to decay. Left defined so
+ *       external references keep compiling.
  */
 constexpr uint8_t MAHALANOBIS_VARIANCE_DECAY_INTERVAL = 64;
 

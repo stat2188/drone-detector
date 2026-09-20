@@ -414,54 +414,54 @@ public:
                 break;
             }
             case CFARMode::OS: {
-                // OS-CFAR (Ordered Statistic): count reference-cell values into a
-                // 256-level histogram, then select the k-th order statistic.
-                // Bit-exact vs. the previous collect + insertion sort: same k-th
-                // value, but O(256) selection instead of O(n²) sort per CUT bin.
-                // Stack: ~256 bytes (histogram) + locals ≈ 264B. Must stay < 512B.
-                std::array<uint8_t, 256> hist{};
+                // OS-CFAR (Ordered Statistic): collect <= 2*ref reference cells
+                // into a 128B local buffer, then kth-select via insertion sort
+                // (O(n^2), n <= 128; typical ref=32 -> 64 cells -> ~2k ops).
+                // Replaces the old 256B histogram (256B memset + 256B scan per
+                // CUT): HALF the stack, no per-CUT memset.
+                // Stack: cells 128B + locals ~24B = ~152B < 512B cap.
+                uint8_t cells[CFAR_REF_CELLS_MAX * 2];
                 size_t ref_idx = 0;
 
-                // Collect left window cells into histogram
+                // Collect left window cells (values 0-255, order restored by sort)
                 for (int32_t k = static_cast<int32_t>(cbin) - total_span;
                      k < static_cast<int32_t>(cbin) - static_cast<int32_t>(guard_cells) &&
                      ref_idx < CFAR_REF_CELLS_MAX * 2; ++k) {
                     if (k >= 0 && k < static_cast<int32_t>(bin_count)) {
                         if (k >= static_cast<int32_t>(FFT_DC_SPIKE_START) &&
                             k < static_cast<int32_t>(FFT_DC_SPIKE_END)) continue;
-                        hist[spectrum[k]]++;
-                        ++ref_idx;
+                        cells[ref_idx++] = spectrum[k];
                     }
                 }
-                // Collect right window cells into histogram
+                // Collect right window cells (values 0-255, order restored by sort)
                 for (int32_t k = static_cast<int32_t>(cbin) + static_cast<int32_t>(guard_cells) + 1;
                      k <= static_cast<int32_t>(cbin) + total_span &&
                      ref_idx < CFAR_REF_CELLS_MAX * 2; ++k) {
                     if (k >= 0 && k < static_cast<int32_t>(bin_count)) {
                         if (k >= static_cast<int32_t>(FFT_DC_SPIKE_START) &&
                             k < static_cast<int32_t>(FFT_DC_SPIKE_END)) continue;
-                        hist[spectrum[k]]++;
-                        ++ref_idx;
+                        cells[ref_idx++] = spectrum[k];
                     }
                 }
 
                 if (ref_idx == 0) return false;
 
-                // Select k-th order statistic: k = (N_ref * os_k_percent) / 100.
-                // Smallest value v whose cumulative count (values ≤ v) exceeds
-                // k_safe equals sorted_cells[k_safe] — bit-exact with old code.
+                // kth-select via insertion sort (ascending). n <= 128, and the
+                // collected values ARE the reference cells, so cells[k_safe]
+                // is exactly the k-th order statistic — bit-exact vs histogram.
+                for (size_t i = 1; i < ref_idx; ++i) {
+                    const uint8_t key = cells[i];
+                    size_t j = i;
+                    while (j > 0 && cells[j - 1] > key) {
+                        cells[j] = cells[j - 1];
+                        --j;
+                    }
+                    cells[j] = key;
+                }
+                // k-th order statistic: k = (N_ref * os_k_percent) / 100.
                 const size_t k_idx = (ref_idx * os_k_percent) / 100;
                 const size_t k_safe = (k_idx < ref_idx) ? k_idx : ref_idx - 1;
-                size_t cumulative = 0;
-                uint8_t selected = 0;
-                for (size_t v = 0; v < 256; ++v) {
-                    cumulative += hist[v];
-                    if (cumulative > k_safe) {
-                        selected = static_cast<uint8_t>(v);
-                        break;
-                    }
-                }
-                noise_estimate = static_cast<int32_t>(selected);
+                noise_estimate = static_cast<int32_t>(cells[k_safe]);
                 break;
             }
             case CFARMode::VI: {
