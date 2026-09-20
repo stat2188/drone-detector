@@ -21,11 +21,11 @@ static FreqHz read_mhz_field(const ui::NumberField& field) noexcept {
 }
 
 // ============================================================================
-// RangeNameSelector — zero-heap replacement for an 18-entry OptionsField
+// RangeNameSelector — zero-heap replacement for a full RANGE_NAMES OptionsField
 // ============================================================================
 // OptionsField stores its options as std::vector<std::pair<std::string,int>>
-// (~1.1 KB of heap for RANGE_NAMES, plus a second transient vector inside
-// set_options()). RANGE_NAMES is a compile-time Flash table, so the selector
+// (~36 B of heap per entry — for the current table size that is >1 KB, plus a
+// second transient vector inside set_options()). RANGE_NAMES is a compile-time Flash table, so the selector
 // needs only one index: the label string is resolved at paint time via
 // range_name_to_string(). Value space IS the index space — set_by_value() /
 // on_change() keep the exact OptionsField API (size_t, int32_t), so the

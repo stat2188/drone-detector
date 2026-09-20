@@ -63,8 +63,9 @@ struct DetRangeWindowClamp {
 /**
  * @brief Zer0-heap selector over the Flash-resident RANGE_NAMES table.
  *
- * Drop-in replacement for an OptionsField whose options vector would cost
- * ~1.1 KB of heap (std::vector + 18 std::string slots) — the exact
+ * Drop-in replacement for an OptionsField whose options vector costs heap
+ * proportional to the RANGE_NAMES table size (~36 B per entry — >1 KB at the
+ * current table size, std::vector + N std::string slots) — the exact
  * allocation that starved the SWP-tab frequency keypad after the
  * detection-range-labels commit (23bc0a40).
  *
@@ -118,7 +119,7 @@ private:
  * @note SRAM: ~900 bytes heap (24 widgets × ~32 bytes each + labels
  *       + 1 OptionsField + RangeNameSelector). The range-label selector is
  *       zero-heap (Flash strings) — it replaced a second OptionsField whose
- *       18-entry options vector cost ~1.1 KB of heap.
+ *       options vector cost >1 KB of heap at the current RANGE_NAMES size.
  */
 class SweepWindowView : public ui::View {
 public:
@@ -282,9 +283,9 @@ public:
         }
     };
     // Zero-heap selector: draws the label straight from the Flash-resident
-    // RANGE_NAMES table — no options vector, no std::string (saves ~1.1 KB
-    // of heap vs an OptionsField with 18 entries; that vector was the
-    // allocation that starved the SWP-tab frequency keypad).
+    // RANGE_NAMES table — no options vector, no std::string (saves >1 KB
+    // of heap vs an OptionsField over the full RANGE_NAMES table; that
+    // vector was the allocation that starved the SWP-tab frequency keypad).
     RangeNameSelector field_label_name_{{UI_POS_X(7), UI_POS_Y(9)}, 10};
     uint8_t label_slot_{0};  // currently edited range slot (0-4)
 };
