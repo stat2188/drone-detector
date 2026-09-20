@@ -83,12 +83,12 @@ struct ScanConfig {
     uint8_t spectrum_symmetry{DEFAULT_SPECTRUM_SYMMETRY};              // Left/right width symmetry % (reject asymmetric noise)
 
     // Mahalanobis Gate Filter
-    bool mahalanobis_enabled{true};                                     // FPV-OPTIMIZED: ON by default (analog FM outlier rejection)
+    bool mahalanobis_enabled{false};                                    // USER DEFAULT: OFF (was true, FPV-optimized)
     uint8_t mahalanobis_threshold_x10{DEFAULT_MAHALOBIS_THRESHOLD_X10};  // Mahalanobis threshold ×10
 
     // New anti-false-positive features
     int32_t neighbor_margin_db{DEFAULT_NEIGHBOR_MARGIN_DB};  // 0=disabled, 2=FPV default
-    bool rssi_variance_enabled{true};                         // FPV-OPTIMIZED: ON by default (analog FM RSSI stability)
+    bool rssi_variance_enabled{false};                        // USER DEFAULT: OFF (was true, analog FM RSSI stability)
     uint8_t confirm_count{DEFAULT_CONFIRM_COUNT};             // Configurable confirm count
     uint8_t miss_tolerance{DEFAULT_MISS_TOLERANCE};           // Consecutive misses before breaking lock (independent of confirm_count)
 

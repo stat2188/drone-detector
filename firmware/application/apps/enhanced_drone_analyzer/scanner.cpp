@@ -116,7 +116,7 @@ ScanConfig::ScanConfig() noexcept
     , start_frequency(MIN_FREQUENCY_HZ)
     , end_frequency(MAX_FREQUENCY_HZ)
     , scan_interval_ms(SCAN_CYCLE_INTERVAL_MS)
-    , rssi_threshold_dbm(RSSI_DETECTION_THRESHOLD_DBM)
+    , rssi_threshold_dbm(DEFAULT_ALERT_RSSI_THRESHOLD_DBM)
     , stale_timeout_ms(DRONE_REMOVAL_TIMEOUT_MS)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
@@ -135,11 +135,11 @@ ScanConfig::ScanConfig() noexcept
     , spectrum_flatness(DEFAULT_SPECTRUM_FLATNESS)
     , spectrum_symmetry(DEFAULT_SPECTRUM_SYMMETRY)
     , neighbor_margin_db(DEFAULT_NEIGHBOR_MARGIN_DB)
-    , rssi_variance_enabled(true)
+    , rssi_variance_enabled(false)
     , confirm_count(DEFAULT_CONFIRM_COUNT)
     , sensitive_mode(false) {
     // sweep2/3/4 fields use in-class defaults: disabled
-    // mahalanobis_enabled uses in-class default (true, FPV-optimized)
+    // mahalanobis_enabled uses in-class default (false, USER DEFAULT)
 }
 
 ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
@@ -147,7 +147,7 @@ ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
     , start_frequency(start)
     , end_frequency(end)
     , scan_interval_ms(SCAN_CYCLE_INTERVAL_MS)
-    , rssi_threshold_dbm(RSSI_DETECTION_THRESHOLD_DBM)
+    , rssi_threshold_dbm(DEFAULT_ALERT_RSSI_THRESHOLD_DBM)
     , stale_timeout_ms(DRONE_REMOVAL_TIMEOUT_MS)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
@@ -166,11 +166,11 @@ ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
     , spectrum_flatness(DEFAULT_SPECTRUM_FLATNESS)
     , spectrum_symmetry(DEFAULT_SPECTRUM_SYMMETRY)
     , neighbor_margin_db(DEFAULT_NEIGHBOR_MARGIN_DB)
-    , rssi_variance_enabled(true)
+    , rssi_variance_enabled(false)
     , confirm_count(DEFAULT_CONFIRM_COUNT)
     , sensitive_mode(false) {
     // sweep2/3/4 fields use in-class defaults: disabled
-    // mahalanobis_enabled uses in-class default (true, FPV-optimized)
+    // mahalanobis_enabled uses in-class default (false, USER DEFAULT)
 }
 
 

@@ -272,6 +272,24 @@ constexpr int32_t RSSI_MAX_DBM = -20;
 constexpr int32_t RSSI_DETECTION_THRESHOLD_DBM = -95;
 
 /**
+ * @brief Default UI sensitivity (percent, 0-100) — the "Sens" control
+ * @note USER DEFAULT: 85.
+ * @note Mapping (single source of truth, mirrored by settings_manager.cpp
+ *       parse/derive code): alert_rssi_threshold_dbm = -20 - sensitivity.
+ */
+constexpr uint8_t DEFAULT_SCAN_SENSITIVITY = 85;
+
+/**
+ * @brief Detection RSSI threshold (dBm) matching DEFAULT_SCAN_SENSITIVITY
+ * @note = -20 - 85 = -105 dBm. SettingsStruct (settings_manager.cpp) derives
+ *       the identical value for alert_rssi_threshold_dbm, and ScanConfig uses
+ *       this as the rssi_threshold_dbm default — so a fresh install (no
+ *       settings file) behaves exactly like the persisted defaults.
+ */
+constexpr int32_t DEFAULT_ALERT_RSSI_THRESHOLD_DBM =
+    -20 - static_cast<int32_t>(DEFAULT_SCAN_SENSITIVITY);
+
+/**
  * @brief RSSI threshold for high threat (dBm)
  * @note With default gains (LNA=32 + VGA=32 + RF_AMP=14 = 78 dB),
  *       max RSSI = (255-255)/5 - 78 = -78 dBm. Threshold must be reachable.
@@ -1072,17 +1090,19 @@ enum class CFARMode : uint8_t {
 };
 
 /**
- * @brief Default CFAR mode (FPV-OPTIMIZED: OS = Ordered Statistic)
- * @note OS-CFAR ranks reference cells and picks the k-th order statistic as
- *       the noise estimate. Best for MULTI-TARGET environments where multiple
- *       FPV drones or drones + their RC controllers are active simultaneously.
- * @note GO-CFAR (previous default) has higher PFA at clutter edges (sweep
- *       slice boundaries) and masks weak targets near strong ones.
- * @note OS-CFAR is more robust against target masking — FPV swarm detection.
- * @note Cost: requires sorting 32 reference cells per CUT (~32×log₂32 = 160 ops).
- *       Still fits within the 1.6s sweep cycle budget.
+ * @brief Default CFAR mode (USER DEFAULT: OFF — fixed threshold detection)
+ * @note Fixed-threshold mode collects all bins above noise_floor + margin,
+ *       sorts by power and takes the top N — maximum sensitivity for weak
+ *       analog FPV carriers (CFAR's CE-variance robustness is not needed when
+ *       the shape filters + Mahalanobis/variance post-filters are disabled by
+ *       default too).
+ * @note OS-CFAR (previous default, FPV-optimized) ranks reference cells and
+ *       picks the k-th order statistic as the noise estimate — best for
+ *       MULTI-TARGET environments; kept available in the settings UI as
+ *       CFARMode::OS. Cost of OS: sorting 32 reference cells per CUT
+ *       (~32×log₂32 = 160 ops), fits the 1.6s sweep cycle budget.
  */
-constexpr CFARMode DEFAULT_CFAR_MODE = CFARMode::OS;
+constexpr CFARMode DEFAULT_CFAR_MODE = CFARMode::OFF;
 
 /**
  * @brief CFAR reference window size (number of reference cells)

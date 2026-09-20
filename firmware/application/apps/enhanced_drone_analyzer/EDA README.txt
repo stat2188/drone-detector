@@ -1142,7 +1142,8 @@ Spectrum Shape Defaults:
   DEFAULT_SPECTRUM_SYMMETRY       = 0     (disabled)
 
 CFAR Defaults:
-  DEFAULT_CFAR_MODE           = CFARMode::OS
+  DEFAULT_CFAR_MODE           = CFARMode::OFF (USER DEFAULT; fixed threshold.
+                                OS was the previous FPV-optimized default)
   DEFAULT_CFAR_REF_CELLS      = 32
   DEFAULT_CFAR_GUARD_CELLS    = 3
   DEFAULT_CFAR_THRESHOLD_X10  = 60 (6.0 ≈ 1.2 dB)
