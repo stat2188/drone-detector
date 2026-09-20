@@ -372,8 +372,54 @@ struct TrackedDrone {
      * @param freq Actual detected RF frequency from FFT peak (Hz)
      * @note Stored separately from `frequency` (the tune/DB key) so the
      *       tracking identity stays stable while the display value is exact.
+     * @warning MRG ANTI-REWRITE RULE: this must only be called for the
+     *          STRONGEST observation of the record. Prefer
+     *          anchor_signature(), which applies that rule for both the key
+     *          and the display value at once — writing it from every weak
+     *          detection makes the UI frequency jitter and lets a train of
+     *          weak samples walk the record across the whole match radius.
      */
     void set_measured_frequency(FreqHz freq) noexcept { measured_frequency_ = freq; }
+
+    /**
+     * @brief True when an observation is STRICTLY stronger than the record peak
+     * @param observed_rssi RSSI of the observation (dBm)
+     * @return true when this observation is a new record peak for the entry
+     * @note The reference is `rssi` — the monotonic display peak.
+     *       update_rssi() only ever RAISES it (weaker detections never lower
+     *       it), so it is an exact "strongest observation so far" mark.
+     * @note WEAKER detections must never move the record's signature (see
+     *       anchor_signature()): a train of weak samples inside the MRG radius
+     *       would otherwise walk the tracking key away from the real emitter
+     *       and make the displayed frequency jitter frame to frame.
+     * @note Stack: 0 B. Flash: ~8 bytes (single 16-bit compare).
+     */
+    [[nodiscard]] bool is_record_peak(RssiValue observed_rssi) const noexcept {
+        return observed_rssi > rssi;
+    }
+
+    /**
+     * @brief Pin this entry's signature (matching key + displayed frequency)
+     *        onto ONE observation
+     * @param freq Match/tracking frequency of that observation (Hz)
+     * @param measured_freq Bin-corrected frequency to display for that same
+     *                      observation, 0 = none available → the key itself is
+     *                      shown (get_display_frequency() fallback)
+     * @pre The caller ruled the observation in via is_record_peak() BEFORE
+     *      update_rssi() folded the same sample into the record: the
+     *      comparison there is against `rssi`, which update_rssi() raises.
+     * @note MRG ANTI-REWRITE RULE: only the strongest observation may redefine
+     *       WHO the record describes. Weaker repeats still refresh history,
+     *       trend, decay clocks and last_seen (via update_rssi()/observe_rssi())
+     *       — they simply keep the strongest signature.
+     * @note Both fields are written together so the displayed frequency can
+     *       never describe a different observation than the matching key.
+     * @note Stack: 0 B. Flash: ~24 bytes.
+     */
+    void anchor_signature(FreqHz freq, FreqHz measured_freq = 0) noexcept {
+        frequency = freq;
+        measured_frequency_ = (measured_freq != 0) ? measured_freq : freq;
+    }
 
     /**
      * @brief Get the frequency to display
@@ -528,21 +574,23 @@ struct TrackedDrone {
     /**
      * @brief Merge another tracked drone into this one (duplicate consolidation)
      * @param other Entry being absorbed (the caller drops it right afterwards)
-     * @note Called when two tracker entries lie within DRONE_FREQ_MATCH_RADIUS_HZ
-     *       of the same detection: the HIGHEST-THREAT entry survives and absorbs
-     *       the duplicate (ties broken by oldest created_time_), so its RSSI
-     *       history, sweep cycle peaks and decay state continue as ONE continuous
-     *       stream — the close-frequency detection then updates the survivor
-     *       exactly as if it had always been the only ("current") entry for
-     *       that emitter. Lower-severity threats NEVER displace higher-severity
-     *       ones — CRITICAL always survives over LOW regardless of age.
+     * @note Called when two tracker entries lie within the MRG radius of the
+     *       ANCHOR of the same detection (the strongest in-radius entry): the
+     *       anchor absorbs the duplicates, so its RSSI history, sweep cycle
+     *       peaks and decay state continue as ONE continuous stream — the
+     *       close-frequency detection then updates the anchor exactly as if
+     *       it had always been the only ("current") entry for that emitter.
+     *       Lower-severity threats NEVER displace higher-severity ones —
+     *       CRITICAL always survives over LOW regardless of age or strength
+     *       (anchor order: threat, then recent_strength, then oldest).
+     *       See DroneScanner::match_and_consolidate_drone_internal().
      * @note Fixed-size merge: at most 6 + 6 = 12 history samples, the newest
      *       6 (by timestamp) survive. Stack: ~128 bytes. No heap. No loops
      *       longer than 12 iterations (insertion sort, max 66 comparisons).
      * @note Trend continuity: last_rssi_ is restored from the merged history's
      *       newest sample so the next update_rssi() comparison is against the
      *       correct chronological predecessor. Trend hysteresis is adopted from
-     *       the absorbed drone when the survivor's cached_trend_ is UNKNOWN
+     *       the absorbed drone when the anchor's cached_trend_ is UNKNOWN
      *       (newly created drone), preventing trend resets after merges.
      * @pre this != &other
      * @pre Caller holds DATA_MUTEX, or has exclusive tracker access

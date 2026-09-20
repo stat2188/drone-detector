@@ -929,17 +929,27 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         // Reuse the index returned by update_tracked_drone_internal (via out_index)
         // instead of a second find_nearest_drone_internal() O(n) search.
         // out_index is set on every SUCCESS path (existing drone, new drone, and
-        // the RSSI-variance rejection early return) at scanner.cpp:1037/1072.
+        // the RSSI-variance rejection early return).
         // When should_update is false (confirm count still accumulating), no drone
         // exists and every consumer below is gated on should_update, so the stale
         // SIZE_MAX index is never dereferenced.
         size_t drone_idx = SIZE_MAX;
         if (should_update) {
+            // Bin-corrected display frequency of THIS detection (0 when the
+            // shape step produced none). The tracker stores it only when the
+            // sample is a record peak, so a weak frame can no longer overwrite
+            // the record's signature — that used to be an unconditional
+            // set_measured_frequency() right after this call.
+            const FreqHz measured_freq =
+                (has_shape_result && shape_result.count > 0)
+                    ? shape_result.detections[0].frequency
+                    : 0;
             const ErrorCode err = update_tracked_drone_internal(
                 frequency,
                 effective_rssi,
                 now,
-                &drone_idx
+                &drone_idx,
+                measured_freq
             );
             if (err != ErrorCode::SUCCESS) {
                 return err;
@@ -952,14 +962,11 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             tracked_drones_[drone_idx].rssi_decrease_counter_ = 0;
         }
 
-        // Store bin-corrected frequency for display (primary detection).
-        // NOTE: lookup key (`frequency`) stays the center — identity, DB type,
-        // confirm/lock state must remain exact on the tune frequency. The
-        // measured value only refines what the UI shows.
-        if (has_shape_result && shape_result.count > 0 && should_update && drone_idx < tracked_count_) {
-            tracked_drones_[drone_idx].set_measured_frequency(
-                shape_result.detections[0].frequency);
-        }
+        // NOTE: the bin-corrected display frequency for the primary detection is
+        // stored by update_tracked_drone_internal(..., measured_freq) above —
+        // and only when that detection is a record peak. The lookup key
+        // (`frequency`) stays the tune center: identity, DB type, confirm/lock
+        // state must remain exact on the tune frequency.
 
         // Update max RSSI statistic
         if (effective_rssi > statistics_.max_rssi_dbm) {
@@ -1053,38 +1060,53 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
     FreqHz frequency,
     RssiValue rssi,
     SystemTime timestamp,
-    size_t* out_index
+    size_t* out_index,
+    FreqHz measured_freq
 ) noexcept {
     if (out_index != nullptr) *out_index = SIZE_MAX;
-    // Nearest-match lookup WITH duplicate consolidation ("a close frequency
-    // corrects the tracked entry"): a detection landing inside the match
-    // radius updates the nearest existing tracker instead of spawning a
-    // duplicate, and ALL other in-radius entries are absorbed into the
-    // survivor (highest threat level, ties → oldest) — their RSSI history,
-    // sweep cycle peaks and trend state merge, so the trend applies as if
-    // every detection had always hit one ("current") entry. Lower-severity
-    // threats NEVER displace higher-severity ones during merge. The returned index is the post-compaction
-    // survivor; the re-centering below then pins it onto the latest
-    // observation so slow RF drift (FHSS wander, TX/RX offset, 78 kHz
-    // FFT-bin quantization, overlapping sweep windows) can never walk
-    // outside the radius.
-    // NOTE: in normal (DB scan) mode `frequency` IS the tune center, so
-    // the re-centering below is a no-op there — the key stays pinned to
-    // the database channel; only sweep-mode bin measurements drift it.
+    // Nearest-match lookup WITH duplicate consolidation ("MRG — merge the
+    // radius around the STRONG entry"): a detection landing inside the match
+    // radius updates an existing tracker instead of spawning a duplicate, and
+    // the strongest in-radius entry (the ANCHOR: threat, then recent_strength,
+    // then oldest) absorbs every entry lying within the radius measured AROUND
+    // IT. Their RSSI history, sweep cycle peaks and trend state merge, so the
+    // trend applies as if every detection had always hit one ("current")
+    // entry. Lower-severity threats NEVER displace higher-severity ones during
+    // merge. The returned index is the post-compaction ANCHOR; the signature
+    // anchor below then pins the record onto its STRONGEST observation, so slow
+    // RF drift (FHSS wander, TX/RX offset, 78 kHz FFT-bin quantization,
+    // overlapping sweep windows) is absorbed by the match radius without
+    // letting weak samples rewrite the record's identity.
+    // NOTE: in normal (DB scan) mode `frequency` IS the tune center, so the
+    // anchor below only fires when a frame STRICTLY exceeds the record peak —
+    // the key stays pinned to the database channel; only sweep-mode bin
+    // measurements can move it, and only on a record peak.
     ErrorResult<size_t> index_result = match_and_consolidate_drone_internal(
         frequency, static_cast<FreqHz>(config_.freq_match_radius_mhz) * 1'000'000ULL);
+
+    // Read-and-clear IMMEDIATELY after the merge: the flag must not outlive this
+    // call. The RSSI-variance gate below can return early (before the merge
+    // guard reads it), so clearing later would leak a stale "merge happened"
+    // into the NEXT detection and block its legitimate threat downgrade.
+    const bool merge_absorbed = last_merge_absorbed_;
+    last_merge_absorbed_ = false;
 
     if (index_result.has_value()) {
         // Existing drone — update and alert on threat increase
         size_t index = index_result.value();
         if (out_index != nullptr) *out_index = index;
 
-        // Re-center the survivor's tracking key onto the latest observation
-        // (already consolidated above) and refresh the display frequency.
-        if (tracked_drones_[index].frequency != frequency) {
-            tracked_drones_[index].frequency = frequency;
+        // MRG ANTI-REWRITE RULE: only a STRICTLY STRONGER observation may
+        // redefine the record's signature — the matching key AND the displayed
+        // frequency, written together so the display can never describe a
+        // different observation than the key. Previously EVERY in-radius
+        // detection rewrote both fields, so a train of weak samples inside the
+        // radius walked the record away from the real emitter and the UI
+        // frequency jittered frame to frame ("переписывание слабой сигнатурой").
+        // Stack: 0 B (one 16-bit compare + one 64-bit store pair).
+        if (tracked_drones_[index].is_record_peak(rssi)) {
+            tracked_drones_[index].anchor_signature(frequency, measured_freq);
         }
-        tracked_drones_[index].set_measured_frequency(frequency);
         
         // RSSI variance rejection: noise has chaotic fluctuations
         // Real drones have stable signal (variance < 25), noise > 100
@@ -1107,11 +1129,12 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
             tracked_drones_[index].drone_type = determine_drone_type_internal(frequency);
         }
 
-        // After merge, absorb_from() correctly set threat = max(survivor, absorbed).
+        // After merge, absorb_from() correctly set threat = max(anchor, absorbed).
         // Capture this BEFORE update_rssi() reclassifies from current RSSI.
+        // merge_absorbed was read-and-cleared right after the match call, so a
+        // plain in-radius update (no absorption) never enters this guard.
         const ThreatLevel post_merge_threat = tracked_drones_[index].get_threat();
-        const bool merge_occurred = last_merge_absorbed_;
-        last_merge_absorbed_ = false;
+        const bool merge_occurred = merge_absorbed;
 
         ThreatLevel old_threat = post_merge_threat;
         tracked_drones_[index].update_rssi(rssi, timestamp, ThreatThresholds{
@@ -1146,6 +1169,14 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
             return add_result;
         }
         if (out_index != nullptr) *out_index = new_index;
+        // The creation observation IS this record's strongest observation by
+        // definition (the record did not exist before it), so its bin-corrected
+        // display frequency may be stored immediately — this is NOT a rewrite by
+        // a weaker signature. The matching key stays the tune frequency, exactly
+        // as before the anchor rule (identity/lock/DB type stay on the centre).
+        if (measured_freq != 0) {
+            tracked_drones_[new_index].set_measured_frequency(measured_freq);
+        }
         // First detection: mark as increasing to prevent immediate decay
         // update_rssi() already sets last_rssi_ to the current RSSI
         tracked_drones_[new_index].rssi_increased_ = true;
@@ -1191,14 +1222,16 @@ ErrorResult<size_t> DroneScanner::match_and_consolidate_drone_internal(
     FreqHz frequency,
     FreqHz radius_hz
 ) noexcept {
-    // Stack: ~28 bytes (bool in_radius[20] + scalars). O(n²) worst case with
-    // n <= 20 (190 pair checks); the absorb path is rare (duplicate healing),
-    // the common path is a single O(n) scan with zero absorptions.
+    // Stack: ~36 bytes (bool in_radius[MAX_TRACKED_DRONES] + scalars).
+    // O(n) per pass with n <= MAX_TRACKED_DRONES; the absorb path is rare
+    // (duplicate healing), the common path is a single O(n) scan with zero
+    // absorptions.
     if (tracked_count_ == 0) {
         return ErrorResult<size_t>::failure(ErrorCode::INVALID_PARAMETER);
     }
 
-    // Pass 1: mark every entry within the match radius of the detection.
+    // Pass 1: mark every entry within the match radius of the DETECTION — the
+    // candidate set the detection could belong to.
     // FreqHz is uint64_t — unsigned difference is computed by branch, never
     // by signed cast, so no underflow is possible.
     bool in_radius[MAX_TRACKED_DRONES];
@@ -1218,50 +1251,93 @@ ErrorResult<size_t> DroneScanner::match_and_consolidate_drone_internal(
         return ErrorResult<size_t>::failure(ErrorCode::INVALID_PARAMETER);
     }
 
-    // Pass 2: survivor = highest threat_level in-radius entry. Higher-severity
-    // threats must NOT be absorbed into lower-severity ones — a CRITICAL drone
-    // must survive over a LOW drone regardless of age. Ties broken by oldest
-    // created_time_ (longest trend history), then lowest index.
-    size_t survivor = 0;
+    // Pass 2: pick the ANCHOR — "the strong one" among the candidates.
+    // Ordering keys:
+    //   1) threat_level descending — the documented safety invariant: a
+    //      higher-severity threat must never be absorbed into a lower-severity
+    //      one (CRITICAL survives over LOW regardless of age or strength).
+    //   2) recent_strength() descending — among equal threats the STRONGEST
+    //      candidate wins, so the merged record keeps the strongest signature.
+    //      Same key as has_higher_priority()/eviction: ONE convention.
+    //   3) oldest created_time_ — longest trend history.
+    //   4) lowest index — deterministic tie-break.
+    // Freshness is deliberately NOT a key here (unlike has_higher_priority()):
+    // the merge is destructive, so the newest sample must never decide which
+    // history survives.
+    size_t anchor = 0;
     ThreatLevel best_threat = ThreatLevel::NONE;
+    RssiValue best_strength = 0;
     SystemTime oldest_created = 0;
-    bool survivor_set = false;
+    bool anchor_set = false;
     for (size_t i = 0; i < tracked_count_; ++i) {
         if (!in_radius[i]) {
             continue;
         }
         const ThreatLevel threat = tracked_drones_[i].threat_level;
+        const RssiValue strength = recent_strength(tracked_drones_[i]);
         const SystemTime created = tracked_drones_[i].created_time_;
-        if (!survivor_set
-            || static_cast<uint8_t>(threat) > static_cast<uint8_t>(best_threat)
-            || (threat == best_threat && created < oldest_created)) {
-            survivor = i;
-            best_threat = threat;
-            oldest_created = created;
-            survivor_set = true;
+        bool outranks = false;
+        if (!anchor_set) {
+            outranks = true;
+        } else if (threat != best_threat) {
+            outranks = static_cast<uint8_t>(threat) > static_cast<uint8_t>(best_threat);
+        } else if (strength != best_strength) {
+            outranks = strength > best_strength;
+        } else {
+            outranks = created < oldest_created;
         }
+        if (!outranks) {
+            continue;
+        }
+        anchor = i;
+        best_threat = threat;
+        best_strength = strength;
+        oldest_created = created;
+        anchor_set = true;
     }
 
-    // Pass 3: absorb every OTHER in-radius entry into the survivor. Each
-    // duplicate's RSSI history, cycle peaks and decay state merge into the
-    // survivor, so the trend sees one continuous sample stream.
-    last_merge_absorbed_ = (in_radius_count > 1);
+    // Pass 3: the merge radius is measured AROUND THE ANCHOR, not around the
+    // detection. A candidate that is near the detection but FARTHER than
+    // radius_hz from the strongest entry is an INDEPENDENT emitter and must
+    // survive as its own record — otherwise one middling detection landing
+    // between two distinct emitters (each within radius of the detection, up
+    // to 2 x radius apart) fused them into a single record and destroyed a
+    // real target. radius_hz == 0 (MRG off / exact matches only) keeps its
+    // original semantics: the anchor and every entry sitting exactly on the
+    // detection frequency coincide, so the merge set is unchanged.
+    const FreqHz anchor_freq = tracked_drones_[anchor].frequency;
+    size_t absorbed_count = 0;
     for (size_t i = 0; i < tracked_count_; ++i) {
-        if (in_radius[i] && i != survivor) {
-            tracked_drones_[survivor].absorb_from(tracked_drones_[i]);
+        if (!in_radius[i] || i == anchor) {
+            continue;
         }
+        const FreqHz entry_freq = tracked_drones_[i].frequency;
+        const FreqHz diff = (entry_freq > anchor_freq) ? (entry_freq - anchor_freq)
+                                                       : (anchor_freq - entry_freq);
+        if (diff > radius_hz) {
+            in_radius[i] = false;  // outside the anchor — independent emitter
+            continue;
+        }
+        // Each duplicate's RSSI history, cycle peaks and decay state merge into
+        // the anchor, so the trend sees one continuous sample stream.
+        tracked_drones_[anchor].absorb_from(tracked_drones_[i]);
+        ++absorbed_count;
     }
+    // True ONLY when something was really absorbed. The caller's merge-threat
+    // preservation guard must not fire for a plain in-radius update (that would
+    // block legitimate threat downgrades of a live, weakening signal).
+    last_merge_absorbed_ = (absorbed_count > 0);
 
     // Pass 4: compact the array (same pattern as remove_stale_drones_internal),
-    // dropping the absorbed duplicates, and record the survivor's new index.
+    // dropping the absorbed duplicates, and record the anchor's new index.
     size_t write_index = 0;
-    size_t survivor_new_index = SIZE_MAX;
+    size_t anchor_new_index = SIZE_MAX;
     for (size_t read_index = 0; read_index < tracked_count_; ++read_index) {
-        if (in_radius[read_index] && read_index != survivor) {
+        if (in_radius[read_index] && read_index != anchor) {
             continue;  // absorbed duplicate — drop
         }
-        if (read_index == survivor) {
-            survivor_new_index = write_index;
+        if (read_index == anchor) {
+            anchor_new_index = write_index;
         }
         if (write_index != read_index) {
             tracked_drones_[write_index] = tracked_drones_[read_index];
@@ -1270,7 +1346,7 @@ ErrorResult<size_t> DroneScanner::match_and_consolidate_drone_internal(
     }
     tracked_count_ = write_index;
 
-    return ErrorResult<size_t>::success(survivor_new_index);
+    return ErrorResult<size_t>::success(anchor_new_index);
 }
 
 ErrorCode DroneScanner::get_current_drone_type(char* buffer, size_t buffer_size) const noexcept {

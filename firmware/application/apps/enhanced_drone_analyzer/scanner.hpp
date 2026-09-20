@@ -1434,10 +1434,21 @@ private:
     /**
      * @brief Internal: Update tracked drone
      * @note Called by update_tracked_drones() and apply_sweep_tracking() with mutex held
-     * @param frequency Frequency of detected signal
+     * @param frequency Frequency of detected signal. In DB mode this is the
+     *                  tune/DB channel centre; in sweep mode it is already the
+     *                  bin-measured peak frequency.
      * @param rssi RSSI value
      * @param timestamp Timestamp of detection
      * @param out_index Optional output: index of updated/created drone (SIZE_MAX if not found)
+     * @param measured_freq Bin-corrected display frequency of THIS detection
+     *                      (0 = none available). In DB mode the shape step
+     *                      refines the tune centre; in sweep mode the caller's
+     *                      `frequency` IS the measured value, so 0 is passed
+     *                      and the key is shown.
+     * @note MRG ANTI-REWRITE RULE: the record's signature (matching key +
+     *       displayed frequency) is anchored ONLY by a record peak — see
+     *       TrackedDrone::anchor_signature(). A weaker in-radius detection
+     *       refreshes history/trend/decay but never rewrites the identity.
      * @return ErrorCode::SUCCESS if updated, error code otherwise
      * @pre Mutex must be held (LockOrder::DATA_MUTEX)
      */
@@ -1445,7 +1456,8 @@ private:
         FreqHz frequency,
         RssiValue rssi,
         SystemTime timestamp,
-        size_t* out_index = nullptr
+        size_t* out_index = nullptr,
+        FreqHz measured_freq = 0
     ) noexcept;
 
     /**
@@ -1470,19 +1482,32 @@ private:
      * @brief Internal: Match a detection to the nearest tracked drone AND
      *        consolidate near-duplicate entries within the match radius
      *
-     *        Merge policy ("a close frequency corrects the tracked entry"):
-     *        1. Mark every tracker entry within radius_hz of the detection.
-     *        2. The OLDEST in-radius entry (earliest created_time_, ties →
-     *           lowest index) survives — it carries the longest trend history
-     *           and the most stable hysteresis state.
-     *        3. Every other in-radius entry is absorbed into the survivor
-     *           (TrackedDrone::absorb_from): RSSI history, sweep cycle peaks,
+     *        Merge policy (MRG — "merge by radius around the STRONG entry"):
+     *        1. Candidate set: every tracker entry within radius_hz of the
+     *           DETECTION.
+     *        2. ANCHOR = the strongest candidate: threat_level descending
+     *           (a higher-severity threat is never absorbed into a
+     *           lower-severity one), then recent_strength() descending (the
+     *           strong one), then oldest created_time_ (longest trend
+     *           history), then lowest index. Freshness is deliberately NOT a
+     *           key here, unlike has_higher_priority(): the merge is
+     *           destructive, so the newest sample must not decide which
+     *           history survives.
+     *        3. Absorb set: entries within radius_hz of the ANCHOR. The radius
+     *           is re-measured around the anchor, NOT around the detection —
+     *           a middling detection landing between two independent emitters
+     *           (each within radius of the detection, up to 2 x radius apart)
+     *           must not fuse them into one record.
+     *        4. Every absorbed entry merges into the anchor via
+     *           TrackedDrone::absorb_from: RSSI history, sweep cycle peaks,
      *           decay counters and Mahalanobis statistics merge, so the
-     *           survivor's movement trend continues as ONE continuous stream.
-     *        4. Absorbed entries are removed (array compacted) and the
-     *           survivor's new index is returned. The caller then re-centers
-     *           the survivor onto the detection frequency and feeds the
-     *           detection's RSSI through the normal update path.
+     *           anchor's movement trend continues as ONE continuous stream.
+     *        5. Absorbed entries are removed (array compacted) and the
+     *           anchor's new index is returned. The caller then anchors the
+     *           anchor's signature (key + displayed frequency) onto the
+     *           detection IFF it is a record peak (see
+     *           TrackedDrone::anchor_signature) and feeds the detection's RSSI
+     *           through the normal update path.
      *
      *        This heals duplicates that pre-date the radius (created by older
      *        firmware, mode switches, or multi-window sweep races) which the
@@ -1491,13 +1516,16 @@ private:
      *
      * @param frequency Detection frequency (Hz)
      * @param radius_hz Maximum allowed |difference| (Hz)
-     * @return ErrorResult containing the survivor's (post-compaction) index,
+     * @return ErrorResult containing the anchor's (post-compaction) index,
      *         or failure when no tracked drone lies within radius_hz
      * @pre Caller must hold DATA_MUTEX, or have exclusive access to the
      *      tracker (sweep mode: scanner thread stopped, UI thread idle)
-     * @note Stack: ~24 bytes (bool in_radius[16] + scalars). O(n²) worst case
-     *       with n <= 16 (120 pair checks); absorb path is rare. Compaction
-     *       is the same pattern as remove_stale_drones_internal().
+     * @note Stack: ~32 bytes (bool in_radius[MAX_TRACKED_DRONES] + scalars).
+     *       O(n) passes with n <= MAX_TRACKED_DRONES; absorb path is rare.
+     *       Compaction is the same pattern as remove_stale_drones_internal().
+     * @note Sets last_merge_absorbed_ to true ONLY when at least one entry was
+     *       actually absorbed, so the caller's merge-threat-preservation guard
+     *       cannot fire for a plain in-radius update.
      */
     [[nodiscard]] ErrorResult<size_t> match_and_consolidate_drone_internal(
         FreqHz frequency,
@@ -1681,7 +1709,7 @@ private:
      *         BUFFER_FULL).
      * @pre Caller must hold DATA_MUTEX, or have exclusive tracker access.
      * @note Weakest-scan tie-break: among equal-priority residents the LOWEST
-     *       index is chosen (oldest insertion era — matches the survivor rule
+     *       index is chosen (oldest insertion era — matches the anchor rule
      *       in match_and_consolidate_drone_internal()). This is the single
      *       tie-break convention for BOTH selection (get_tracked_drones keeps
      *       the first best) and eviction (this keeps the first weakest).
@@ -2242,8 +2270,12 @@ private:
     // Alert callback in progress flag (prevents re-entrant calls)
     AtomicFlag alert_callback_in_progress_;
 
-    // MRG merge flag: set by match_and_consolidate_drone_internal() when
-    // absorption occurred (in_radius_count > 1). Cleared by caller after use.
+    // MRG merge flag: set by match_and_consolidate_drone_internal() ONLY when
+    // at least one entry was actually absorbed into the anchor (the anchor
+    // radius set held more than one entry). Cleared by the caller immediately
+    // after the call — so the RSSI-variance early return (which happens before
+    // the update path completes) cannot leak a stale "merge happened" into the
+    // next detection and spuriously block a legitimate threat downgrade.
     bool last_merge_absorbed_{false};
 
     // EVICT flag: set by add_tracked_drone_internal() when a tracked drone is
