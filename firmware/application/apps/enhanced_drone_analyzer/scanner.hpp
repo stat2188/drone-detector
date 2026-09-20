@@ -122,7 +122,7 @@ struct ScanConfig {
     // DroneScanner::resolve_det_win_label_internal().
     // SRAM: +20 B — sizeof ~387 B, headroom inside the 512 B static_assert.
     uint8_t sweep_det_win_name_idx[MAX_SWEEP_WINDOWS][DETECTION_WINDOWS_PER_WINDOW]{};
-    uint8_t rssi_decrease_cycles{5};  // Normal mode: seconds of RSSI decrease before threat decay (sweep uses hardcoded MAX_SWEEP_CYCLES_MISSED)
+    uint8_t rssi_decrease_cycles{5};  // Normal mode: seconds of RSSI decrease before threat decay. Sweep mode: missed full-pass budget (CYC; HIGH/CRIT 2xCYC)
     uint8_t freq_match_radius_mhz{DEFAULT_FREQ_MATCH_RADIUS_MHZ};  // 0-100, drone detection merge radius (0=disabled)
 
     // Spectral Kurtosis (higher-order statistics)
@@ -1317,9 +1317,13 @@ public:
      * @brief Apply RSSI-based threat decay with mode-aware logic
      * @param is_sweep_mode If true, use cycle-based decay (sweep mode); if false, use time-based (normal mode)
      * @note NORMAL mode: time-based decay (rssi_decrease_cycles × 1000 = ms threshold)
-     * @note SWEEP mode: cycle-based decay (uses MAX_SWEEP_CYCLES_MISSED constant, not rssi_decrease_cycles)
+     * @note SWEEP mode: cycle-based decay — missed-cycle budget IS rssi_decrease_cycles
+     *       (CYC, 1..50, default 5) for LOW/MEDIUM and 2×CYC for HIGH/CRITICAL.
+     *       The old hardcoded MAX_SWEEP_CYCLES_MISSED (3/6) ignored the CYC knob
+     *       entirely, so a record decayed after 3 missed passes no matter what
+     *       the user set — "CYC does not hold the entry".
      * @note Each drone: if RSSI did not increase for decay_threshold_ms (CYC × 1000ms in normal mode),
-     *       OR if drone was not seen for more than MAX_SWEEP_CYCLES_MISSED cycles (in sweep mode),
+     *       OR if drone missed more than the CYC budget of full sweep cycles (in sweep mode),
      *       decay threat by one step. If RSSI increased or drone seen, reset counters.
      * @note Enforces minimum drone lifetime of DRONE_STALE_TIMEOUT_MS (5s) before removal.
      * @note Resets rssi_increased_ flag after each call.
@@ -1338,11 +1342,15 @@ public:
                 drone.sweep_cycles_missed_ = 0;
             } else {
                 if (is_sweep_mode) {
-                    // SWEEP mode: cycle-based decay
+                    // SWEEP mode: cycle-based decay. Budget = CYC (rssi_decrease_cycles,
+                    // 1..50, clamped ≥1 so budget is never 0): LOW/MEDIUM survive
+                    // CYC missed full passes, HIGH/CRITICAL 2×CYC.
                     drone.increment_missed_cycle();
+                    const uint8_t cyc = (config_.rssi_decrease_cycles < 1)
+                        ? 1 : config_.rssi_decrease_cycles;
                     const uint8_t max_missed = (drone.threat_level >= ThreatLevel::HIGH)
-                        ? TrackedDrone::MAX_SWEEP_CYCLES_MISSED * 2  // HIGH/CRITICAL: 6 cycles
-                        : TrackedDrone::MAX_SWEEP_CYCLES_MISSED;     // LOW/MEDIUM: 3 cycles
+                        ? static_cast<uint8_t>(cyc * 2)  // HIGH/CRITICAL: 2×CYC
+                        : cyc;                           // LOW/MEDIUM: CYC
                     if (drone.sweep_cycles_missed_ > max_missed) {
                         drone.rssi_decrease_counter_ = 1;
                     }

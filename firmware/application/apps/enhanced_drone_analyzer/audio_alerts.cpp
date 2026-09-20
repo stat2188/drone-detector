@@ -203,16 +203,22 @@ void AudioAlertManager::play_alert(const AudioAlertConfig& config) noexcept {
 
     // HARD BLOCK: if SOS is active, drop everything except CRITICAL.
     // Prevents beep queue buildup → hard fault.
+    // RESTART-SUPPRESSION: same-priority MEDIUM/HIGH re-triggers while the
+    // pattern is mid-flight only restart it (audible stutter — the "beep never
+    // finishes" symptom when the threat flickers LOW→MEDIUM→LOW→MEDIUM every
+    // frame). CRITICAL still interrupts (safety), upgrades still start.
     if (sos_state_.active) {
-        if (config.priority == AlertPriority::CRITICAL) {
-            // CRITICAL interrupts any SOS (even another CRITICAL)
+        if (config.priority == AlertPriority::CRITICAL &&
+            current_priority_ != AlertPriority::CRITICAL) {
+            // CRITICAL interrupts any non-CRITICAL SOS
             baseband::request_beep_stop();
             sos_state_.active = false;
             current_priority_ = AlertPriority::CRITICAL;
             last_beep_tick_ = chTimeNow();
             start_sos(config.frequency_hz, config.sample_rate_hz, true);
         }
-        // All other priorities: silently dropped while SOS plays
+        // Same-or-lower priority while SOS plays: silently dropped, pattern
+        // continues to completion instead of restarting mid-beep.
         return;
     }
 

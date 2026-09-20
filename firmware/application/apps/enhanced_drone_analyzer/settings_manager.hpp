@@ -130,7 +130,7 @@ struct SettingsStruct {
     // shared with ScanConfig (identical field), 0 = no label.
     // SRAM: +20 B — sizeof ~380 B, headroom inside the 512 B static_assert.
     uint8_t sweep_det_win_name_idx[MAX_SWEEP_WINDOWS][DETECTION_WINDOWS_PER_WINDOW]{};
-    uint8_t rssi_decrease_cycles{5};  // Normal mode: seconds before RSSI decay (sweep uses hardcoded constant)
+    uint8_t rssi_decrease_cycles{5};  // Normal mode: seconds before RSSI decay. Sweep mode: missed full-pass budget (CYC; HIGH/CRIT 2xCYC)
     uint8_t freq_match_radius_mhz{DEFAULT_FREQ_MATCH_RADIUS_MHZ};  // 0-100 MHz, drone detection merge radius (0=disabled)
 
     SettingsStruct() noexcept;

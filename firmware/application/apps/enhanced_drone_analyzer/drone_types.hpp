@@ -284,7 +284,7 @@ struct TrackedDrone {
     // Sweep-aware decay fields (cycle-based for sweep mode)
     SystemTime last_seen_time_;         // 4 bytes — timestamp when drone was last seen (ANY detection)
     uint8_t sweep_cycles_missed_{0};    // 1 byte — consecutive full sweep cycles without seeing this drone
-    static constexpr uint8_t MAX_SWEEP_CYCLES_MISSED = 3;  // Allow 3 full cycles (~6-15 sec) before decay
+    static constexpr uint8_t MAX_SWEEP_CYCLES_MISSED = 3;  // Legacy fallback when CYC==0 (normally CYC drives the budget — see apply_rssi_decay)
 
     // ========================================================================
     // Sweep-mode trend tracking (cycle-peak comparison)

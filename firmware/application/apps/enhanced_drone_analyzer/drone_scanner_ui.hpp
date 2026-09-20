@@ -94,8 +94,8 @@ private:
     ui::RFAmpField field_rf_amp_{{UI_POS_X(18), 0}};
     ui::AudioVolumeField field_volume_{{UI_POS_X_RIGHT(2), UI_POS_Y(0)}};
     // "cy" = rssi_decrease_cycles (1..50): seconds without RSSI growth before a
-    // tracked drone's threat decays (normal mode; sweep mode uses the hardcoded
-    // MAX_SWEEP_CYCLES_MISSED instead — see scanner.hpp:apply_rssi_decay).
+    // tracked drone's threat decays (normal mode); missed full sweep passes
+    // before decay in sweep mode (HIGH/CRITICAL get 2xCYC) — see apply_rssi_decay.
     // on_change writes through to the scanner config (get→mutate→set); initial
     // value is pushed from the config at the end of the constructor.
     ui::NumberField field_rssi_dec_cyc_{{UI_POS_X_RIGHT(6), UI_POS_Y(0)}, 2, {1, 50}, 1, ' '};

@@ -1131,10 +1131,11 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
 
         // After merge, absorb_from() correctly set threat = max(anchor, absorbed).
         // Capture this BEFORE update_rssi() reclassifies from current RSSI.
-        // merge_absorbed was read-and-cleared right after the match call, so a
-        // plain in-radius update (no absorption) never enters this guard.
+        // merge_absorbed was read-and-cleared right after the match call; it is
+        // kept for diagnostics but the downgrade guard below intentionally
+        // ignores it (see MRG safety): plain updates need the same protection.
         const ThreatLevel post_merge_threat = tracked_drones_[index].get_threat();
-        const bool merge_occurred = merge_absorbed;
+        (void)merge_absorbed;
 
         ThreatLevel old_threat = post_merge_threat;
         tracked_drones_[index].update_rssi(rssi, timestamp, ThreatThresholds{
@@ -1142,13 +1143,17 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
             config_.threat_high_dbm, config_.threat_critical_dbm});
         ThreatLevel new_threat = tracked_drones_[index].get_threat();
 
-        // MRG safety: when a merge occurred, preserve the merged (higher) threat
-        // level if update_rssi() would downgrade it. In sweep mode, update_rssi()
-        // classifies from direct new_rssi (not peak of history), so a weak
-        // detection merging into a CRITICAL drone must not drop its threat.
-        // In normal mode, peak-based classification already prevents this, but
-        // this guard is a cheap safety net.
-        if (merge_occurred && post_merge_threat > new_threat) {
+        // MRG safety: a WEAK in-radius observation must never downgrade the
+        // record it matched — in sweep mode update_rssi() classifies from the
+        // direct new_rssi (history is cross-frequency contaminated), so one
+        // fade sample would drop CRITICAL→LOW and the next strong frame would
+        // re-raise it with a fresh trigger_alert() — the "beep restarts, list
+        // flickers" symptom. Threat may only RISE on an in-radius update
+        // (escalation); DOWNGRADES happen exclusively via apply_rssi_decay()
+        // after CYC missed cycles. This extends the old merge-only guard to
+        // plain in-radius updates (merge_occurred==false was the hole).
+        // Normal mode is peak-classified and unaffected (post==new there).
+        if (post_merge_threat > new_threat) {
             tracked_drones_[index].threat_level = post_merge_threat;
             new_threat = post_merge_threat;
         }
