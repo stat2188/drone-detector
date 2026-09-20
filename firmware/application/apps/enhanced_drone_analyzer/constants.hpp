@@ -777,6 +777,66 @@ constexpr uint16_t COMPOSITE_SIZE = 240;
 constexpr FreqHz SWEEP_GAPLESS_STEP_MAX_HZ =
     static_cast<FreqHz>(FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW - 1 - FFT_DC_SPIKE_END)
     * SWEEP_BIN_SIZE;
+// ============================================================================
+// Sweep slice detection geometry (Looking-Glass sideband biases)
+// ============================================================================
+// Both the display painter (SweepProcessor::process_frame) and the detector
+// (DroneScanner::fft_bin_to_freq) map FFT bins to RF with per-sideband biases:
+//   upper sideband (bins 6..119 usable):
+//     freq = center + (bin − SWEEP_BIAS_UPPER)·SWEEP_BIN_SIZE
+//     → detection covers [center − 120 bins, center − 7 bins]
+//   lower sideband (bins 136..249 usable):
+//     freq = center + (bin − SWEEP_BIAS_LOWER)·SWEEP_BIN_SIZE
+//     → detection covers [center + 16 bins, center + 129 bins]
+// The per-slice detection blind notch is therefore (center − 7 .. center + 16)
+// = 23 bins ≈ 1.797 MHz. SWEEP_GAPLESS_STEP_MAX_HZ above is the EXACT
+// butt-joint pitch: at 113 bins the next slice's upper sideband starts exactly
+// at (center − 7 bins) and the previous slice's lower sideband ends exactly at
+// (center + 16 bins) — the notch is sealed by U(k+1) ∪ L(k−1), with L(k) and
+// U(k+2) reinforcing.
+
+/**
+ * @brief FFT-bin bias of the sweep slice's upper sideband (bins 2..119).
+ * @note freq(bin) = center + (bin − SWEEP_BIAS_UPPER)·SWEEP_BIN_SIZE.
+ */
+constexpr uint32_t SWEEP_BIAS_UPPER = FFT_DC_SPIKE_START + FFT_EDGE_SKIP_NARROW;  // 126
+
+/**
+ * @brief FFT-bin bias of the sweep slice's lower sideband (bins 136..253).
+ * @note freq(bin) = center + (bin − SWEEP_BIAS_LOWER)·SWEEP_BIN_SIZE.
+ */
+constexpr uint32_t SWEEP_BIAS_LOWER = FFT_DC_SPIKE_START;  // 120
+
+/**
+ * @brief RF offset (in bins, below the slice center) of a slice's LOWEST
+ *        detected frequency.
+ * @note The upper sideband's first detection bin (FFT_EDGE_SKIP_NARROW) sits
+ *       at center − (SWEEP_BIAS_UPPER − FFT_EDGE_SKIP_NARROW)·SWEEP_BIN_SIZE
+ *       = center − FFT_DC_SPIKE_START·SWEEP_BIN_SIZE = center − 9,375,000 Hz.
+ *       The lower sideband re-enters only at center + 16 bins, so the upper
+ *       sideband defines the slice's bottom edge. Used to place the FIRST
+ *       slice center so its first detection bin lands EXACTLY on f_min.
+ */
+constexpr uint32_t SWEEP_DETECT_EDGE_OFFSET_BINS =
+    SWEEP_BIAS_UPPER - FFT_EDGE_SKIP_NARROW;  // 120 (= FFT_DC_SPIKE_START)
+
+/**
+ * @brief Lead of the first sweep slice center above f_min (Hz).
+ * @note f_center_ini = f_min + SWEEP_FIRST_SLICE_LEAD_HZ puts the first
+ *       detection bin EXACTLY on f_min — zero blind band at the window's lower
+ *       edge. The previous "half-slice lead" (f_min + 10 MHz) started
+ *       detection at f_min + 625 kHz — a permanent blind band on every pass.
+ */
+constexpr FreqHz SWEEP_FIRST_SLICE_LEAD_HZ =
+    static_cast<FreqHz>(SWEEP_DETECT_EDGE_OFFSET_BINS) * SWEEP_BIN_SIZE;  // 9,375,000 Hz
+
+/**
+ * @brief Minimum number of slices per sweep window.
+ * @note A single slice ALWAYS leaves its 23-bin DC notch undetected (no
+ *       neighbour exists to cover it). With >= 2 slices the derived pitch is
+ *       <= SWEEP_GAPLESS_STEP_MAX_HZ / 2 and every notch lands on a neighbour.
+ */
+constexpr uint16_t SWEEP_MIN_SLICES = 2;
 
 /**
  * @brief FFT bin where lower sideband mapping starts

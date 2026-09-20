@@ -52,7 +52,7 @@ uint16_t SweepProcessor::process_frame(
     // H1: division-free true-position mapping (BIT-EXACT vs the old u64 div).
     // Old per-bin math: px(bin) = (freq(bin) - f_min) * 240 / range with
     // freq(bin) = f_center + (bin - BIAS) * SWEEP_BIN_SIZE (BIAS = 126 upper /
-    // 120 lower sideband — the same (bin-256)/(bin-126) Looking-Glass offsets
+    // 120 lower sideband — the same (bin-120)/(bin-126) Looking-Glass offsets
     // the detection path uses in fft_bin_to_freq()). K(bin) is an ARITHMETIC
     // PROGRESSION in bin, so the pre-division numerator N(bin) advances by a
     // CONSTANT 64-bit step P = 240 * SWEEP_BIN_SIZE (= 18'750'000 Hz) and the
@@ -218,12 +218,12 @@ uint16_t SweepProcessor::process_frame(
         }
     };
 
-    // Upper sideband: FFT bins 2..119 (BIAS = 126, ascending freq).
-    paint_run(126, 2, 119);
+    // Upper sideband: FFT bins 2..119 (BIAS = SWEEP_BIAS_UPPER = 126, ascending freq).
+    paint_run(SWEEP_BIAS_UPPER, 2, 119);
     // DC spike 120..135: no RF frequency, no Hz credit (old `continue` before
     // the accumulator — reproduced by simply not visiting these bins).
-    // Lower sideband: FFT bins 136..253 (BIAS = 120, ascending freq).
-    paint_run(120, 136, 253);
+    // Lower sideband: FFT bins 136..253 (BIAS = SWEEP_BIAS_LOWER = 120, ascending freq).
+    paint_run(SWEEP_BIAS_LOWER, 136, 253);
 
     // Legacy sequential-flush state: obsolete with true-position painting
     // (each bin targets its own column; no per-pixel running max exists).

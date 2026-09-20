@@ -1741,8 +1741,13 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
     // or wastes dwell for no benefit (step < 8.83 MHz).
     static constexpr FreqHz MAX_STEP_HZ = SWEEP_GAPLESS_STEP_MAX_HZ;
     uint16_t frames = (range + MAX_STEP_HZ - 1) / MAX_STEP_HZ;
-    if (frames == 0) {
-        frames = 1;
+    // SWEEP_MIN_SLICES floor: a single slice ALWAYS leaves its 23-bin DC notch
+    // (center − 7 .. center + 16 bins ≈ 1.8 MHz) undetected — no neighbour
+    // exists to cover it. With >= 2 slices the pitch drops below the gapless
+    // maximum and every notch lands on a neighbour's sidebands. Cost: one
+    // extra retune per pass on narrow windows (dwell actually improves).
+    if (frames < SWEEP_MIN_SLICES) {
+        frames = SWEEP_MIN_SLICES;
     }
     step_hz = range / frames;
 
@@ -1768,16 +1773,25 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
 
     (void)step;  // user pitch intentionally ignored (gapless auto-derivation)
 
-    // First-slice placement:
-    //   - wide windows: half-slice lead (10 MHz) so the first slice's lower
-    //     edge starts exactly at f_min — no out-of-band bins leak into the
-    //     composite. The gapless step ensures the second slice covers the
-    //     overlap region, so no dead zone exists.
-    //   - narrow windows (< one 20 MHz slice): centre the range in the slice
-    //     (Looking Glass SINGLEPASS pattern).
-    f_center_ini = (range < SWEEP_SLICE_BW)
-        ? (f_min + (range / 2))
-        : (f_min + (SWEEP_SLICE_BW / 2));
+    // First-slice placement — EDGE-BLIND FIX:
+    // Slice detection coverage is ASYMMETRIC around the center (see the
+    // SWEEP_BIAS_* geometry block in constants.hpp): the lowest DETECTED
+    // frequency of a slice is (center − FFT_DC_SPIKE_START·SWEEP_BIN_SIZE) =
+    // center − 9.375 MHz (bin 6 of the upper sideband; the lower sideband
+    // re-enters only at center + 1.25 MHz). The old "half-slice lead"
+    // (f_min + 10 MHz) therefore started detection at f_min + 625 kHz — a
+    // PERMANENT blind band at the window's lower edge on every pass (and the
+    // old narrow-window midpoint placement left the single slice's 1.8 MHz
+    // center notch undetected entirely; fixed by SWEEP_MIN_SLICES above).
+    // Placing the first center at f_min + SWEEP_FIRST_SLICE_LEAD_HZ
+    // (= FFT_DC_SPIKE_START bins = 9.375 MHz) puts the first detection bin
+    // EXACTLY on f_min. Display bins 2..5 map below f_min; process_frame()'s
+    // below-range prefix consumes them without writes (no ghost pixels).
+    // With step <= SWEEP_GAPLESS_STEP_MAX_HZ the upper sidebands tile
+    // [f_min, f_max] butt-jointed: bottom edge exact, top edge covered because
+    // the last slice reaches up to c_last + 10.078 MHz (freq_covered keeps a
+    // 1-bin margin below that).
+    f_center_ini = f_min + SWEEP_FIRST_SLICE_LEAD_HZ;
     reset();
 }
 

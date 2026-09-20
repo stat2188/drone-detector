@@ -48,23 +48,27 @@ struct ScanConfig {
     // Sweep range (Hz) — window 2 (2.4 GHz: drone control, Wi-Fi drones)
     // NOTE: disabled by default to match SettingsStruct defaults; the scanner
     //       ctor comment "all sweep windows disabled" documents this intent.
+    // NOTE: sweep*_step_freq are persisted for round-trip only — the effective
+    //       pitch is auto-derived gapless in SweepWindow::init() (any other
+    //       pitch recreates blind notches). Defaults aligned to the real pitch
+    //       so the SWP editor shows an honest value.
     FreqHz sweep2_start_freq{2400000000ULL};
     FreqHz sweep2_end_freq{2483500000ULL};
-    FreqHz sweep2_step_freq{17813000};
+    FreqHz sweep2_step_freq{SWEEP_GAPLESS_STEP_MAX_HZ};
     bool sweep2_enabled{false};
 
     // Sweep range (Hz) — window 3 (1.2 GHz: long-range FPV)
     // NOTE: disabled by default to match SettingsStruct defaults.
     FreqHz sweep3_start_freq{1120000000ULL};
     FreqHz sweep3_end_freq{1360000000ULL};
-    FreqHz sweep3_step_freq{17813000};
+    FreqHz sweep3_step_freq{SWEEP_GAPLESS_STEP_MAX_HZ};
     bool sweep3_enabled{false};
 
     // Sweep range (Hz) — window 4 (433 MHz + 868/915 MHz: control/telemetry)
     // NOTE: disabled by default to match SettingsStruct defaults.
     FreqHz sweep4_start_freq{433000000ULL};
     FreqHz sweep4_end_freq{928000000ULL};
-    FreqHz sweep4_step_freq{17813000};
+    FreqHz sweep4_step_freq{SWEEP_GAPLESS_STEP_MAX_HZ};
     bool sweep4_enabled{false};
 
     // Advanced detection features (ON by default — matches constructor)
@@ -1191,25 +1195,30 @@ public:
      * @param bin FFT bin index (0-255, after Looking Glass reordering)
      * @return Actual RF frequency for this bin (Hz)
      * @note Looking Glass reordering: bin 0 = Nyquist, bin 128 = DC.
-     *       Bins 134-253 (lower sideband): freq = f_center + (bin-256)*SWEEP_BIN_SIZE
-     *       Bins 2-119 (upper sideband):   freq = f_center + (bin-126)*SWEEP_BIN_SIZE
-     *       Bins 120-133 and 0-1, 254-255 are DC spike / edge (should be skipped)
+     *       Bins 136-253 (lower sideband):
+     *         freq = f_center + (bin − SWEEP_BIAS_LOWER)·SWEEP_BIN_SIZE
+     *       Bins 2-119 (upper sideband):
+     *         freq = f_center + (bin − SWEEP_BIAS_UPPER)·SWEEP_BIN_SIZE
+     *       Bins 120-135 and 0-1, 254-255 are DC spike / edge (should be skipped)
+     *       — see the SWEEP_BIAS_* geometry block in constants.hpp.
      */
     static FreqHz fft_bin_to_freq(FreqHz f_center, size_t bin) noexcept {
         // Looking Glass bin reordering: bin 0 = Nyquist, bin 128 = DC.
-        // Lower sideband (bin >= 136): freq = f_center - 120*SWEEP_BIN_SIZE + bin*SWEEP_BIN_SIZE
-        //   Avoids negative cast: (bin-256) would overflow uint64_t.
-        // Upper sideband (bin < 120):  freq = f_center - 126*SWEEP_BIN_SIZE + bin*SWEEP_BIN_SIZE
-        //   Avoids negative cast: (bin-126) would overflow uint64_t.
+        // Lower sideband (bin >= 136):
+        //   freq = f_center − SWEEP_BIAS_LOWER·B + bin·B  (BIAS 120)
+        // Upper sideband (bin < 120):
+        //   freq = f_center − SWEEP_BIAS_UPPER·B + bin·B  (BIAS 126)
+        //   The subtract-bias-first form avoids a negative cast
+        //   ((bin − 256) would wrap uint64_t).
         // DC spike (120-135): no valid RF frequency — return 0.
         if (bin >= FFT_DC_SPIKE_START && bin < FFT_DC_SPIKE_END) return 0;
         if (bin >= FFT_DC_SPIKE_END) {
-            const FreqHz offset = 120 * SWEEP_BIN_SIZE;
+            const FreqHz offset = static_cast<FreqHz>(SWEEP_BIAS_LOWER) * SWEEP_BIN_SIZE;
             const FreqHz freq = static_cast<FreqHz>(bin) * SWEEP_BIN_SIZE;
             if (f_center + freq < offset) return 0;
             return f_center - offset + freq;
         }
-        const FreqHz offset = 126 * SWEEP_BIN_SIZE;
+        const FreqHz offset = static_cast<FreqHz>(SWEEP_BIAS_UPPER) * SWEEP_BIN_SIZE;
         const FreqHz freq = static_cast<FreqHz>(bin) * SWEEP_BIN_SIZE;
         if (f_center + freq < offset) return 0;
         return f_center - offset + freq;
