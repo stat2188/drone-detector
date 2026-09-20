@@ -191,6 +191,14 @@ private:
         uint8_t settle_frames_remaining_{0};  // frames to skip after retune
         bool enabled{false};
 
+        /**
+         * @brief Derive the gapless sweep pitch and reset the window.
+         * @note Contract: step_hz == 0 after init() ⇔ the range is degenerate
+         *       (unsweepable after hardware clamps — f_min at the ceiling).
+         *       Callers MUST gate enabled via init_sweep_window(), and
+         *       on_sweep_spectrum() short-circuits such windows to the normal
+         *       pass-completion path (no retune loop, no detection).
+         */
         void init(FreqHz start, FreqHz end, FreqHz step = 0) noexcept;
         void reset() noexcept;
         /**
@@ -246,6 +254,22 @@ private:
     void retune_sweep_window(SweepWindow& win, const char* prefix = nullptr) noexcept;
     void update_sweep_pair_display() noexcept;
     [[nodiscard]] uint8_t pair_first(uint8_t idx) const noexcept;
+
+    /**
+     * @brief Initialize one sweep window from config and gate its enabled flag.
+     * @param idx          Window index (0..MAX_SWEEP_WINDOWS-1, guarded)
+     * @param start        Configured range start (Hz)
+     * @param end          Configured range end (Hz)
+     * @param step         User pitch (ignored — gapless auto-derivation)
+     * @param want_enabled Desired enabled state from the workspace config
+     * @note DEGENERATE-WINDOW GUARD: SweepWindow::init() leaves step_hz == 0
+     *       for unsweepable ranges (f_min clamped to the hardware ceiling).
+     *       Enabling such a window would hang the pass (process_frame() is a
+     *       no-op, the pass never completes) — it is kept disabled instead so
+     *       the pair/round-robin logic skips it. Used by enter_sweep_mode()
+     *       and on_show() — the only two init() call sites.
+     */
+    void init_sweep_window(uint8_t idx, FreqHz start, FreqHz end, FreqHz step, bool want_enabled) noexcept;
 
     // Latest ChannelStatistics.max_db from baseband (full-bandwidth RSSI)
     int32_t latest_max_db_{RSSI_NOISE_FLOOR_DBM};

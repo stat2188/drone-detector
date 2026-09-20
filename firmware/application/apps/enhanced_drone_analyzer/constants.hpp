@@ -805,18 +805,18 @@ constexpr uint16_t SWEEP_PERSISTENCE_DECAY_Q8 = 224;
 /**
  * @brief Number of FFT frames to discard after frequency retune.
  * @note The MAX2837/RFFC5072 lock time is ~200us — far below one FFT frame
- *       period — so discarding the frame(s) that overlap the retune instant
- *       fully covers the PLL settle window. retune_sweep_window() additionally
- *       discards STALE_FIFO_FRAMES (frames already queued on the old frequency).
- * @note Total discard per step: SWEEP_SETTLE_FRAMES + STALE_FIFO_FRAMES.
- *       Each discarded frame adds one frame period of dwell per sweep step.
- *       IMPORTANT: STALE_FIFO_FRAMES lives in retune_sweep_window()
- *       (drone_scanner_ui.cpp) and MUST stay = 3: the DisplayFrameSync handler
- *       drains only ONE frame per ~60 Hz tick while the M0 produces ~154 fps,
- *       so the 4-slot spectrum FIFO is permanently full and ALL 4 queued
- *       frames are stale at every retune. Do NOT lower it below the FIFO
- *       depth — stale frames leak into the composite as false spikes/dips at
- *       window starts (see the history block in retune_sweep_window()).
+ *       period — so discarding the frame that overlaps the retune instant
+ *       fully covers the PLL settle window.
+ * @note CURRENT consumer (drain-to-newest, drone_scanner_ui.cpp): the
+ *       DisplayFrameSync handler drains the FIFO to the NEWEST frame every
+ *       tick, so at most ONE queued frame can predate a retune. Effective
+ *       discard per step is therefore SWEEP_SETTLE_FRAMES (= 1) and NOTHING
+ *       else. The historical STALE_FIFO_FRAMES = 3 backlog term (old
+ *       single-out consumer with a permanently full 4-slot FIFO) is OBSOLETE
+ *       — re-arming it would discard 3 LIVE frames per step (~50 ms dead air
+ *       per hop) for zero benefit. Full flip-flop history and the correct
+ *       combination are documented in DroneScannerUI::retune_sweep_window()
+ *       — do NOT change this value without re-reading that block.
  */
 constexpr uint8_t SWEEP_SETTLE_FRAMES = 1;
 

@@ -1289,6 +1289,11 @@ public:
      *       hard measurement boundary — in lockstep with DB scan
      *       (analyze_spectrum_shape_impl).
      * @note Called from UI thread during sweep (scanner thread stopped, no mutex)
+     * @note May be called MULTIPLE times per DisplayFrameSync tick: drained
+     *       live frames (older FIFO captures at the SAME slice center, popped
+     *       by the drain-to-newest consumer) are detected too, in FIFO order
+     *       (oldest first), before the freshest frame — see the drain loop in
+     *       the DisplayFrameSync handler of drone_scanner_ui.cpp.
      * @note Implementation in scanner.cpp — delegates tracking to apply_sweep_tracking()
      */
     void process_spectrum_sweep(

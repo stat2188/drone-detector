@@ -72,10 +72,12 @@ void DroneScannerUI::register_handlers() noexcept {
                 // consumer, so the 4-slot FIFO is permanently FULL and a plain
                 // single out() always returns a 2-4-frame-old capture. In sweep
                 // mode that staleness is pure dead air: EVERY processed step is
-                // followed by a retune, and the retune's settle discipline must
-                // then discard the stale backlog one frame per tick
-                // (SWEEP_SETTLE_FRAMES + STALE_FIFO_FRAMES = 4 ticks ≈ 67 ms of
-                // dwell that integrates NOTHING). Draining to the newest frame
+                // followed by a retune, and the retune's settle discipline had
+                // to then discard the stale backlog one frame per tick (under
+                // the OLD single-out consumer: SWEEP_SETTLE_FRAMES +
+                // STALE_FIFO_FRAMES = 4 ticks ≈ 67 ms of dwell that integrates
+                // NOTHING — the backlog term is obsolete since this drain; see
+                // retune_sweep_window()). Draining to the newest frame
                 // here keeps exactly ONE frame per tick on the wire (same CPU
                 // and RF budget as before — the dropped frames were never
                 // integrated anyway) but hands the pipeline the FRESHEST
@@ -119,10 +121,52 @@ void DroneScannerUI::register_handlers() noexcept {
                         // progress credit) so each sweep step recovers the
                         // ~60% of RF integration budget the unconditional
                         // drain used to discard (~+4 dB equivalent hold).
-                        // Detection stays on the freshest frame only (final
-                        // path below); settle ticks drop everything (above).
+                        // Detection: drained live frames now feed the sweep
+                        // detector too (see S1 below); settle ticks drop
+                        // everything (above).
                         if (!settle_tick) {
                             (void)this->sweep_[this->active_sweep_idx_].process_bins(discard, false);
+                            // S1 SENSITIVITY FIX: drained live frames are full
+                            // 6.5 ms FFT captures at the CURRENT slice center
+                            // (in a live tick every queued frame postdates the
+                            // last retune — see SETTLE-TICK DETECTION above),
+                            // yet only the final frame reached the detector.
+                            // Feed them to the sweep detector as well: the
+                            // tracker and waterfall_history_ (TBD) now see the
+                            // ~2.5x more integration per step that the M0
+                            // actually delivers (≈ +4 dB effective), and the
+                            // TBD waterfall (TBD_MIN_FRAMES = 3) warms within
+                            // ~1 tick instead of ~3 passes.
+                            // Chronological order holds: out() pops FIFO order
+                            // (oldest first), so these samples precede the
+                            // final frame's sample — the median filter and the
+                            // per-window waterfall stay time-ordered.
+                            // KNOWN benign overlap: on a jitter tick the
+                            // EMPTY-FIFO FALLBACK below reuses the LAST
+                            // drained frame, which is then detected once more
+                            // via on_sweep_spectrum(). That is a same-slice
+                            // duplicate sample — the median window is order-
+                            // insensitive and TBD counts one identical frame;
+                            // fallback ticks are rare (M0 keeps the FIFO
+                            // non-empty at ~154 fps production).
+                            // Cost: ≤ 3 extra detector runs per tick, each
+                            // O(256 bins) integer math (~2% of a 16.7 ms tick).
+                            // No locking: the sweep path runs on the UI thread
+                            // with the scanner thread stopped (see
+                            // process_spectrum_sweep() docs in scanner.hpp).
+                            if (this->scanner_ptr_ != nullptr) {
+                                auto& dwin = this->sweep_[this->active_sweep_idx_];
+                                const FreqHz d_fft_freq = (this->last_tuned_freq_ != 0)
+                                    ? this->last_tuned_freq_
+                                    : dwin.f_center;
+                                this->scanner_ptr_->process_spectrum_sweep(
+                                    this->active_sweep_idx_,
+                                    discard,
+                                    d_fft_freq,
+                                    dwin.f_min,
+                                    dwin.f_max
+                                );
+                            }
                         }
                         ++drained;
                         if (drained >= 3) break;  // FIFO depth 4: 3 stale + 1 live max
@@ -686,17 +730,14 @@ void DroneScannerUI::on_show() {
     if (composite_active_ && scanner_ptr_ != nullptr) {
         scanner_ptr_->get_config(g_workspace_cfg);
 
-        // Reinit all windows from config
+        // Reinit all windows from config (degenerate ranges are auto-disabled
+        // by init_sweep_window — see its guard note).
         last_tuned_freq_ = 0;
         skip_next_fft_ = true;
-        sweep_[0].init(g_workspace_cfg.sweep_start_freq, g_workspace_cfg.sweep_end_freq, g_workspace_cfg.sweep_step_freq);
-        sweep_[0].enabled = true;  // Window 0 always enabled
-        sweep_[1].init(g_workspace_cfg.sweep2_start_freq, g_workspace_cfg.sweep2_end_freq, g_workspace_cfg.sweep2_step_freq);
-        sweep_[1].enabled = g_workspace_cfg.sweep2_enabled;
-        sweep_[2].init(g_workspace_cfg.sweep3_start_freq, g_workspace_cfg.sweep3_end_freq, g_workspace_cfg.sweep3_step_freq);
-        sweep_[2].enabled = g_workspace_cfg.sweep3_enabled;
-        sweep_[3].init(g_workspace_cfg.sweep4_start_freq, g_workspace_cfg.sweep4_end_freq, g_workspace_cfg.sweep4_step_freq);
-        sweep_[3].enabled = g_workspace_cfg.sweep4_enabled;
+        init_sweep_window(0, g_workspace_cfg.sweep_start_freq, g_workspace_cfg.sweep_end_freq, g_workspace_cfg.sweep_step_freq, true);  // Window 0 always enabled (unless degenerate)
+        init_sweep_window(1, g_workspace_cfg.sweep2_start_freq, g_workspace_cfg.sweep2_end_freq, g_workspace_cfg.sweep2_step_freq, g_workspace_cfg.sweep2_enabled);
+        init_sweep_window(2, g_workspace_cfg.sweep3_start_freq, g_workspace_cfg.sweep3_end_freq, g_workspace_cfg.sweep3_step_freq, g_workspace_cfg.sweep3_enabled);
+        init_sweep_window(3, g_workspace_cfg.sweep4_start_freq, g_workspace_cfg.sweep4_end_freq, g_workspace_cfg.sweep4_step_freq, g_workspace_cfg.sweep4_enabled);
 
         // Find first enabled window
         active_sweep_idx_ = 0;
@@ -1096,6 +1137,24 @@ void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexce
     }
 }
 
+void DroneScannerUI::init_sweep_window(
+    const uint8_t idx,
+    const FreqHz start,
+    const FreqHz end,
+    const FreqHz step,
+    const bool want_enabled
+) noexcept {
+    if (idx >= MAX_SWEEP_WINDOWS) return;
+    sweep_[idx].init(start, end, step);
+    // DEGENERATE-WINDOW GUARD: init() leaves step_hz == 0 for unsweepable
+    // ranges (f_min clamped to the hardware ceiling). Enabling such a window
+    // hangs the pass — process_frame() is a no-op and the pass never
+    // completes (pre-fix: infinite retune loop at f_center == 0). Keep it
+    // disabled so the pair/round-robin logic skips it; if ALL windows are
+    // degenerate, enter_sweep_mode() aborts back to DB-scan mode.
+    sweep_[idx].enabled = want_enabled && (sweep_[idx].step_hz != 0);
+}
+
 void DroneScannerUI::enter_sweep_mode() noexcept {
     // Prevent re-entrant entry (double-tap on Mode button)
     if (composite_active_) return;
@@ -1124,15 +1183,12 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
         g_workspace_cfg = ScanConfig{};
     }
 
-    // Initialize all 4 sweep windows from config
-    sweep_[0].init(g_workspace_cfg.sweep_start_freq, g_workspace_cfg.sweep_end_freq, g_workspace_cfg.sweep_step_freq);
-    sweep_[0].enabled = true;  // Window 0 always enabled
-    sweep_[1].init(g_workspace_cfg.sweep2_start_freq, g_workspace_cfg.sweep2_end_freq, g_workspace_cfg.sweep2_step_freq);
-    sweep_[1].enabled = g_workspace_cfg.sweep2_enabled;
-    sweep_[2].init(g_workspace_cfg.sweep3_start_freq, g_workspace_cfg.sweep3_end_freq, g_workspace_cfg.sweep3_step_freq);
-    sweep_[2].enabled = g_workspace_cfg.sweep3_enabled;
-    sweep_[3].init(g_workspace_cfg.sweep4_start_freq, g_workspace_cfg.sweep4_end_freq, g_workspace_cfg.sweep4_step_freq);
-    sweep_[3].enabled = g_workspace_cfg.sweep4_enabled;
+    // Initialize all 4 sweep windows from config (degenerate ranges are
+    // auto-disabled by init_sweep_window — see its guard note).
+    init_sweep_window(0, g_workspace_cfg.sweep_start_freq, g_workspace_cfg.sweep_end_freq, g_workspace_cfg.sweep_step_freq, true);  // Window 0 always enabled (unless degenerate)
+    init_sweep_window(1, g_workspace_cfg.sweep2_start_freq, g_workspace_cfg.sweep2_end_freq, g_workspace_cfg.sweep2_step_freq, g_workspace_cfg.sweep2_enabled);
+    init_sweep_window(2, g_workspace_cfg.sweep3_start_freq, g_workspace_cfg.sweep3_end_freq, g_workspace_cfg.sweep3_step_freq, g_workspace_cfg.sweep3_enabled);
+    init_sweep_window(3, g_workspace_cfg.sweep4_start_freq, g_workspace_cfg.sweep4_end_freq, g_workspace_cfg.sweep4_step_freq, g_workspace_cfg.sweep4_enabled);
 
     // Enable per-window waterfalls for each enabled sweep window.
     // MUST run AFTER sweep_[i].enabled is loaded from config above (lines
@@ -1224,10 +1280,16 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     update_sweep_pair_display();
 
     radio::set_tuning_frequency(rf::Frequency(sweep_[active_sweep_idx_].f_center));
-    // CRITICAL FIX: Wait for PLLs to settle before starting spectrum capture.
-    // This is the initial sweep entry - ensures first FFT is valid.
-    // Using 5ms to match Looking Glass app delay for consistency.
-    chThdSleepMilliseconds(5);
+    // NO settle sleep here (was: chThdSleepMilliseconds(5), "Looking Glass
+    // pattern"). Staleness is handled frame-wise, not by wall time:
+    //   - skip_next_fft_ (set on entry) makes on_sweep_spectrum() discard the
+    //     first frame and re-tune via retune_sweep_window(), which arms
+    //     settle_frames_remaining_ (SWEEP_SETTLE_FRAMES) for the straddler;
+    //   - MAX2837/RFFC5072 lock in ~200 µs — far below one 6.5 ms FFT frame —
+    //     so the first full frame captured after the retune is clean.
+    // The old sleep blocked the UI event loop for 5 ms while the M0 was
+    // already streaming into the channel FIFO, and added nothing the settle
+    // counter does not already guarantee. Mirrors retune_sweep_window().
     set_current_frequency_safe(sweep_[active_sweep_idx_].f_center);
 
     baseband::spectrum_streaming_start();
@@ -1362,31 +1424,41 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     }
 
     auto& win = sweep_[active_sweep_idx_];
-    const bool processed = win.process_bins(spectrum);
 
-    // FIX: When the settle counter is active, process_bins() discards the frame
-    // (stale data from the previous frequency). We must NOT advance f_center or
-    // call retune_sweep_window() here — doing so resets settle_frames_remaining_
-    // back to 2, creating an infinite loop where the counter never expires and
-    // process_bins() never processes data. Just wait for the next frame.
-    if (!processed) {
-        return;
-    }
+    // DEGENERATE-WINDOW GUARD (step_hz == 0 — see SweepWindow::init()): a
+    // window with no derived pitch can never paint a line (process_frame()
+    // no-ops) yet freq_covered is trivially true — the old code re-tuned
+    // forever without advancing. Mark the line painted so the normal
+    // completion path below fires and the round-robin moves on. Detection is
+    // skipped: with f_min == f_max the range gate in apply_sweep_tracking()
+    // would reject every peak anyway.
+    if (win.step_hz == 0) {
+        win.pixel_index = COMPOSITE_SIZE;
+    } else {
+        const bool processed = win.process_bins(spectrum);
 
-    if (scanner_ptr_ != nullptr) {
-        // Use the exact frequency the radio was tuned to when this FFT was captured.
-        // f_center may have already been incremented from the previous frame's step.
-        const FreqHz fft_freq = (last_tuned_freq_ != 0) ? last_tuned_freq_ : win.f_center;
+        // FIX: When the settle counter is active, process_bins() discards the frame
+        // (stale data from the previous frequency). We must NOT advance f_center or
+        // call retune_sweep_window() here — doing so resets settle_frames_remaining_
+        // back to 2, creating an infinite loop where the counter never expires and
+        // process_bins() never processes data. Just wait for the next frame.
+        if (!processed) {
+            return;
+        }
 
-        // Pass sweep range boundaries to prevent false positives outside the range.
-        // Shape analysis runs on RAW FFT bins inside the scanner (RF-monotonic,
-        // DC gap = hard measurement boundary) — never on display-mapped buffers.
-        scanner_ptr_->process_spectrum_sweep(active_sweep_idx_, spectrum, fft_freq, win.f_min, win.f_max);
+        if (scanner_ptr_ != nullptr) {
+            // Use the exact frequency the radio was tuned to when this FFT was captured.
+            // f_center may have already been incremented from the previous frame's step.
+            const FreqHz fft_freq = (last_tuned_freq_ != 0) ? last_tuned_freq_ : win.f_center;
 
-        // AGC for sweep mode — applies optimal gains to each frame's spectrum
-        apply_agc(spectrum.db.data());
+            // Pass sweep range boundaries to prevent false positives outside the range.
+            // Shape analysis runs on RAW FFT bins inside the scanner (RF-monotonic,
+            // DC gap = hard measurement boundary) — never on display-mapped buffers.
+            scanner_ptr_->process_spectrum_sweep(active_sweep_idx_, spectrum, fft_freq, win.f_min, win.f_max);
 
-
+            // AGC for sweep mode — applies optimal gains to each frame's spectrum
+            apply_agc(spectrum.db.data());
+        }
     }
 
     // Live display update: show current pair data every frame.
@@ -1635,7 +1707,20 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
         f_max = MAX_FREQUENCY_HZ;
     }
     if (f_min >= f_max) {
-        return;  // degenerate (f_min at the very ceiling): nothing to sweep
+        // DEGENERATE WINDOW (f_min clamped to the hardware ceiling): nothing
+        // to sweep. Zero ALL derived pitch state — a stale step_hz from a
+        // previous valid init() would defeat the enabled-gate in
+        // init_sweep_window() (enabled = want && step_hz != 0) and re-arm the
+        // old f_center == 0 retune-forever bug. The window is left DISABLED
+        // by that gate; f_center lands on a legal frequency in case a stray
+        // retune ever touches it.
+        f_max = f_min;
+        step_hz = 0;
+        effective_bin_size = 0;
+        pixel_step_hz = 0;
+        f_center_ini = f_min;
+        reset();
+        return;
     }
     const FreqHz range = f_max - f_min;
 
