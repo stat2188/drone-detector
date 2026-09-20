@@ -96,11 +96,34 @@ void DroneScannerUI::register_handlers() noexcept {
                 if (this->composite_active_) {
                     ChannelSpectrum& discard = this->spectrum_discard_;
                     uint8_t drained = 0;
-                    // Keep the newest: pop stale frames into the discard buffer
+                    // SETTLE-TICK DETECTION: while the settle counter is armed
+                    // (frames right after a retune) or the first post-entry FFT
+                    // is due (skip_next_fft_), EVERY queued frame can predate
+                    // the retune instant — all of them must be dropped. In a
+                    // live tick all queued frames were captured at the CURRENT
+                    // slice center, so none is stale.
+                    const bool idx_ok = (this->active_sweep_idx_ < MAX_SWEEP_WINDOWS);
+                    const bool settle_tick =
+                        !idx_ok ||
+                        this->skip_next_fft_ ||
+                        (this->sweep_[this->active_sweep_idx_].settle_frames_remaining_ > 0);
+                    // Keep the newest: pop older frames into the discard buffer
                     // (same BSS class as spectrum_buffer_, NOT the stack —
                     // ChannelSpectrum is ~272 bytes), then pop the final frame
                     // into spectrum_buffer_ for processing.
                     while (this->spectrum_fifo_->out(discard)) {
+                        // C2 SENSITIVITY FIX: a drained live frame is a full
+                        // 6.5 ms FFT capture at the current frequency — it must
+                        // not be thrown away. Integrate it into the composite
+                        // (max-hold at true RF positions, display-only, no
+                        // progress credit) so each sweep step recovers the
+                        // ~60% of RF integration budget the unconditional
+                        // drain used to discard (~+4 dB equivalent hold).
+                        // Detection stays on the freshest frame only (final
+                        // path below); settle ticks drop everything (above).
+                        if (!settle_tick) {
+                            (void)this->sweep_[this->active_sweep_idx_].process_bins(discard, false);
+                        }
                         ++drained;
                         if (drained >= 3) break;  // FIFO depth 4: 3 stale + 1 live max
                     }
@@ -216,13 +239,29 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         &button_swp_
     });
 
-    // Sync RSSI decrease cycles from scanner config to UI field
-    // NOTE: spectrum shape params NOT synced here to preserve display_margin_=0 default
-    // (display and detection filtering are now separate)
-    if (scanner_ptr_ != nullptr) {
+    // "cy" field (rssi_decrease_cycles): live decay-tuning from the main screen.
+    // FIX: this field previously had no on_change — user edits were silently
+    // discarded (display-only). Registered here, before construct_objects(),
+    // following the "callbacks first, early-return safe" pattern used by the
+    // button lambdas below: the lambda dereferences scanner_ptr_ at INVOCATION
+    // time, not registration time.
+    // Write path: established get→mutate→set pattern (see DroneSweepView).
+    // Persistence: intentionally NOT written to SD per encoder tick (flash
+    // wear + latency). The new value lives in the scanner config for the
+    // session and reaches SD via the SWP save flow, whose extract_from_config()
+    // copies the already-updated config (settings_manager.cpp:941), or via an
+    // explicit Settings save.
+    // Thread-safety: UI thread only (widget callback) — g_workspace_cfg
+    // ownership invariant in drone_scanner_ui.hpp guarantees no concurrent
+    // access; set_config() takes the scanner DATA_MUTEX internally.
+    field_rssi_dec_cyc_.on_change = [this](int32_t v) {
+        if (scanner_ptr_ == nullptr) return;
         scanner_ptr_->get_config(g_workspace_cfg);
-        field_rssi_dec_cyc_.set_value(static_cast<int32_t>(g_workspace_cfg.rssi_decrease_cycles));
-    }
+        g_workspace_cfg.rssi_decrease_cycles = static_cast<uint8_t>(v);  // 1..50, fits uint8_t
+        // Cannot fail here: only rssi_decrease_cycles mutated (no validation
+        // on it), all other fields byte-identical to the accepted config.
+        (void)scanner_ptr_->set_config(g_workspace_cfg);
+    };
 
     // Register button callbacks BEFORE any early returns
     // Buttons must always respond, even if init fails
@@ -551,6 +590,16 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     if (config_err != ErrorCode::SUCCESS) {
         show_error(config_err, ERROR_DURATION_MS);
     }
+
+    // FIX (moved from top of constructor): initial value of the "cy" field.
+    // The old sync ran BEFORE construct_objects() (scanner_ptr_ == nullptr →
+    // dead code) and before SettingsFileManager::load(), so the field always
+    // displayed 0 instead of the persisted rssi_decrease_cycles. Here the
+    // config is final. Display-only update: trigger_change=false so the
+    // freshly registered on_change does not perform a redundant
+    // get_config/set_config round-trip.
+    field_rssi_dec_cyc_.set_value(
+        static_cast<int32_t>(g_workspace_cfg.rssi_decrease_cycles), false);
 }
 
 DroneScannerUI::~DroneScannerUI() noexcept {
@@ -994,12 +1043,21 @@ void DroneScannerUI::apply_agc(const uint8_t* spectrum_data) noexcept {
     );
     if (gain.lna != cur_lna) {
         portapack::receiver_model.set_lna(gain.lna);
+        // FIX: keep the on-screen field in sync with hardware — previously the
+        // widgets kept showing stale values after AGC retuned the frontend.
+        // set_value(v, false) is display-only (no on_change → no second SPI
+        // write, no callback loop); it clips to the field range and repaints
+        // via its own set_dirty(). AGC values are always in field range:
+        // LNA {0,8,..,40} ⊂ {0,40}, VGA {0..62, step 2} ⊂ {0,62}.
+        field_lna_.set_value(static_cast<int32_t>(gain.lna), false);
     }
     if (gain.vga != cur_vga) {
         portapack::receiver_model.set_vga(gain.vga);
+        field_vga_.set_value(static_cast<int32_t>(gain.vga), false);
     }
     if (gain.rf_amp != cur_rf_amp) {
         portapack::receiver_model.set_rf_amp(gain.rf_amp);
+        field_rf_amp_.set_value(gain.rf_amp ? 1 : 0, false);
     }
 }
 
@@ -1558,8 +1616,26 @@ uint8_t DroneScannerUI::pair_first(uint8_t idx) const noexcept {
 void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) noexcept {
     f_min = start;
     f_max = end;
+    // RANGE CLAMP: retune_sweep_window() calls radio::set_tuning_frequency()
+    // directly (no validation layer), so a malformed config (0/0 from a
+    // corrupted settings file, or a range beyond the RFFC5072 tuning limit)
+    // would otherwise drive the radio to an illegal frequency for a whole
+    // sweep pass. The window itself is the last line of defense.
+    if (f_min < MIN_FREQUENCY_HZ) {
+        f_min = MIN_FREQUENCY_HZ;
+    }
+    if (f_max > MAX_FREQUENCY_HZ) {
+        f_max = MAX_FREQUENCY_HZ;
+    }
     if (f_min >= f_max) {
         f_max = f_min + SWEEP_SLICE_BW;
+    }
+    // f_min near the ceiling may have pushed the slice past MAX again.
+    if (f_max > MAX_FREQUENCY_HZ) {
+        f_max = MAX_FREQUENCY_HZ;
+    }
+    if (f_min >= f_max) {
+        return;  // degenerate (f_min at the very ceiling): nothing to sweep
     }
     const FreqHz range = f_max - f_min;
 
@@ -1629,7 +1705,10 @@ void DroneScannerUI::SweepWindow::reset() noexcept {
     settle_frames_remaining_ = 0;
 }
 
-bool DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) noexcept {
+bool DroneScannerUI::SweepWindow::process_bins(
+    const ChannelSpectrum& spectrum,
+    const bool credit_progress
+) noexcept {
     // Discard frames captured before/while the PLL settled: their power data is
     // stale, so it MUST NOT be written into the composite AND it must NOT
     // advance bins_hz_acc either.
@@ -1661,18 +1740,44 @@ bool DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) 
     if (effective_bin_size == 0 && step_hz != 0) {
         effective_bin_size = step_hz / FFT_SWEEP_USABLE_BINS;
     }
-    SweepProcessor::process_frame(
-        spectrum,
-        composite,
-        pixel_index,
-        pixel_max,
-        bins_hz_acc,
-        pixel_step_hz,
-        f_center,
-        effective_bin_size,
-        f_min,
-        f_max
-    );
+    if (credit_progress) {
+        SweepProcessor::process_frame(
+            spectrum,
+            composite,
+            pixel_index,
+            pixel_max,
+            bins_hz_acc,
+            pixel_step_hz,
+            f_center,
+            effective_bin_size,
+            f_min,
+            f_max
+        );
+    } else {
+        // C2 DISPLAY-ONLY integration (drained live frames): pixels are
+        // written at their TRUE RF position (the absolute f_min/f_max mapping
+        // inside process_frame), so extra frames reinforce the composite
+        // max-hold without moving the scan head. The progress accumulators
+        // get dummies — their advance is discarded, keeping pixel_index /
+        // bins_hz_acc pacing at exactly one step per retune, so the
+        // line_full / freq_covered completion check is unchanged.
+        // Stack: ~16 bytes (three dummy locals, all in registers).
+        uint16_t pixel_index_dummy = 0;
+        uint8_t pixel_max_dummy = 0;
+        FreqHz bins_hz_acc_dummy = 0;
+        SweepProcessor::process_frame(
+            spectrum,
+            composite,
+            pixel_index_dummy,
+            pixel_max_dummy,
+            bins_hz_acc_dummy,
+            pixel_step_hz,
+            f_center,
+            effective_bin_size,
+            f_min,
+            f_max
+        );
+    }
     return true;
 }
 

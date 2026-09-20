@@ -93,6 +93,11 @@ private:
     ui::VGAGainField field_vga_{{UI_POS_X(11), 0}};
     ui::RFAmpField field_rf_amp_{{UI_POS_X(18), 0}};
     ui::AudioVolumeField field_volume_{{UI_POS_X_RIGHT(2), UI_POS_Y(0)}};
+    // "cy" = rssi_decrease_cycles (1..50): seconds without RSSI growth before a
+    // tracked drone's threat decays (normal mode; sweep mode uses the hardcoded
+    // MAX_SWEEP_CYCLES_MISSED instead — see scanner.hpp:apply_rssi_decay).
+    // on_change writes through to the scanner config (get→mutate→set); initial
+    // value is pushed from the config at the end of the constructor.
     ui::NumberField field_rssi_dec_cyc_{{UI_POS_X_RIGHT(6), UI_POS_Y(0)}, 2, {1, 50}, 1, ' '};
     ui::Labels labels_cyc_{
         {{UI_POS_X_RIGHT(9), UI_POS_Y(0)}, "cy", Color::white()},
@@ -188,7 +193,23 @@ private:
 
         void init(FreqHz start, FreqHz end, FreqHz step = 0) noexcept;
         void reset() noexcept;
-        [[nodiscard]] bool process_bins(const ChannelSpectrum& spectrum) noexcept;
+        /**
+         * @brief Integrate one FFT frame into this window's composite buffer.
+         * @param spectrum        256-bin FFT frame from baseband
+         * @param credit_progress true  — full path: progress accumulator and
+         *                        settle counter are consumed (freshest frame
+         *                        per tick, via on_sweep_spectrum);
+         *                        false — display-only integration for the
+         *                        extra drained live frames (frame-sync
+         *                        handler): composite max-hold is reinforced
+         *                        at true RF positions, while pixel_index /
+         *                        bins_hz_acc pacing stays one step per retune
+         *                        (line_full/freq_covered logic unchanged).
+         * @return true if the frame was processed, false if it was discarded
+         *         as a settle (retune-straddler) frame.
+         * @note Stack: ~16 bytes (dummy accumulators in the display-only path).
+         */
+        [[nodiscard]] bool process_bins(const ChannelSpectrum& spectrum, bool credit_progress = true) noexcept;
         // NOTE: rendering is never masked — the sweep window is always drawn
         // fully. Detection-window gating is applied in the scanner only
         // (DroneScanner::is_detection_window_allowed()).

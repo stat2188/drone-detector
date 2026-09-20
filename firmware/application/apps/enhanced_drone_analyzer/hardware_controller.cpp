@@ -120,10 +120,28 @@ ErrorCode HardwareController::tune_to_frequency(
         return validate_result;
     }
 
-    // Critical section 1: apply the tune. The mutex MUST NOT be held while
-    // sleeping: a 5 ms sleep under STATE_MUTEX would block every other
-    // contender (start/stop streaming, gain/RSSI access...) for the whole
-    // settle delay on every frequency hop of the scan cycle.
+    // C1 SENSITIVITY FIX: single critical section, NO PLL-settle sleep.
+    //
+    // The old code slept 5 ms AFTER releasing STATE_MUTEX but WHILE the only
+    // runtime caller (DroneScanner::perform_scan_cycle) still held its own
+    // DATA_MUTEX. Every DB-scan frequency hop therefore:
+    //   1. blocked the scanner thread under DATA_MUTEX for ~5 ms (~10% of the
+    //      50 ms hop cadence), and
+    //   2. made the UI thread's MutexTryLock in process_spectrum_message()
+    //      fail on collision — a full 16.5 ms FFT frame was then dropped
+    //      whole (~10% of the live frames, on top of the intended straddle
+    //      discard).
+    // The sleep was also redundant: both frame consumers already discard the
+    // retune straddler deterministically —
+    //   - DB scan:  retune-straddle guard in on_channel_spectrum()
+    //               (first frame observed after the tuned frequency changes),
+    //   - sweep:    settle_frames counter in SweepWindow::process_bins().
+    // MAX2837/RFFC5072 lock in ~200 µs — far below one frame period — so the
+    // FIRST full frame starting after the retune is guaranteed clean, and the
+    // settle guarantee is pinned to captured frames, not to wall time.
+    // A side benefit: the RetuneMessage is now published ~5 ms earlier, which
+    // SHRINKS the window in which a straddler frame could be mis-tagged with
+    // the old frequency (it was queued and processed before on_retune ran).
     {
         MutexLock<LockOrder::STATE_MUTEX> lock(mutex_);
 
@@ -141,24 +159,16 @@ ErrorCode HardwareController::tune_to_frequency(
             last_error_ = tune_result;
             return tune_result;
         }
-    }  // STATE_MUTEX released
 
-    // Wait for PLL stabilization. Pure hardware timing OUTSIDE the mutex —
-    // no shared state is touched here. The only runtime caller is the
-    // scanner thread (DroneScanner::perform_scan_cycle), so no concurrent
-    // tuner can interleave between the two critical sections.
-    chThdSleepMilliseconds(5);
-
-    // Critical section 2: publish the result.
-    {
-        MutexLock<LockOrder::STATE_MUTEX> lock(mutex_);
-
+        // Publish immediately (PLL settles in ~200 µs; consumers gate on
+        // captured frames, not on wall time — see the comment above).
         current_frequency_ = frequency;
         pll_locked_.set();
         state_ = streaming_active_.test() ? HardwareState::STREAMING : HardwareState::READY;
         last_error_ = ErrorCode::SUCCESS;
-        return ErrorCode::SUCCESS;
-    }
+    }  // STATE_MUTEX released
+
+    return ErrorCode::SUCCESS;
 }
 
 ErrorCode HardwareController::tune_internal(FreqHz frequency) noexcept {

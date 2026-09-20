@@ -3,6 +3,13 @@
 
 namespace drone_analyzer {
 
+// C4 idle poll period: while scanning is off (the whole sweep pass, view
+// transitions) the thread does nothing — a 10 ms poll replaces the old 1 ms
+// poll, removing ~1 kHz of scheduler churn at NORMALPRIO+10 with a worst-case
+// start latency of 10 ms (invisible for button-press UX) and stop() latency
+// (chThdWait) bounded by one poll period.
+constexpr uint32_t IDLE_POLL_PERIOD_MS = 10;
+
 ScannerThread::ScannerThread(DroneScanner& scanner) noexcept
     : scanner_(scanner), thread_(nullptr) {
 }
@@ -45,7 +52,8 @@ void ScannerThread::run() noexcept {
                 chThdSleepMilliseconds(1);  // Guard: never busy-loop on interval 0
             }
         } else {
-            chThdSleepMilliseconds(1);  // Yield to RTOS when not scanning
+            // Yield to RTOS when not scanning (see IDLE_POLL_PERIOD_MS above)
+            chThdSleepMilliseconds(IDLE_POLL_PERIOD_MS);
         }
     }
 }

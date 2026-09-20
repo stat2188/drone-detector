@@ -105,12 +105,17 @@ public:
     [[nodiscard]] ErrorCode shutdown() noexcept;
     
     /**
-     * @brief Tune to frequency and wait for PLL settle
+     * @brief Tune to frequency (non-blocking)
      * @param frequency Target frequency in Hz
      * @param max_retries Reserved for retry logic — currently IGNORED.
-     * @note PLL "verification" is a settle-delay placeholder:
-     *       check_pll_lock_internal() only reports the flag that was set
-     *       after the 5 ms settle delay; no hardware PLL lock bits are read.
+     * @note NO wall-clock settle delay. PLL locks in ~200 µs — far below one
+     *       FFT frame period — and both frame consumers deterministically
+     *       discard the retune straddler: the DB-scan straddle guard in
+     *       on_channel_spectrum() and the settle counter in
+     *       SweepWindow::process_bins(). The old 5 ms sleep ran while the
+     *       caller (DroneScanner::perform_scan_cycle) held DATA_MUTEX,
+     *       causing ~10% frame loss via MutexTryLock collisions in
+     *       process_spectrum_message() on every hop.
      * @return ErrorCode::SUCCESS if tuned, error code otherwise
      */
     [[nodiscard]] ErrorCode tune_to_frequency(
