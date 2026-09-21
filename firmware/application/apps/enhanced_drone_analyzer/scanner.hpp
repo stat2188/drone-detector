@@ -2202,6 +2202,30 @@ private:
     FreqHz pending_frequency_{0};
     uint8_t pending_count_{0};
 
+    // Secondary-detection confirm slots (FIX B6: secondaries must confirm
+    // stability like the primary path instead of creating tracks instantly;
+    // ripples of one frame otherwise become tracks without confirm/TBD/lock).
+    // Slots are keyed by bin-quantized DETECTION frequency (2-bin tolerance,
+    // ~= 156 kHz at 20 MHz / 256 bins), NOT by CFAR rank position: rank order
+    // flips by +-1 dB between frames and would thrash position-keyed pendings
+    // forever. The tolerance is deliberately NOT the 10 MHz tracker merge
+    // radius — peaks inside one frame must confirm independently. Each slot
+    // carries its own arm timestamp: a stale single sighting must not confirm
+    // minutes later (mirrors the primary CONFIRM_TIMEOUT_MS window).
+    // SRAM: 5 x (8 + 4 + 1) = 65 bytes (FreqHz=uint64_t, SystemTime=uint32_t).
+    static constexpr size_t SECONDARY_SLOTS = MAX_SHAPE_DETECTIONS - 1;
+    static_assert(SECONDARY_SLOTS > 0, "B6 needs at least one secondary slot");
+    FreqHz secondary_pending_freq_[SECONDARY_SLOTS]{};
+    SystemTime secondary_pending_time_[SECONDARY_SLOTS]{};
+    uint8_t secondary_pending_count_[SECONDARY_SLOTS]{};
+
+    // Valley dual-peak guard (FIX B5 narrow skip: at most one narrow extra
+    // ridge with a dip between ridges still counts as "dual peak").
+    // Flash: 1 byte. A WiFi flat-top (dozens of hot bins, no dip) no longer
+    // skips the valley check; FPV video+audio subcarrier (two narrow ridges
+    // with a dip) still does.
+    static constexpr uint8_t DUAL_PEAK_MAX_RUN_BINS = 6;
+
     // RSSI hysteresis state (Schmitt trigger: 2 dB to turn ON, 2 dB easier to stay ON)
     // NORMAL-mode keys — owned by process_spectrum_message(). Sweep mode has
     // its own per-window keys below and MUST NOT touch these (see C2 block).

@@ -647,6 +647,14 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     if (current_frequency_ != pending_frequency_) {
         pending_frequency_ = 0;
         pending_count_ = 0;
+        // Secondary pending belongs to the OLD frame: drop every slot on tune
+        // change or a stale secondary frequency would confirm instantly after
+        // the retune (FIX B6 tuneaway invalidation). Stack: 0. SRAM: 0 extra.
+        for (size_t s = 0; s < SECONDARY_SLOTS; ++s) {
+            secondary_pending_freq_[s] = 0;
+            secondary_pending_time_[s] = 0;
+            secondary_pending_count_[s] = 0;
+        }
     }
 
     statistics_.successful_cycles++;
@@ -707,6 +715,13 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         : raw_rssi;
 
     const SystemTime now = chTimeNow();
+
+    // Track whether the detection came from the multi-frame TBD integrator
+    // (below) rather than the single-frame shape/RSSI path. TBD already
+    // carries its own narrowband guard (tbd_peak_is_narrowband, MaxW
+    // semantics) — the B1 hard gate below must not kill it.
+    // Stack: 1 byte. SRAM: 0.
+    bool tbd_confirmed = false;
 
     // ----- RSSI Hysteresis (Schmitt trigger) -----
     // Reset waterfall history on frequency change — old frames are stale
@@ -852,11 +867,30 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
                 signal_detected = true;
                 signal_present_ = true;
                 effective_rssi = tbd_rssi;
+                tbd_confirmed = true;
             }
         }
     }
 
     if (signal_detected) {
+        // FIX B1 (hard shape gate, defense-in-depth): when spectrum shape
+        // detection is enabled, a REJECTED shape verdict must be final. In the
+        // current pipeline signal_detected already implies (has_shape_result
+        // || tbd_confirmed) — the only setters are the shape-gated primary
+        // (line ~761), the RSSI-only opt-out branch (unreachable when enabled),
+        // and the narrowband-guarded TBD — so this gate is normally a no-op.
+        // It exists to keep DB-scan parity with process_spectrum_sweep()'s
+        // any_peak_passed_shape gate against FUTURE RSSI fallbacks: any new
+        // setter that is neither shape-validated nor TBD-guarded is dropped
+        // here instead of silently re-tracking WiFi/BT flat-tops.
+        // EXEMPT: tbd_confirmed — the multi-frame integrator carries its own
+        // narrowband guard (MaxW envelope semantics); it is a second opinion,
+        // not a bypass.
+        // Stack: 0 bytes. SRAM: 0. Statistics already updated above.
+        if (config_.spectrum_detection_enabled && !has_shape_result && !tbd_confirmed) {
+            signal_present_ = false;
+            return ErrorCode::SUCCESS;  // Shape rejected — no track, no dwell
+        }
         // NOTE: no exception/detection-window filter here — the detection-window
         // gate is a SWEEP-mode concept (see apply_sweep_tracking()); normal DB
         // scanning accepts every shape-validated channel detection.
@@ -1035,9 +1069,22 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     // ---- Secondary detection tracking (multi-peak) ----
     // Track additional independent signals found in the same 20 MHz FFT frame.
     // Primary detection (index 0) was already handled above with full hysteresis,
-    // TBD, confirm count, and lock state machine. Secondary detections bypass
-    // these safeguards (already validated by shape filters) and are tracked directly.
+    // TBD, confirm count, and lock state machine.
+    // FIX B6: secondaries must confirm stability like the primary path (own
+    // per-slot pending counters keyed by FREQUENCY, not by CFAR rank position),
+    // instead of creating tracks instantly. A single-frame ripple otherwise
+    // becomes a track without confirm/TBD/lock. Stack: ~32 bytes (locals only,
+    // pending state lives in member arrays).
     if (has_shape_result && shape_result.count > 1 && signal_detected) {
+        // Slot tolerance is BIN-LOCAL, not the tracker merge radius: two CFAR
+        // peaks inside one 20 MHz frame must confirm INDEPENDENTLY, while the
+        // 10 MHz merge radius would fuse them into one slot. Slots re-arm on
+        // equality (bin-quantized RF: stable emitter => identical det_freq
+        // frame to frame), any drift re-arms. Two-bin slop absorbs a 1-bin
+        // CFAR jitter (78 kHz) without fusing distinct emitters.
+        // Stack: 0 (scalar). SRAM: 0 extra.
+        constexpr FreqHz SEC_BIN_HZ = DB_CAPTURE_RATE_HZ / FFT_BIN_COUNT;
+        constexpr FreqHz SEC_TOL_HZ = SEC_BIN_HZ * static_cast<FreqHz>(2);
         for (size_t d = 1; d < shape_result.count; ++d) {
             const FreqHz det_freq = shape_result.detections[d].frequency;
             const int32_t det_rssi = shape_result.detections[d].rssi;
@@ -1045,8 +1092,64 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             // Skip if frequency is out of valid range
             if (det_freq < MIN_FREQUENCY_HZ || det_freq > MAX_FREQUENCY_HZ) continue;
 
-            // Track secondary detection directly (no confirm count needed —
-            // shape analysis already validated the signal). The full-tracker
+            if (det_rssi < config_.rssi_threshold_dbm) continue;  // guard
+            // NOTE: no detection-window gate here — it is a SWEEP-mode concept
+            // (see apply_sweep_tracking()); DB scan accepts every confirmed
+            // channel detection, same as the primary path below.
+
+            // FIX CRITICAL-1: honor confirm_count_enabled. When the user opts
+            // out of confirmation, the primary path tracks from frame one —
+            // secondaries must not stay stricter than the primary.
+            if (!config_.confirm_count_enabled) {
+                (void)update_tracked_drone_internal(det_freq, det_rssi, now);
+                continue;
+            }
+
+            // FIX CRITICAL-2: slot = pending within bin tolerance, else a free
+            // slot. Rank position (d-1) flips with +-1 dB power jitter and
+            // would re-arm every frame (liveness failure: two stable drones
+            // never confirm when they swap CFAR order). Tolerance is BIN-LOCAL
+            // (2 bins ~= 156 kHz): the 10 MHz tracker merge radius would fuse
+            // two independent in-frame emitters into one slot.
+            size_t slot = SECONDARY_SLOTS;  // sentinel: no usable slot
+            size_t free_slot = SECONDARY_SLOTS;
+            for (size_t s = 0; s < SECONDARY_SLOTS; ++s) {
+                if (secondary_pending_freq_[s] == 0) {
+                    if (free_slot >= SECONDARY_SLOTS) free_slot = s;
+                    continue;
+                }
+                const FreqHz diff = (det_freq > secondary_pending_freq_[s])
+                    ? (det_freq - secondary_pending_freq_[s])
+                    : (secondary_pending_freq_[s] - det_freq);
+                if (diff <= SEC_TOL_HZ) {
+                    slot = s;
+                    break;
+                }
+            }
+            if (slot >= SECONDARY_SLOTS) {
+                if (free_slot >= SECONDARY_SLOTS) continue;  // all slots owned by others
+                slot = free_slot;
+                secondary_pending_freq_[slot] = det_freq;
+                secondary_pending_count_[slot] = 1;
+                secondary_pending_time_[slot] = now;
+                continue;
+            }
+            // FIX HIGH-1: confirm window. A lone sighting must expire like the
+            // primary CONFIRM_TIMEOUT_MS instead of confirming minutes later.
+            // NOTE: no drift re-check here — slot match above already enforces
+            // diff <= SEC_TOL_HZ, so a re-arm on drift is unreachable by
+            // construction (kept single-gate to avoid dead branches).
+            if ((now - secondary_pending_time_[slot]) >= CONFIRM_TIMEOUT_MS) {
+                secondary_pending_freq_[slot] = det_freq;
+                secondary_pending_count_[slot] = 1;
+                secondary_pending_time_[slot] = now;
+                continue;
+            }
+            if (secondary_pending_count_[slot] < config_.confirm_count) {
+                ++secondary_pending_count_[slot];
+            }
+            if (secondary_pending_count_[slot] < config_.confirm_count) continue;  // guard
+            // Track confirmed secondary detection. The full-tracker
             // case is handled inside add_tracked_drone_internal(): the weakest
             // resident is evicted when the candidate outranks it.
             (void)update_tracked_drone_internal(det_freq, det_rssi, now);
@@ -1699,6 +1802,14 @@ void DroneScanner::clear_lock_state() noexcept {
     // Clear lock timing timers for consistency
     lock_start_time_ = 0;
     confirm_start_time_ = 0;
+    // B6 secondary pendings are tune-scoped like the primary pair above: a
+    // clear mid-scan must not leave a half-confirmed secondary behind.
+    // Stack: 0. SRAM: 0 extra.
+    for (size_t s = 0; s < SECONDARY_SLOTS; ++s) {
+        secondary_pending_freq_[s] = 0;
+        secondary_pending_time_[s] = 0;
+        secondary_pending_count_[s] = 0;
+    }
     // Reset sweep frequency tracking so first sweep frame always resets median filter
     // (per-window arrays: same behavior as the old shared last_sweep_freq_ = 0).
     last_sweep_freq_ = 0;
@@ -1770,6 +1881,13 @@ void DroneScanner::reset_frequency() noexcept {
     // Reset lock timing for consistency
     lock_start_time_ = 0;
     confirm_start_time_ = 0;
+    // New database = new tune plan: primary AND secondary pendings belong to
+    // the old plan (same ownership as clear_lock_state() above).
+    for (size_t s = 0; s < SECONDARY_SLOTS; ++s) {
+        secondary_pending_freq_[s] = 0;
+        secondary_pending_time_[s] = 0;
+        secondary_pending_count_[s] = 0;
+    }
 }
 
 void DroneScanner::remove_stale_drones(SystemTime current_time) noexcept {
@@ -2403,6 +2521,12 @@ bool DroneScanner::apply_shape_filters(
     // Very strong signal bypass: flanking bins ARE the signal at close range.
     // Sensitive mode bypass: valley depth is unreliable for weak signals.
     if (config_.spectrum_valley_depth > 0 && !very_strong && !config_.sensitive_mode) {
+        // FIX B5 (narrow dual-peak skip): the old "any bin above half-peak"
+        // test was satisfied by dozens of bins of a WiFi flat-top, so valley
+        // NEVER rejected flat-tops while claiming to. Count ridges above the
+        // half-peak level instead: skip valley only for exactly ONE extra
+        // narrow ridge with a real dip beside it (FPV video + audio
+        // subcarrier). Stack: ~24 bytes (size_t counters stay in registers).
         bool has_secondary_peak = false;
         // Saturate to 255: peak_margin/2 (0-127) added to noise_floor
         // (0-255) can overflow uint8 (e.g. 255 + 60 -> 59 without this),
@@ -2413,12 +2537,82 @@ bool DroneScanner::apply_shape_filters(
             static_cast<uint16_t>(peak_margin / 2);
         const uint8_t secondary_threshold =
             (secondary_sum > 255) ? 255 : static_cast<uint8_t>(secondary_sum);
-        for (size_t i = left; i <= right && !has_secondary_peak; ++i) {
-            if (has_dc_gap && i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-            if (i == peak_idx) continue;
-            if (data[i] >= secondary_threshold) {
-                has_secondary_peak = true;
+        // Integer-only dip floor: margin/4, but never below 2 units — a 1-unit
+        // dip at margin=5 sits inside the ~2-unit FFT noise sigma and would let
+        // a rippled flat-top claim "dual peak". (margin >= 5 here via Step 3,
+        // so no division by zero.) Edge-transition bins (level/3..level/2) are
+        // shallower than margin/6 < required_dip, so only a true inter-ridge
+        // null can satisfy this.
+        const uint8_t required_dip =
+            (peak_margin / 4u >= 2u) ? static_cast<uint8_t>(peak_margin / 4u) : 2u;
+        {
+            // FIX MEDIUM-3: size_t counters — [left,right] spans up to ~236
+            // bins; uint8_t counters were one refactor away from wraparound.
+            //
+            // Counting rule: the peak bin is evaluated NORMALLY (raw_peak >=
+            // secondary_threshold by construction: threshold = noise+margin/2
+            // <= noise+margin = raw_peak, saturation-safe per above). Hence the
+            // main lobe is always exactly one run; the run CONTAINING peak_idx
+            // is the main lobe and is excluded, every other run is an extra
+            // ridge. Position-keyed exclusion (`i == peak_idx → continue`)
+            // would instead SPLIT the main lobe into two counted ridges and a
+            // true dual-peak would score 3, never 1.
+            size_t extra_runs = 0;
+            size_t extra_widest = 0;
+            size_t cur_run = 0;
+            bool cur_has_peak = false;
+            bool ridge_seen = false;  // a run opened at least once (gates dip)
+            uint8_t deepest_dip = 0;
+            bool in_run = false;
+            for (size_t i = left; i <= right; ++i) {
+                // DC gap TERMINATES a run (hard measurement boundary, same as
+                // the Step 4 walk): two flanks must never glue across it.
+                if (has_dc_gap && i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) {
+                    if (in_run) {
+                        in_run = false;
+                        if (!cur_has_peak) {
+                            ++extra_runs;
+                            if (cur_run > extra_widest) extra_widest = cur_run;
+                        }
+                    }
+                    continue;
+                }
+                if (data[i] >= secondary_threshold) {
+                    if (!in_run) {
+                        in_run = true;
+                        cur_run = 0;
+                        cur_has_peak = false;
+                        ridge_seen = true;
+                    }
+                    ++cur_run;
+                    if (i == peak_idx) cur_has_peak = true;
+                } else {
+                    if (in_run) {
+                        in_run = false;
+                        if (!cur_has_peak) {
+                            ++extra_runs;
+                            if (cur_run > extra_widest) extra_widest = cur_run;
+                        }
+                    }
+                    // Valley floor: deepest below-threshold bin once ridges
+                    // exist. Leading edge-transition bins are excluded by
+                    // ridge_seen; trailing ones are shallower than margin/6.
+                    if (ridge_seen) {
+                        const uint8_t dip = static_cast<uint8_t>(secondary_threshold - data[i]);
+                        if (dip > deepest_dip) deepest_dip = dip;
+                    }
+                }
             }
+            if (in_run && !cur_has_peak) {
+                ++extra_runs;
+                if (cur_run > extra_widest) extra_widest = cur_run;
+            }
+            // Exactly ONE extra NARROW ridge with a real dip: FPV video+audio.
+            // Flat-top (0 extra), ripple-top (2+ extra), wide second lobe all
+            // fall through to the valley check below.
+            has_secondary_peak = (extra_runs == 1u) &&
+                                 (extra_widest <= DUAL_PEAK_MAX_RUN_BINS) &&
+                                 (deepest_dip >= required_dip);
         }
 
         if (!has_secondary_peak) {
