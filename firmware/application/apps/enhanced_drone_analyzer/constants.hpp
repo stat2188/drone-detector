@@ -1073,7 +1073,10 @@ constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 80;
  * @note WiFi/BT flat-top: flatness ~ 50-80% (many bins near peak)
  * @note Drone V-shape / analog FM video: flatness ~ 5-30% (peak bin dominates
  *       the 90%-of-peak count at usable SNR)
- * @note Higher threshold = stricter (rejects more flat signals)
+ * @note Higher threshold = MORE PERMISSIVE (admits flatter signals); LOWER
+ *       threshold = stricter (rejects more flat-top signals). The value is
+ *       the MAXIMUM allowed flatness: flatness_pct > threshold → REJECT.
+ *       0 = filter disabled.
  * @note 0 = no flatness filtering (disabled)
  * @note SEMANTICS: flatness is a SHAPE filter, not a width filter. It does
  *       NOT measure width and does NOT suppress it — MinW/MaxW own width
@@ -1090,16 +1093,19 @@ constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 80;
  *       edge-clipped in sweep or fragmented by ripple. With MaxW=200 the
  *       sharpness gate (WiFi ≈ 100-115 < 120) is the only remaining WiFi
  *       gate and its 4-17% separation margin collapses on OFDM ripple
- *       crests. Flat=60 restores the width-independent discriminator with a
- *       2x separation margin (FPV <30% vs WiFi 50-80%).
+ *       crests. Flat=45 restores the width-independent discriminator:
+ *       the midpoint of the documented separation gap (FPV <=30%,
+ *       WiFi >=50%) — rejects the ENTIRE documented WiFi range while
+ *       keeping a 15-point margin above the FPV maximum.
  *       SAFETY for weak FPV: flatness is skipped entirely below
  *       FLATNESS_MIN_PEAK_MARGIN (~8 dB, the far-field regime where the
  *       old 0-default mattered), skipped in sensitive mode for weak peaks,
  *       and skipped for narrow signals (<= FLATNESS_MIN_SIGNAL_WIDTH).
  *       Close-range strong FPV (quasi-flat FM block) measures <30% — passes.
- *       WiFi-плотные площадки: поднимайте до 70-80 (см. README раздел 24).
+ *       WiFi-плотные площадки: ПОНИЖАЙТЕ до 35-40 (меньше = жёстче;
+ *       см. README раздел 24). ПОДЪЁМ порога, наоборот, ОСЛАБЛЯЕТ фильтр.
  */
-constexpr uint8_t DEFAULT_SPECTRUM_FLATNESS = 60;
+constexpr uint8_t DEFAULT_SPECTRUM_FLATNESS = 45;
 
 /**
  * @brief Minimum peak margin for flatness check to be meaningful (in spectrum.db units)

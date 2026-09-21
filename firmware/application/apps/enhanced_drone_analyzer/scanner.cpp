@@ -2462,7 +2462,7 @@ bool DroneScanner::apply_shape_filters(
     // FPV) but KEEPS it for very_strong peaks: with max_width/valley/symmetry
     // all bypassed at very_strong, disabling flatness too would let a
     // close-range WiFi/BT flat-top pass unfiltered.
-    // NOTE (audit update): default spectrum_flatness is NOW 60 (enabled) —
+    // NOTE (audit update): default spectrum_flatness is NOW 45 (enabled) —
     // the primary WiFi/BT gate. Flatness still skips WEAK peaks
     // (peak_margin < effective_flatness_min) and, in sensitive mode, ALL
     // non-very-strong peaks — far-field FPV is unaffected by the default.

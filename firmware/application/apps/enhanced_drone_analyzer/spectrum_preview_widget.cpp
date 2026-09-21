@@ -99,6 +99,10 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
     valley_px = std::min(valley_px, peak_h / 3);
 
     // Flat top width (pixels). Maps flatness 0-100 to 0-50% of half_px.
+    // SEMANTICS: the drawn peak is the FLATTEST signal that still passes
+    // the filter. Raising Flat WIDENS the template's flat top — "flatter
+    // signals still pass" — i.e. the filter becomes MORE permissive.
+    // Lowering Flat narrows it — the filter cuts more flat tops.
     int flat_px = 0;
     if (flatness_ > 0) {
         flat_px = half_px * static_cast<int>(flatness_) / 200;
@@ -236,6 +240,14 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
     if (peak_ratio_ > 0) {
         painter.draw_string({x0 + w - 9, y0 + 1}, font,
                             ui::Color::cyan(), ui::Color::black(), "R");
+    }
+
+    // "F" above the flat top — identifies the flatness boundary of the
+    // template. The flat top IS the acceptance boundary: wider "F" span =
+    // flatter signals still allowed (filter softer); narrower = stricter.
+    if (flat_px > 3) {
+        painter.draw_string({x0 + center - 4, y0 + 1}, font,
+                            ui::Color::yellow(), ui::Color::black(), "F");
     }
 }
 

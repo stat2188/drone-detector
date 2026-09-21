@@ -35,7 +35,7 @@ private:
     uint8_t sharpness_{120};
     uint8_t peak_ratio_{0};
     uint8_t valley_depth_{80};
-    uint8_t flatness_{0};
+    uint8_t flatness_{45};
     uint8_t symmetry_{0};
 
     static ui::Color amplitude_color(int32_t h, int32_t max_h) noexcept;
