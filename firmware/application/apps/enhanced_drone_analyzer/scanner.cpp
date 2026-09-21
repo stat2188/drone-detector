@@ -1926,11 +1926,14 @@ bool DroneScanner::analyze_spectrum_shape_impl(
     uint8_t noise_floor,
     int32_t& out_rssi,
     size_t edge_skip,
-    int32_t total_gain
+    int32_t total_gain,
+    SignalExtent* out_extent,
+    bool reject_edge_clipped
 ) noexcept {
     return apply_shape_filters(
         spectrum.db.data(), peak_index, raw_peak, noise_floor,
-        out_rssi, edge_skip, /*has_dc_gap=*/true, total_gain);
+        out_rssi, edge_skip, /*has_dc_gap=*/true, total_gain,
+        out_extent, reject_edge_clipped);
 }
 
 // ============================================================================
@@ -2164,7 +2167,8 @@ bool DroneScanner::apply_shape_filters(
     size_t edge_skip,
     bool has_dc_gap,
     int32_t total_gain,
-    SignalExtent* out_extent
+    SignalExtent* out_extent,
+    bool reject_edge_clipped
 ) const noexcept {
     // Buffer length derived from the buffer type — hoisted above the guards:
     // the Step 4 walk and emission_extent() index bins against it.
@@ -2321,6 +2325,41 @@ bool DroneScanner::apply_shape_filters(
             [data](size_t i) noexcept { return data[i]; },
             peak_idx, data_size, noise_floor, peak_margin, edge_skip, has_dc_gap);
         if (emission.width() > config_.spectrum_max_width) return false;
+
+        // Step 6c: EDGE-CLIP GUARD (sweep-only; reject_edge_clipped=true).
+        // An emission whose extent reaches the window boundary while the
+        // boundary bin is still above the half-power continuation level
+        // CONTINUES beyond this capture window — the measured width is a
+        // clipped fragment, not the real bandwidth. WiFi (20-40+ MHz) lies
+        // ACROSS every 20 MHz sweep slice boundary; analog FPV (8-18 MHz)
+        // fits centered in a slice and never touches the edges, so the guard
+        // rejects WiFi fragments without killing FPV detection (the sweep
+        // pattern revisits the target centered in an adjacent slice).
+        // clip_level mirrors emission_extent()'s cont_level formula exactly
+        // (noise + max(peak_margin/2, gate/3)) so "extent touched the walk
+        // boundary" and "edge bin still above clip_level" agree by
+        // construction. DB scan passes false: VTX drift may sit at the DB
+        // window edge BY DESIGN and must not be rejected.
+        // Stack: 6 bytes. Flash: ~40 bytes. Zero loops, zero divisions.
+        if (reject_edge_clipped) {
+            const uint8_t gate_6c = shape_gate_margin();
+            const uint8_t half_power_6c = static_cast<uint8_t>(peak_margin / 2);
+            const uint8_t gate_floor_6c =
+                (gate_6c >= 3) ? static_cast<uint8_t>(gate_6c / 3) : 1;
+            const uint8_t clip_elevation =
+                (half_power_6c > gate_floor_6c) ? half_power_6c : gate_floor_6c;
+            const uint16_t clip_level =
+                static_cast<uint16_t>(noise_floor) + clip_elevation;
+            if (emission.left <= edge_skip
+                && data[edge_skip] >= clip_level) {
+                return false;  // emission runs off the LEFT window edge
+            }
+            if (emission.right >= upper_limit - 1
+                && data[upper_limit - 1] >= clip_level) {
+                return false;  // emission runs off the RIGHT window edge
+            }
+        }
+
         if (out_extent != nullptr) {
             *out_extent = emission;
         }
@@ -2423,11 +2462,11 @@ bool DroneScanner::apply_shape_filters(
     // FPV) but KEEPS it for very_strong peaks: with max_width/valley/symmetry
     // all bypassed at very_strong, disabling flatness too would let a
     // close-range WiFi/BT flat-top pass unfiltered.
-    // NOTE (audit): default spectrum_flatness IS 0 (disabled) and sensitive
-    // mode ALSO skips flatness on weak peaks — at defaults the ONLY case
-    // where flatness still runs is a VERY-STRONG peak in sensitive mode.
-    // Operators who enable Mar>0 MUST also set Flat>0, otherwise WiFi/BT at
-    // any range passes (see fix B1 below — MaxW no longer skips).
+    // NOTE (audit update): default spectrum_flatness is NOW 60 (enabled) —
+    // the primary WiFi/BT gate. Flatness still skips WEAK peaks
+    // (peak_margin < effective_flatness_min) and, in sensitive mode, ALL
+    // non-very-strong peaks — far-field FPV is unaffected by the default.
+    // A user can still set 0 in Settings to disable (legacy behavior).
     if (config_.spectrum_flatness > 0 && peak_margin >= effective_flatness_min
         && (!config_.sensitive_mode || very_strong)) {
         // Denominator: signal width excluding DC spike bins (if present)
@@ -2900,6 +2939,20 @@ void DroneScanner::process_spectrum_sweep(
     // in sweep, so OFF behaved identically to ON — the checkbox was dead in
     // sweep while working in DB scan (process_spectrum_message gates there).
     const bool bypass_shape = !config_.spectrum_detection_enabled;
+
+    // EMISSION DEDUP (parity with the DB-scan path in
+    // analyze_spectrum_shape_multi()): peaks are strongest-first; the first
+    // crest that passes the shape chain records its whole SignalExtent
+    // (Step 6b) and every later peak INSIDE an accepted extent is a ripple
+    // crest of the SAME emission — skipped instead of spawning a duplicate
+    // detection. Previously sweep ran the shape chain on all 8 candidates
+    // independently with no shared extent, so one rippled WiFi/BT top
+    // spawned up to 8 records per frame and dozens per sweep pass.
+    // Stack: accepted_sweep[] = MAX_SWEEP_PEAKS × sizeof(SignalExtent)
+    // = 8 × 8 = 64 bytes (ARM32 size_t). Well within the 512B frame budget.
+    SignalExtent accepted_sweep[MAX_SWEEP_PEAKS]{};
+    size_t accepted_sweep_count = 0;
+
     for (size_t p = 0; p < peak_count; ++p) {
         const size_t peak_index = cfar_peaks[p].bin;
 
@@ -2907,6 +2960,21 @@ void DroneScanner::process_spectrum_sweep(
         // Defensive: both candidate sources already exclude DC bins.
         if (peak_index >= FFT_DC_SPIKE_START && peak_index < FFT_DC_SPIKE_END) {
             continue;
+        }
+
+        // Same-emission fast path: run BEFORE the filter chain. Only active
+        // when the shape chain runs — in bypass mode there are no extents,
+        // tracking is RSSI-only (unchanged legacy behavior).
+        if (!bypass_shape) {
+            bool duplicate = false;
+            for (size_t e = 0; e < accepted_sweep_count; ++e) {
+                if (peak_index >= accepted_sweep[e].left
+                    && peak_index <= accepted_sweep[e].right) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (duplicate) continue;
         }
 
         FreqHz peak_freq = fft_bin_to_freq(center_freq, peak_index);
@@ -2920,15 +2988,26 @@ void DroneScanner::process_spectrum_sweep(
         // apply_shape_filters, has_dc_gap=true), so MaxW semantics are
         // identical in both modes by construction. Edge skip matches the
         // candidate-collection region (FFT_EDGE_SKIP_NARROW = 6 bins).
+        // reject_edge_clipped=true: sweep-only Step 6c — a WiFi band that
+        // straddles the slice boundary is a CLIPPED fragment of a wider
+        // emission and must not pass MaxW on its truncated width. DB scan
+        // keeps false (VTX drift to the DB window edge is by design).
         int32_t shape_rssi = RSSI_MIN_DBM;
         if (bypass_shape) {
             // RSSI-only path: same dBm conversion as the shape path's RSSI
             // output, no width/sharpness/valley gates. Stack: 0B extra.
             shape_rssi = spectrum_value_to_dbm(cfar_peaks[p].power, total_gain);
-        } else if (!analyze_spectrum_shape_impl(
-                spectrum, peak_index, cfar_peaks[p].power,
-                noise_floor, shape_rssi, FFT_EDGE_SKIP_NARROW, total_gain)) {
-            continue;  // This peak rejected by shape filter — try next peak
+        } else {
+            SignalExtent det_extent{};
+            if (!analyze_spectrum_shape_impl(
+                    spectrum, peak_index, cfar_peaks[p].power,
+                    noise_floor, shape_rssi, FFT_EDGE_SKIP_NARROW, total_gain,
+                    &det_extent, /*reject_edge_clipped=*/true)) {
+                continue;  // This peak rejected by shape filter — try next peak
+            }
+            if (accepted_sweep_count < MAX_SWEEP_PEAKS) {
+                accepted_sweep[accepted_sweep_count++] = det_extent;
+            }
         }
         any_peak_passed_shape = true;
 

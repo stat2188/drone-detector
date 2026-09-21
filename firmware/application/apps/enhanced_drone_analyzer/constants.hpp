@@ -1071,16 +1071,35 @@ constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 80;
  * @note flatness = (high_power_bins * 100) / signal_width
  * @note Measures how many bins are at 90%+ of peak power
  * @note WiFi/BT flat-top: flatness ~ 50-80% (many bins near peak)
- * @note Drone V-shape: flatness ~ 5-20% (only peak bin at high power)
+ * @note Drone V-shape / analog FM video: flatness ~ 5-30% (peak bin dominates
+ *       the 90%-of-peak count at usable SNR)
  * @note Higher threshold = stricter (rejects more flat signals)
  * @note 0 = no flatness filtering (disabled)
- * @note ANALOG FPV DEFAULT: 0 (disabled) — flatness measurement is unreliable
- *       on analog FM (V-shape compresses near the noise floor, 20-50% swing),
- *       and with max_width=40 + sharpness=150 the flat WiFi/BT tops are
- *       already rejected by those gates. Disabling flatness also un-gates
- *       close-range FPV where peak_margin >= FLATNESS_MIN_PEAK_MARGIN
+ * @note SEMANTICS: flatness is a SHAPE filter, not a width filter. It does
+ *       NOT measure width and does NOT suppress it — MinW/MaxW own width
+ *       (Steps 5/6). Flatness runs AFTER the band is measured and classifies
+ *       its PROFILE: the share of bins within the measured band that carry
+ *       >= 90% of peak power. A flat top (WiFi/BT) scores 50-80% (REJECT),
+ *       a sharp peak (drone/FM) scores <30% (PASS). Two signals of the SAME
+ *       width can invert the verdict — the shape decides, which is exactly
+ *       why flatness works where MaxW cannot.
+ * @note OPTIMAL DEFAULT: 60 — the PRIMARY WiFi/BT rejection filter.
+ *       Rationale: MaxW was re-tuned to 200 bins (Step-6b emission-extent
+ *       semantics) so analog FPV video (8-18 MHz) passes at ANY range —
+ *       which also lets WiFi 20 MHz OFDM through whenever its extent is
+ *       edge-clipped in sweep or fragmented by ripple. With MaxW=200 the
+ *       sharpness gate (WiFi ≈ 100-115 < 120) is the only remaining WiFi
+ *       gate and its 4-17% separation margin collapses on OFDM ripple
+ *       crests. Flat=60 restores the width-independent discriminator with a
+ *       2x separation margin (FPV <30% vs WiFi 50-80%).
+ *       SAFETY for weak FPV: flatness is skipped entirely below
+ *       FLATNESS_MIN_PEAK_MARGIN (~8 dB, the far-field regime where the
+ *       old 0-default mattered), skipped in sensitive mode for weak peaks,
+ *       and skipped for narrow signals (<= FLATNESS_MIN_SIGNAL_WIDTH).
+ *       Close-range strong FPV (quasi-flat FM block) measures <30% — passes.
+ *       WiFi-плотные площадки: поднимайте до 70-80 (см. README раздел 24).
  */
-constexpr uint8_t DEFAULT_SPECTRUM_FLATNESS = 0;
+constexpr uint8_t DEFAULT_SPECTRUM_FLATNESS = 60;
 
 /**
  * @brief Minimum peak margin for flatness check to be meaningful (in spectrum.db units)

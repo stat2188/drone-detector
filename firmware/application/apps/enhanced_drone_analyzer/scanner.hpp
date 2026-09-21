@@ -1891,6 +1891,9 @@ private:
      */
     [[nodiscard]] uint8_t shape_gate_margin() const noexcept;
 
+    // Forward declaration — full definition in the EMISSION EXTENT section below.
+    struct SignalExtent;
+
     /**
      * @brief Shared spectrum shape analysis with configurable edge skip.
      * @note Called by both analyze_spectrum_shape() and process_spectrum_sweep()
@@ -1898,6 +1901,18 @@ private:
      * @param spectrum 256-bin FFT data
      * @param out_rssi Output: RSSI in dBm if signal detected
      * @param edge_skip Number of edge bins to skip (FFT_EDGE_SKIP=10 for normal, FFT_EDGE_SKIP_NARROW=6 for sweep)
+     * @param out_extent Optional. When non-null and the call returns true,
+     *        receives the SignalExtent of the whole emission around the peak
+     *        (Step 6b). Callers use it for emission dedup (sweep mode).
+     * @param reject_edge_clipped When true, Step 6c rejects any emission whose
+     *        extent reaches the FFT window boundary while the boundary bin is
+     *        still above the half-power level — the signal CONTINUES beyond
+     *        this capture window, so the measured width is a clipped fragment,
+     *        not the real bandwidth. This is the primary WiFi rejection gate in
+     *        sweep mode: a 20-40+ MHz WiFi band straddles every 20 MHz slice
+     *        boundary, while an 8-18 MHz analog FPV carrier fits centered and
+     *        never touches the edges. DB scan passes false (VTX drift may sit
+     *        at the DB window edge BY DESIGN — see SWEEP_SLICE_BW notes).
      * @return true if drone-like signal detected
      */
     [[nodiscard]] bool analyze_spectrum_shape_impl(
@@ -1907,7 +1922,9 @@ private:
         uint8_t noise_floor,
         int32_t& out_rssi,
         size_t edge_skip,
-        int32_t total_gain
+        int32_t total_gain,
+        SignalExtent* out_extent = nullptr,
+        bool reject_edge_clipped = false
     ) noexcept;
 
     // ------------------------------------------------------------------------
@@ -2067,7 +2084,8 @@ private:
         size_t edge_skip,
         bool has_dc_gap,
         int32_t total_gain,
-        SignalExtent* out_extent = nullptr
+        SignalExtent* out_extent = nullptr,
+        bool reject_edge_clipped = false
     ) const noexcept;
 
     /**
