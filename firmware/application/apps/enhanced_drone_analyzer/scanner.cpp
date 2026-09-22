@@ -728,6 +728,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     if (frequency != last_hysteresis_freq_) {
         last_hysteresis_freq_ = frequency;
         waterfall_history_.reset();
+        clear_shape_veto();  // D5: veto lifetime == waterfall window lifetime
     }
 
     // Effective threshold: 2 dB harder to turn ON, 2 dB easier to stay ON
@@ -861,8 +862,14 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         // gate above). Sensitivity-neutral: confirmation just waits for an
         // "up" flicker of a marginal target instead of confirming during a
         // fade.
+        // SHAPE-VETO (D5 cross-frame fix): bins rejected by the shape chain
+        // while above the margin gate earlier in THIS waterfall window stay
+        // vetoed — a peak flickering below the gate no longer slips past the
+        // per-frame guard (shape_rejected_after_margin) and gets resurrected
+        // with width-only validation.
         if (active_frames >= TBD_MIN_FRAMES
-            && spectrum.db[tbd_peak_bin] >= threshold) {
+            && spectrum.db[tbd_peak_bin] >= threshold
+            && !shape_vetoed(tbd_peak_bin)) {
             // Multi-frame confirmed — compute integrated RSSI
             const uint16_t integrated = waterfall_history_.get_integrated_power(tbd_peak_bin);
             const uint8_t avg_power = static_cast<uint8_t>(integrated / waterfall_history_.size());
@@ -1849,6 +1856,7 @@ void DroneScanner::reset_sweep_integrators() noexcept {
     // the first frame of the new mode rebuilds both integrators from scratch.
     rssi_median_filter_.reset();
     waterfall_history_.reset();
+    clear_shape_veto();  // D5: mode switch drops all integration evidence
     signal_present_ = false;
     sweep_signal_present_ = false;
     last_sweep_freq_ = 0;
@@ -2195,6 +2203,7 @@ bool DroneScanner::analyze_spectrum_shape_multi(
                 if ((cfar_peaks[i].power > noise_floor)
                     && (cfar_peaks[i].power - noise_floor) >= shape_gate_margin()) {
                     out_result.shape_rejected_after_margin = true;
+                    note_shape_veto(peak_bin);  // D5: persist across frames until waterfall reset
                 }
             }
         }
@@ -2277,6 +2286,7 @@ bool DroneScanner::analyze_spectrum_shape_multi(
                 if ((candidates[i].power > noise_floor)
                     && (candidates[i].power - noise_floor) >= shape_gate_margin()) {
                     out_result.shape_rejected_after_margin = true;
+                    note_shape_veto(candidates[i].bin);  // D5: persist across frames until waterfall reset
                 }
             }
         }
@@ -3033,6 +3043,7 @@ void DroneScanner::process_spectrum_sweep(
         // likewise needs several revisit cycles per frequency, so both
         // median_enabled and sweep TBD are slow integrators on wide windows.
         waterfall_history_.reset();
+        clear_shape_veto();  // D5: veto lifetime == waterfall window lifetime
         last_win_freq = center_freq;
     }
     last_sweep_freq_ = center_freq;
@@ -3292,6 +3303,7 @@ void DroneScanner::process_spectrum_sweep(
                 if ((cfar_peaks[p].power > noise_floor)
                     && (cfar_peaks[p].power - noise_floor) >= cfg_margin) {
                     shape_blocked_tbd = true;
+                    note_shape_veto(cfar_peaks[p].bin);  // D5: persist across frames until sweep-step reset
                 }
                 continue;  // This peak rejected by shape filter — try next peak
             }
@@ -3355,8 +3367,13 @@ void DroneScanner::process_spectrum_sweep(
         // confirm — closes the "rejected frames 1..3, clean frame 4 confirms"
         // resurrection path. Sensitivity-neutral: a marginal target just
         // waits for an "up" flicker frame.
+        // SHAPE-VETO (D5 cross-frame fix): bins rejected by the shape chain
+        // while above cfg_margin earlier in THIS waterfall window stay
+        // vetoed — a peak flickering below the gate no longer slips past
+        // shape_blocked_tbd and gets resurrected with width-only validation.
         if (active_frames >= TBD_MIN_FRAMES
-            && spectrum.db[tbd_peak_bin] >= threshold) {
+            && spectrum.db[tbd_peak_bin] >= threshold
+            && !shape_vetoed(tbd_peak_bin)) {
             // Multi-frame confirmed — compute integrated RSSI
             const uint16_t integrated = waterfall_history_.get_integrated_power(tbd_peak_bin);
             const uint8_t avg_power = static_cast<uint8_t>(integrated / waterfall_history_.size());

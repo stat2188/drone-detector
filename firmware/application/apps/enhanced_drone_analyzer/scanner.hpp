@@ -2383,6 +2383,53 @@ private:
     WaterfallHistory waterfall_history_;
 
     /**
+     * @brief Persistent shape-reject veto for Track-Before-Detect (D5 fix).
+     * @note 256-bit bitmap (32 B SRAM), one bit per FFT bin. Set wherever a
+     *       candidate cleared the margin gate but failed the shape chain
+     *       (alongside shape_blocked_tbd / shape_rejected_after_margin);
+     *       cleared at EVERY waterfall_history_.reset() site so the veto
+     *       lifetime exactly matches the integration window that carries the
+     *       rejection evidence. Closes the cross-frame flicker hole: a peak
+     *       rejected while above the gate could dip below it in later frames
+     *       (per-frame guards then stay false) and TBD would re-confirm it
+     *       with width-only validation — silently voiding the user's
+     *       Valley/Sharpness/Flatness/Symmetry verdicts.
+     * @note O(1) bit ops — zero measurable hot-path cost.
+     */
+    std::array<uint32_t, FFT_BIN_COUNT / 32> shape_veto_mask_{};
+
+    /**
+     * @brief Veto `bin` and its ±1 neighbours (1-bin spectral dither).
+     * @note Call ONLY from shape-rejection sites that already passed the
+     *       margin gate (same condition as the per-frame guards).
+     * @param bin FFT bin (0..FFT_BIN_COUNT-1); out-of-range bits skipped.
+     * Stack: ~16 bytes. SRAM: 0. Flash: ~40 bytes (inlined).
+     */
+    void note_shape_veto(size_t bin) noexcept {
+        for (int32_t d = -1; d <= 1; ++d) {
+            const int32_t b = static_cast<int32_t>(bin) + d;
+            if (b >= 0 && b < static_cast<int32_t>(FFT_BIN_COUNT)) {
+                const size_t ub = static_cast<size_t>(b);
+                shape_veto_mask_[ub >> 5] |= (1u << (ub & 31u));
+            }
+        }
+    }
+
+    /**
+     * @returns true if `bin` carries a shape veto inside the current
+     *          waterfall window (see shape_veto_mask_).
+     * @param bin FFT bin index; >= FFT_BIN_COUNT yields false (fail-open on
+     *            programmer error — the narrowband guard still applies).
+     */
+    [[nodiscard]] bool shape_vetoed(size_t bin) const noexcept {
+        if (bin >= FFT_BIN_COUNT) return false;
+        return (shape_veto_mask_[bin >> 5] & (1u << (bin & 31u))) != 0;
+    }
+
+    /// @brief Drop all vetoes — MUST be called at every waterfall_history_.reset().
+    void clear_shape_veto() noexcept { shape_veto_mask_.fill(0); }
+
+    /**
      * @brief Higher-order statistical analysis (kurtosis + skewness).
      * @note Header-only, no static state. Used in apply_shape_filters() Step 12.
      *       Distinguishes Gaussian noise (kurtosis ≈ 0) from drone signals

@@ -443,61 +443,20 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     // directly to settings_ BEFORE apply_to_config() overwrites them.
     // Stack budget: ~150 bytes (was ~310 bytes).
     button_save_.on_select = [this](ui::Button&) {
-        if (scanner_ptr_ != nullptr) {
-            // Read latest config from scanner (SWP may have changed sweep settings)
-            scanner_ptr_->get_config(g_workspace_cfg);
-
-            // Step 1: Write sweep fields DIRECTLY to settings_ — the struct
-            // that is BOTH saved to SD (save_settings_to_sd) AND applied to
-            // the config below (apply_to_config copies sweep fields from
-            // settings_ into g_workspace_cfg). One stash, two consumers —
-            // no third round-trip needed.
-            settings_.sweep_start_freq = g_workspace_cfg.sweep_start_freq;
-            settings_.sweep_end_freq = g_workspace_cfg.sweep_end_freq;
-            settings_.sweep_step_freq = g_workspace_cfg.sweep_step_freq;
-            settings_.sweep2_start_freq = g_workspace_cfg.sweep2_start_freq;
-            settings_.sweep2_end_freq = g_workspace_cfg.sweep2_end_freq;
-            settings_.sweep2_step_freq = g_workspace_cfg.sweep2_step_freq;
-            settings_.sweep2_enabled = g_workspace_cfg.sweep2_enabled;
-            settings_.sweep3_start_freq = g_workspace_cfg.sweep3_start_freq;
-            settings_.sweep3_end_freq = g_workspace_cfg.sweep3_end_freq;
-            settings_.sweep3_step_freq = g_workspace_cfg.sweep3_step_freq;
-            settings_.sweep3_enabled = g_workspace_cfg.sweep3_enabled;
-            settings_.sweep4_start_freq = g_workspace_cfg.sweep4_start_freq;
-            settings_.sweep4_end_freq = g_workspace_cfg.sweep4_end_freq;
-            settings_.sweep4_step_freq = g_workspace_cfg.sweep4_step_freq;
-            settings_.sweep4_enabled = g_workspace_cfg.sweep4_enabled;
-            for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w)
-                for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
-                    // Both sides store the MHz mirror — direct POD copy.
-                    settings_.sweep_det_win_start_mhz[w][i] =
-                        g_workspace_cfg.sweep_det_win_start_mhz[w][i];
-                    settings_.sweep_det_win_end_mhz[w][i] =
-                        g_workspace_cfg.sweep_det_win_end_mhz[w][i];
-                    settings_.sweep_det_win_name_idx[w][i] =
-                        g_workspace_cfg.sweep_det_win_name_idx[w][i];
-                }
-
-            // Step 2: Build updated config from original + user edits.
-            // apply_to_config() copies the (now-fresh) sweep fields from
-            // settings_ into g_workspace_cfg, so the scanner receives the
-            // correct sweep config via set_config().
-            g_workspace_cfg = original_config_;
-            SettingsFileManager::apply_to_config(settings_, g_workspace_cfg);
-
-            const ErrorCode err = scanner_ptr_->set_config(g_workspace_cfg);
-            if (err != ErrorCode::SUCCESS) {
-                // Lazy static: ONE heap allocation on first open instead of a
-                // fresh temporary per open. Framework ModalMessageView copies
-                // the message anyway (title_/message_ are std::string), so a
-                // temporary literal here would double the per-open cost.
-                static const std::string k_invalid_settings_msg{
-                    "Invalid settings.\nCheck min<=max\nand valid ranges."};
-                nav_.display_modal("Error", k_invalid_settings_msg);
-                return;
-            }
+        // Commit logic lives in commit_to_scanner() — shared with the
+        // destructor (apply-on-exit): the field callbacks only STAGE values
+        // into settings_, so both exit paths must push them to the scanner.
+        if (!commit_to_scanner()) {
+            // Lazy static: ONE heap allocation on first open instead of a
+            // fresh temporary per open. Framework ModalMessageView copies
+            // the message anyway (title_/message_ are std::string), so a
+            // temporary literal here would double the per-open cost.
+            static const std::string k_invalid_settings_msg{
+                "Invalid settings.\nCheck min<=max\nand valid ranges."};
+            nav_.display_modal("Error", k_invalid_settings_msg);
+            return;
         }
-
+        settings_dirty_ = false;  // committed — destructor re-commit skipped
         save_settings_to_sd();
         nav_.pop();
     };
@@ -605,7 +564,62 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
 
 }
 
+bool DroneSettingsView::commit_to_scanner() noexcept {
+    if (scanner_ptr_ == nullptr) return false;
+
+    // Step 1: stash LIVE sweep fields from the scanner (SWP view may have
+    // changed them after this view's ctor snapshot) into settings_ — the
+    // struct BOTH consumers (SD save, apply below) read from.
+    scanner_ptr_->get_config(g_workspace_cfg);
+    settings_.sweep_start_freq = g_workspace_cfg.sweep_start_freq;
+    settings_.sweep_end_freq = g_workspace_cfg.sweep_end_freq;
+    settings_.sweep_step_freq = g_workspace_cfg.sweep_step_freq;
+    settings_.sweep2_start_freq = g_workspace_cfg.sweep2_start_freq;
+    settings_.sweep2_end_freq = g_workspace_cfg.sweep2_end_freq;
+    settings_.sweep2_step_freq = g_workspace_cfg.sweep2_step_freq;
+    settings_.sweep2_enabled = g_workspace_cfg.sweep2_enabled;
+    settings_.sweep3_start_freq = g_workspace_cfg.sweep3_start_freq;
+    settings_.sweep3_end_freq = g_workspace_cfg.sweep3_end_freq;
+    settings_.sweep3_step_freq = g_workspace_cfg.sweep3_step_freq;
+    settings_.sweep3_enabled = g_workspace_cfg.sweep3_enabled;
+    settings_.sweep4_start_freq = g_workspace_cfg.sweep4_start_freq;
+    settings_.sweep4_end_freq = g_workspace_cfg.sweep4_end_freq;
+    settings_.sweep4_step_freq = g_workspace_cfg.sweep4_step_freq;
+    settings_.sweep4_enabled = g_workspace_cfg.sweep4_enabled;
+    for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
+        for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
+            // Both sides store the MHz mirror — direct POD copy.
+            settings_.sweep_det_win_start_mhz[w][i] =
+                g_workspace_cfg.sweep_det_win_start_mhz[w][i];
+            settings_.sweep_det_win_end_mhz[w][i] =
+                g_workspace_cfg.sweep_det_win_end_mhz[w][i];
+            settings_.sweep_det_win_name_idx[w][i] =
+                g_workspace_cfg.sweep_det_win_name_idx[w][i];
+        }
+    }
+
+    // Step 2: rebuild from the ctor snapshot + user edits, then push.
+    // apply_to_config() copies the (now-fresh) sweep fields from settings_
+    // into g_workspace_cfg, so the scanner receives the correct sweep
+    // config via set_config(). Validation failure keeps the old config.
+    g_workspace_cfg = original_config_;
+    SettingsFileManager::apply_to_config(settings_, g_workspace_cfg);
+    return scanner_ptr_->set_config(g_workspace_cfg) == ErrorCode::SUCCESS;
+}
+
 DroneSettingsView::~DroneSettingsView() noexcept {
+    // APPLY-ON-EXIT (D2 fix): every field callback only staged settings_ +
+    // settings_dirty_ — before this fix the scanner received edits ONLY via
+    // the SAVE button, so tweaks made and verified with the Back button were
+    // silently discarded ("I turn the knobs, the filters do nothing").
+    // Contract: Back = apply to the live scanner (session-only), SAVE =
+    // apply + persist to SD. While this view is open the parent has stopped
+    // the scanner thread and spectrum streaming (button_settings_ in
+    // drone_scanner_ui.cpp), so DATA_MUTEX is uncontended here.
+    // Validation failure inside set_config keeps the previous config —
+    // fail-safe; no modal is possible mid-destruction.
+    if (!settings_dirty_) return;
+    (void)commit_to_scanner();
 }
 
 void DroneSettingsView::paint(ui::Painter& painter) {

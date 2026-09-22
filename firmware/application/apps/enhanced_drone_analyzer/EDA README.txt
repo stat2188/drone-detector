@@ -163,8 +163,6 @@ Lock Ordering (deadlock prevention):
   mahalanobis_gate.hpp          ~150    Mahalanobis gate declaration
   mahalanobis_gate.cpp          ~200+   Q8.8 fixed-point statistics
   median_filter.hpp             ~146    Stack-based median filter (template)
-  peak_detector.hpp             ~90     PeakDetector declaration
-  peak_detector.cpp             ~200+   Quickselect percentile + peak scan
   adaptive_threshold.hpp        ~124    Self-tuning CFAR threshold
   auto_gain_control.hpp         ~170    AGC for HackRF RF frontend
   spectral_kurtosis.hpp         ~202    Higher-order statistics computation

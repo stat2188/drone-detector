@@ -178,6 +178,22 @@ private:
     void save_settings_to_sd() noexcept;
     void set_shape_filter_visibility(bool visible) noexcept;
     void normalize_threat_ladder(uint8_t edited_field) noexcept;
+
+    /**
+     * @brief Stage settings_ into g_workspace_cfg and push it to the scanner.
+     * @return true iff the scanner accepted the config (validation passed);
+     *         on false the scanner keeps its previous config (fail-safe).
+     * @note Shared by the SAVE button and ~DroneSettingsView (apply-on-exit):
+     *       the field callbacks only STAGE values into settings_ (plus
+     *       settings_dirty_) — without this commit they never reach
+     *       DroneScanner::config_, so edits tested via the Back button were
+     *       silently discarded and every shape filter appeared dead.
+     * @note Sweep-field stash mirrors the historical SAVE dance: SWP view may
+     *       have changed sweep fields after this view's ctor snapshot
+     *       (original_config_), so live values are re-read first.
+     * Stack: ~48 bytes (stash writes hit settings_ directly, no temporaries).
+     */
+    [[nodiscard]] bool commit_to_scanner() noexcept;
 };
 
 } // namespace drone_analyzer
