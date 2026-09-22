@@ -795,8 +795,17 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     // confirms a weak signal. Uses WaterfallHistory to accumulate power
     // across recent frames. Provides ~9 dB SNR gain (8 frames = 3× sensitivity).
     // Only runs when waterfall_history_ has enough frames and single-frame failed.
+    //
+    // TBD-RESURRECTION GUARD (FIX): shape_rejected_after_margin blocks TBD for
+    // this frame whenever a candidate cleared the margin gate but failed a
+    // shape step — TBD honors width gates only, so without this flag the
+    // Valley/Sharp/Flat/Sym rejections were silently resurrected
+    // TBD_MIN_FRAMES later and every shape setting below the gate was dead.
+    // Targets BELOW the margin gate keep the integration path (weak-signal
+    // purpose of TBD is preserved).
     if (!signal_detected && waterfall_history_.is_warm(TBD_MIN_FRAMES)
-        && config_.spectrum_detection_enabled) {
+        && config_.spectrum_detection_enabled
+        && !shape_result.shape_rejected_after_margin) {
 
         // Compute noise floor for TBD narrowband guard.
         // FIX: When shape analysis found nothing (CFAR peak_count == 0),
@@ -844,7 +853,16 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             (tbd_raw_threshold < 0) ? 0 : (tbd_raw_threshold > 255 ? 255 : tbd_raw_threshold));
         const uint8_t active_frames = waterfall_history_.count_above_threshold(tbd_peak_bin, threshold);
 
-        if (active_frames >= TBD_MIN_FRAMES) {
+        // PRESENT-NOW requirement (FIX): frame age 0 in the waterfall IS the
+        // current frame (pushed at the top of this handler), so history alone
+        // can never confirm. A bursty emitter must be radiating in THIS frame;
+        // this closes the "rejected frames 1..3, clean frame 4 confirms from
+        // stale history" resurrection path (paired with the shape-rejection
+        // gate above). Sensitivity-neutral: confirmation just waits for an
+        // "up" flicker of a marginal target instead of confirming during a
+        // fade.
+        if (active_frames >= TBD_MIN_FRAMES
+            && spectrum.db[tbd_peak_bin] >= threshold) {
             // Multi-frame confirmed — compute integrated RSSI
             const uint16_t integrated = waterfall_history_.get_integrated_power(tbd_peak_bin);
             const uint8_t avg_power = static_cast<uint8_t>(integrated / waterfall_history_.size());
@@ -2162,6 +2180,22 @@ bool DroneScanner::analyze_spectrum_shape_multi(
                 det.bin_index = static_cast<uint16_t>(peak_bin);
                 det.peak_power = cfar_peaks[i].power;
                 out_result.count++;
+            } else {
+                // TBD-RESURRECTION GUARD (FIX): a peak that cleared the Step 3
+                // margin gate but failed a shape step (MinW/MaxW/valley/
+                // sharpness/flatness/symmetry) must block TBD confirmation for
+                // this frame — TBD integrates power only and would resurrect
+                // the rejected signal TBD_MIN_FRAMES later, silently voiding
+                // the user's shape settings. Short-circuit order guards the
+                // uint8 subtraction: the second operand evaluates only when
+                // power > noise_floor. Peaks BELOW the margin gate do NOT set
+                // the flag — they are the weak-signal class TBD exists for.
+                // Same gate value as apply_shape_filters Step 3 (single source
+                // of truth: shape_gate_margin()).
+                if ((cfar_peaks[i].power > noise_floor)
+                    && (cfar_peaks[i].power - noise_floor) >= shape_gate_margin()) {
+                    out_result.shape_rejected_after_margin = true;
+                }
             }
         }
     } else {
@@ -2233,6 +2267,17 @@ bool DroneScanner::analyze_spectrum_shape_multi(
                 det.bin_index = static_cast<uint16_t>(candidates[i].bin);
                 det.peak_power = candidates[i].power;
                 out_result.count++;
+            } else {
+                // TBD-RESURRECTION GUARD (FIX): mirror of the CFAR branch.
+                // NOTE: candidates[0] is the global max with NO margin gate —
+                // its margin may legitimately sit below the gate (weak target),
+                // in which case the flag stays false and TBD keeps integrating.
+                // The ±5 secondary probes ARE margin-gated, so for them the
+                // condition below exactly reproduces "passed Step 3".
+                if ((candidates[i].power > noise_floor)
+                    && (candidates[i].power - noise_floor) >= shape_gate_margin()) {
+                    out_result.shape_rejected_after_margin = true;
+                }
             }
         }
     }
@@ -2813,6 +2858,12 @@ bool DroneScanner::tbd_peak_is_narrowband(
     }
 
     const size_t signal_width = right - left + 1;
+    // MinW parity (FIX): the single-frame chain rejects sub-min_width spikes
+    // at Step 5 — TBD must not resurrect them. Envelope width below the
+    // user's MinW = persistence-filtered noise, not a target. Width gates are
+    // sensitivity-neutral: the confirm threshold above stays RSSI-only, so
+    // weak-target integration is unaffected.
+    if (signal_width < config_.spectrum_min_width) return false;
     return signal_width <= config_.spectrum_max_width;
 }
 
@@ -3006,16 +3057,32 @@ void DroneScanner::process_spectrum_sweep(
 
     // Step 1: Compute noise floor (25th percentile of usable bins).
     // Shared for all peaks in this frame — computed once.
+    // FRAME-LEVEL MEDIAN FEED (FIX): track the raw frame peak in the SAME
+    // pass (zero extra bin scans) and feed the median filter once per frame —
+    // DB-scan semantics (extract_rssi → add, process_spectrum_message).
+    // Previously the sweep path fed only ACCEPTED primary peaks, so Md+ could
+    // never influence anything and the window rarely warmed.
     uint8_t* usable = sweep_usable_buf_;
     size_t idx = 0;
+    uint8_t frame_peak_power = 0;
     for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_DC_SPIKE_START; ++i) {
-        usable[idx++] = spectrum.db[i];
+        const uint8_t bin_power = spectrum.db[i];
+        usable[idx++] = bin_power;
+        if (bin_power > frame_peak_power) frame_peak_power = bin_power;
     }
     for (size_t i = FFT_DC_SPIKE_END; i < (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW); ++i) {
-        usable[idx++] = spectrum.db[i];
+        const uint8_t bin_power = spectrum.db[i];
+        usable[idx++] = bin_power;
+        if (bin_power > frame_peak_power) frame_peak_power = bin_power;
     }
     if (idx == 0) return;
     const uint8_t noise_floor = quickselect_percentile(usable, idx, 25);
+
+    // Frame-level median feed (Md+): once per frame, BEFORE any accept/reject
+    // decision. Reset-per-step semantics unchanged (frequency-change gate at
+    // the top of this function); the filter warms within one revisit dwell
+    // and its output smooths the tracked primary-peak RSSI below.
+    rssi_median_filter_.add(spectrum_value_to_dbm(frame_peak_power, frame_total_gain));
 
     // Step 2: Find ALL candidate peaks (CFAR multi-peak or fixed-threshold).
     // Stack: CFARPeak × 8 = 16 bytes. Well within 512B limit.
@@ -3123,6 +3190,15 @@ void DroneScanner::process_spectrum_sweep(
     // multi-frame integration must NOT run (documented at :2256).
     bool any_peak_passed_shape = false;
 
+    // TBD-RESURRECTION GUARD (FIX): set when a peak cleared the Step 3 margin
+    // gate but failed the shape chain. Blocks the sweep TBD pass below so a
+    // signal the 12-step chain explicitly rejected (valley/sharpness/flatness/
+    // symmetry/widths) cannot be re-confirmed by multi-frame integration
+    // TBD_MIN_FRAMES later — TBD honors widths only and would silently void
+    // those settings. Below-margin peaks do NOT set this flag: TBD stays the
+    // weak-signal integrator.
+    bool shape_blocked_tbd = false;
+
     // Step 3: Process each CFAR peak through shape analysis + tracking.
     // Only the strongest peak feeds the median filter (prevents cross-frequency
     // contamination of the per-frequency smoothing accumulator).
@@ -3197,6 +3273,15 @@ void DroneScanner::process_spectrum_sweep(
                     spectrum, peak_index, cfar_peaks[p].power,
                     noise_floor, shape_rssi, FFT_EDGE_SKIP_NARROW, total_gain,
                     &det_extent, /*reject_edge_clipped=*/true)) {
+                // TBD-RESURRECTION GUARD (FIX): only peaks that cleared the
+                // Step 3 margin gate (cfg_margin == shape_gate_margin(),
+                // hoisted above) block TBD. Short-circuit order guards the
+                // uint8 subtraction. Below-margin peaks leave TBD free —
+                // multi-frame integration remains the weak-signal path.
+                if ((cfar_peaks[p].power > noise_floor)
+                    && (cfar_peaks[p].power - noise_floor) >= cfg_margin) {
+                    shape_blocked_tbd = true;
+                }
                 continue;  // This peak rejected by shape filter — try next peak
             }
             if (accepted_sweep_count < MAX_SWEEP_PEAKS) {
@@ -3205,13 +3290,16 @@ void DroneScanner::process_spectrum_sweep(
         }
         any_peak_passed_shape = true;
 
-        // Median filter: only for primary peak (p==0) to avoid cross-frequency contamination.
+        // Median filter: only for primary peak (p==0) to avoid cross-frequency
+        // contamination. The WINDOW FEED moved to frame level (noise-floor
+        // collection above): the filter now sees EVERY frame at this slice —
+        // accepted or rejected — so it warms within one revisit dwell and
+        // represents the true per-slice RSSI history instead of re-feeding
+        // only already-accepted values (old behavior: Md+ was a no-op for
+        // pass/reject in sweep).
         int32_t peak_rssi = shape_rssi;
-        if (p == 0) {
-            rssi_median_filter_.add(peak_rssi);
-            if (median_filter_enabled_ && rssi_median_filter_.is_warm()) {
-                peak_rssi = rssi_median_filter_.get_median();
-            }
+        if (p == 0 && median_filter_enabled_ && rssi_median_filter_.is_warm()) {
+            peak_rssi = rssi_median_filter_.get_median();
         }
 
         apply_sweep_tracking(
@@ -3228,7 +3316,7 @@ void DroneScanner::process_spectrum_sweep(
     // Provides ~9 dB SNR gain (8 frames = 3× sensitivity improvement).
     // Only runs when waterfall_history_ has enough frames and single-frame
     // detection found nothing (peak_count == 0 or all peaks rejected by shape).
-    if (!any_peak_passed_shape &&
+    if (!any_peak_passed_shape && !shape_blocked_tbd &&
         waterfall_history_.is_warm(TBD_MIN_FRAMES) && config_.spectrum_detection_enabled) {
         // Find the peak bin from multi-frame integration across usable bins
         size_t tbd_peak_bin = FFT_EDGE_SKIP_NARROW;
@@ -3251,7 +3339,13 @@ void DroneScanner::process_spectrum_sweep(
             (tbd_raw_threshold < 0) ? 0 : (tbd_raw_threshold > 255 ? 255 : tbd_raw_threshold));
         const uint8_t active_frames = waterfall_history_.count_above_threshold(tbd_peak_bin, threshold);
 
-        if (active_frames >= TBD_MIN_FRAMES) {
+        // PRESENT-NOW requirement (FIX): frame age 0 in the waterfall IS the
+        // current frame (pushed at :2992), so stale history alone can never
+        // confirm — closes the "rejected frames 1..3, clean frame 4 confirms"
+        // resurrection path. Sensitivity-neutral: a marginal target just
+        // waits for an "up" flicker frame.
+        if (active_frames >= TBD_MIN_FRAMES
+            && spectrum.db[tbd_peak_bin] >= threshold) {
             // Multi-frame confirmed — compute integrated RSSI
             const uint16_t integrated = waterfall_history_.get_integrated_power(tbd_peak_bin);
             const uint8_t avg_power = static_cast<uint8_t>(integrated / waterfall_history_.size());

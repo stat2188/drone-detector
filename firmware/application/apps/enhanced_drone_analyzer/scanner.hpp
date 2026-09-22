@@ -1280,6 +1280,17 @@ public:
         ShapeDetection detections[MAX_SHAPE_DETECTIONS];  ///< Detected signals
         size_t count{0};                                   ///< Number of valid detections
         uint8_t noise_floor{0};                            ///< Computed noise floor
+        // TBD-RESURRECTION GUARD: true when at least one candidate cleared the
+        // Step 3 margin gate but failed a shape step (width/valley/sharpness/
+        // flatness/symmetry). The DB-scan TBD pass consumes this to refuse
+        // multi-frame confirmation of a signal the single-frame chain
+        // explicitly rejected — TBD honors width gates only, so without the
+        // flag Valley/Sharp/Flat/Sym rejections were silently resurrected
+        // TBD_MIN_FRAMES later. Targets BELOW the margin gate do NOT set the
+        // flag: multi-frame integration stays the weak-signal path (TBD's
+        // entire purpose). Per-frame lifetime — zero-initialized by the
+        // caller's aggregate init (scanner.cpp:752).
+        bool shape_rejected_after_margin{false};
     };
 
     /**
@@ -2095,7 +2106,8 @@ private:
      * @param noise_floor Noise floor of the CURRENT frame (25th percentile)
      * @param edge_skip   Edge bins to skip (FFT_EDGE_SKIP normal / NARROW sweep)
      * @return true only if the contiguous elevated width of the emission
-     *         around the peak does NOT exceed config_.spectrum_max_width
+     *         around the peak is inside the user band: >= spectrum_min_width
+     *         AND <= spectrum_max_width
      * @note TBD integrates power only and never runs apply_shape_filters(),
      *       so a persistent WiFi/BT flat-top rejected by MaxW single-frame was
      *       re-confirmed 3 frames later and tracked as a drone — silently
@@ -2117,6 +2129,12 @@ private:
      *       max(envelope_peak_margin, shape_gate_margin())/3 — TBD peaks sit
      *       below the gate, where bare peak_margin/3 (1-3 units) sinks into
      *       the noise fluctuation band and MaxW falsely rejects weak targets.
+     * @note MinW parity (FIX): envelope widths below config_.spectrum_min_width
+     *       are rejected as persistence-filtered noise. The single-frame chain
+     *       rejects them at Step 5, so TBD must not resurrect them — without
+     *       this the user's MinW setting was dead for any signal alive
+     *       TBD_MIN_FRAMES (width gates are sensitivity-neutral, unlike the
+     *       confirm threshold, so weak-target integration is unaffected).
      * @note Both TBD call sites (DB scan and process_spectrum_sweep) measure
      *       width in RAW BIN space: bin size is identical in both modes
      *       (DB_CAPTURE_RATE_HZ == SWEEP_SLICE_BW, static_assert in
