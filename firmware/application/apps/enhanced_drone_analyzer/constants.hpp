@@ -1020,24 +1020,26 @@ constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 200;
  * @note sharpness = (peak_margin * 100) / avg_margin
  * @note Inverted-V peaks have sharpness > 200; flat U/I shapes have sharpness ~ 100
  * @note 50 = no sharpness filtering (accept all shapes)
- * @note 120 (ANALOG FPV DEFAULT) — analog FM video is NOT a needle-sharp
- *       inverted-V: the FM video spectrum is a quasi-flat block with a
- *       dominant carrier peak, sharpness ≈ 100-130 at medium range (the
- *       measured width is taken at noise + margin/3, where the whole video
- *       skirt is elevated, so avg_margin tracks the peak closely). The
- *       previous default of 150 rejected real FPV video in exactly the
- *       medium-SNR band where detection matters, accepting only far-field
- *       crest-fragment shapes (sharpness 150-250). WiFi/BT flat tops sit at
- *       sharpness ≈ 100-110 — 120 keeps a working separation margin.
- *       On WiFi-dense sites raise to 140-160 (accepts only far-field FPV
- *       crest shapes, rejects everything flat). Dual-peak analog FM shapes
- *       (video + audio subcarrier, sharpness 80-120 at medium range) trade
- *       sharpness filtering for the max_width=200 + margin=20 + valley=80
- *       gates doing the FP rejection instead
- * @note Previous default was 75 (accepted flat noise shapes), then 150
- *       (rejected medium-range analog FPV)
+ * @note 100 (PERMISSIVE DEFAULT — "detect what fits the bands"): analog FM
+ *       video is a quasi-flat block with a dominant carrier peak, measured
+ *       sharpness ≈ 100-130 at medium range (the width walk runs at
+ *       noise + margin/3, where the whole video skirt is elevated, so
+ *       avg_margin tracks the peak closely). The previous default of 120 sat
+ *       INSIDE that distribution and clipped the lower half of legitimate
+ *       targets; that was survivable only while TBD resurrected every shape
+ *       reject — once TBD honors the user's shape verdicts, 120 structurally
+ *       cuts medium-range analog FPV. 100 passes the ENTIRE documented FPV
+ *       band (100-130, dual-peak shapes 80-120 included) and leaves WiFi/BT
+ *       flat-top classification to the flatness gate (Flat=45: FPV <=30% vs
+ *       WiFi >=50%), which is width-independent and the primary WiFi
+ *       discriminator. On WiFi-dense sites with lingering flat-noise leaks
+ *       raise to 120-150 — documented trade-off: WILL reject medium-range
+ *       analog FPV again.
+ * @note History: 75 (accepted flat noise) → 150 (rejected medium-range
+ *       analog FPV) → 120 (clipped the FPV 100-130 band once TBD stopped
+ *       resurrecting) → 100.
  */
-constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 120;
+constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 100;
 
 /**
  * @brief Default peak-to-width ratio threshold (0-255)
@@ -1057,14 +1059,22 @@ constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 0;
  * @note Inverted-V: deep valleys (flanking bins have margin < 5)
  * @note Flat U/I: shallow valleys (flanking bins still elevated)
  * @note 0 = no valley depth filtering (disabled)
- * @note FPV-OPTIMIZED: 80 — at close range when drone is ~10m away, ALL bins
- *       within signal bandwidth are elevated 12-16 dB above noise, including
- *       the flanking bins. valley_depth=55 (11 dB) would reject these because
- *       max_valley_margin > 55. Raising to 80 (16 dB) keeps the signal passing
- *       while still rejecting WiFi/BT flat-top (valley bins > 20 dB consistently).
- * @note Previous default was 55 (rejected strong FPV at close range)
+ * @note REJECT rule: max flanking valley margin >= threshold → reject, so
+ *       RAISING the value LOOSENS the filter.
+ * @note 90 (PERMISSIVE DEFAULT — "detect what fits the bands"): at close
+ *       range (~10 m) ALL bins in the signal bandwidth are elevated 12-16 dB
+ *       above noise, including the flanking bins. The previous default of 80
+ *       (16 dB) sat exactly on the inclusive reject boundary of that band —
+ *       normal spread/multipath pushed real video flanks past 80 and cut
+ *       legitimate close-range targets (tolerable while TBD resurrected
+ *       rejects, fatal once it stopped). 90 (18 dB) clears the whole
+ *       documented FPV flank band with 2 dB headroom; WiFi/BT flat-tops
+ *       (flanks > 20 dB consistently) stay separated by a 10+ dB margin.
+ *       The check is additionally skipped for very_strong peaks and in
+ *       sensitive mode. On noisy sites with flat-noise leaks lower to 70-80.
+ * @note Previous defaults: 55 (rejected strong FPV at close range), 80.
  */
-constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 80;
+constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 90;
 
 /**
  * @brief Default peak flatness threshold (0-100, percentage)

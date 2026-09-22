@@ -2129,12 +2129,15 @@ private:
      *       max(envelope_peak_margin, shape_gate_margin())/3 — TBD peaks sit
      *       below the gate, where bare peak_margin/3 (1-3 units) sinks into
      *       the noise fluctuation band and MaxW falsely rejects weak targets.
-     * @note MinW parity (FIX): envelope widths below config_.spectrum_min_width
-     *       are rejected as persistence-filtered noise. The single-frame chain
-     *       rejects them at Step 5, so TBD must not resurrect them — without
-     *       this the user's MinW setting was dead for any signal alive
-     *       TBD_MIN_FRAMES (width gates are sensitivity-neutral, unlike the
-     *       confirm threshold, so weak-target integration is unaffected).
+     * @note MinW parity (FIX, permissive semantics): MinW is applied ONLY to
+     *       in-frame targets (envelope peak margin >= shape_gate_margin()).
+     *       The single-frame chain measures Step 5 widths only after Step 3
+     *       cleared the gate, so applying MinW to below-gate TBD targets
+     *       would compare a width walked at a HIGHER elevation anchor
+     *       (max(env_margin, gate)/2) against a frame defined at the gate —
+     *       cutting exactly the weak targets TBD exists to find. Below-gate
+     *       targets keep the MaxW guard only; persistence (TBD_MIN_FRAMES) +
+     *       present-now already reject most 1-2 bin noise there.
      * @note Both TBD call sites (DB scan and process_spectrum_sweep) measure
      *       width in RAW BIN space: bin size is identical in both modes
      *       (DB_CAPTURE_RATE_HZ == SWEEP_SLICE_BW, static_assert in

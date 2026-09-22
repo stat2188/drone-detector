@@ -2858,12 +2858,23 @@ bool DroneScanner::tbd_peak_is_narrowband(
     }
 
     const size_t signal_width = right - left + 1;
-    // MinW parity (FIX): the single-frame chain rejects sub-min_width spikes
-    // at Step 5 — TBD must not resurrect them. Envelope width below the
-    // user's MinW = persistence-filtered noise, not a target. Width gates are
-    // sensitivity-neutral: the confirm threshold above stays RSSI-only, so
-    // weak-target integration is unaffected.
-    if (signal_width < config_.spectrum_min_width) return false;
+    // MinW parity (FIX, v2 — PERMISSIVE SEMANTICS): the single-frame chain
+    // rejects sub-min_width spikes at Step 5 — TBD must not resurrect them.
+    // BUT the MinW frame is defined at the margin gate: Step 5 only measures
+    // peaks that already cleared Step 3 (peak_margin >= gate). A TBD-domain
+    // target sits BELOW the gate by definition (it exists precisely because
+    // it never cleared Step 3), and its envelope is walked at the higher
+    // half-power anchor noise + max(env_margin, gate)/2 — a strict MinW here
+    // cut exactly the weak flickery targets TBD exists to find. Rule: MinW
+    // applies only to IN-FRAME targets (envelope peak margin >= gate, the
+    // same gate Step 3 uses); below-gate targets keep the MaxW guard only —
+    // persistence (TBD_MIN_FRAMES) + present-now already reject most 1-2 bin
+    // noise there. Width gates stay sensitivity-neutral: the confirm
+    // threshold above remains RSSI-only.
+    if (peak_margin >= eff_margin
+        && signal_width < config_.spectrum_min_width) {
+        return false;
+    }
     return signal_width <= config_.spectrum_max_width;
 }
 

@@ -1171,20 +1171,24 @@ FFT Bin Layout:
   FFT_USABLE_BINS_NARROW     = 228
   SWEEP_BIN_SIZE             = 78,125 Hz
 
-Spectrum Shape Defaults:
+Spectrum Shape Defaults (PERMISSIVE SET — "detect what fits the bands";
+the width/margin frames are user-tunable, the strict shape descriptors are
+loosened so real targets are not clipped at the band edge):
   DEFAULT_SPECTRUM_MARGIN         = 20    (≈4 dB, analog FPV)
   DEFAULT_SPECTRUM_MIN_WIDTH      = 9     (≈700 kHz, analog FPV)
   DEFAULT_SPECTRUM_MAX_WIDTH      = 200   (≈15.6 MHz, analog FPV — Step-6b
                                            emission extent; 40 rejected real
                                            FM video carriers 8-18 MHz)
-  DEFAULT_SPECTRUM_PEAK_SHARPNESS = 120   (analog FM video ≈ 100-130,
-                                           WiFi flat-top ≈ 100-110)
+  DEFAULT_SPECTRUM_PEAK_SHARPNESS = 100   (PERMISSIVE: below the measured FPV
+                                           band 100-130; WiFi ≈ 100-110 is
+                                           classified by Flat, not Sharp)
   DEFAULT_SPECTRUM_PEAK_RATIO     = 0     (disabled)
-  DEFAULT_SPECTRUM_VALLEY_DEPTH   = 80
-  DEFAULT_SPECTRUM_FLATNESS       = 45    (primary WiFi/BT filter; midpoint
-                                           of the gap FPV <=30% / WiFi >=50%;
-                                           weak peaks below ~8 dB margin
-                                           exempt. МЕНЬШЕ = жёстче!)
+  DEFAULT_SPECTRUM_VALLEY_DEPTH   = 90    (PERMISSIVE: 18 dB vs FPV flanks
+                                           12-16 dB; WiFi flanks >20 dB)
+  DEFAULT_SPECTRUM_FLATNESS       = 45    (unchanged — primary WiFi/BT filter;
+                                           midpoint of the gap FPV <=30% /
+                                           WiFi >=50%; weak peaks below ~8 dB
+                                           margin exempt. МЕНЬШЕ = жёстче!)
   DEFAULT_SPECTRUM_SYMMETRY       = 0     (disabled)
 
 CFAR Defaults:
