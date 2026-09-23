@@ -151,6 +151,14 @@ public:
      * @param out Destination for loaded settings
      * @return ErrorCode::SUCCESS if loaded, error code otherwise
      * @note Missing file is not an error — out retains constructor defaults
+     * @note Bounded by SD_CARD_TIMEOUT_MS (1000 ms) — corrupted/slow SD
+     *       cannot hang the caller
+     * @invariant NOT reentrant: uses static scratch buffers (384 B BSS) to
+     *           keep them off the 4 KB process stack (File alone = 556 B,
+     *           see file.hpp). Safe because every caller (DroneScannerUI
+     *           ctor, DroneSettingsView ctor) runs synchronously on the UI
+     *           thread — a second load() can never overlap the first.
+     * @pre Called from the UI thread only; never from ScannerThread or an ISR.
      */
     [[nodiscard]] static ErrorCode load(SettingsStruct& out) noexcept;
 

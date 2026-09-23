@@ -735,22 +735,49 @@ Matching Flow:
   3. Return best match (highest score)
 
 ================================================================================
-14. DETECTION FILTER CHAIN (12 Steps)
+14. DETECTION FILTER CHAIN (15 Steps: 1-12 in-frame, 13-15 tracking)
 ================================================================================
 
-The spectrum shape filter chain is the primary false-positive rejection mechanism.
-Each step can independently reject a detection.
+The spectrum shape chain is the primary false-positive rejection mechanism.
+Each step can independently reject a detection. ORDER IS DEPENDENCY-DRIVEN:
+Step 4 measures the band (left/right/signal_width) that Steps 5-11 consume,
+so width ALWAYS precedes sharpness/valley/flatness/symmetry — every signal
+reaches its target setting before any earlier step could mask the verdict.
+Steps 1-2 run in the caller (once per frame); Steps 3-12 run inside
+apply_shape_filters(); Steps 13-15 run later, AT TRACKING TIME. Numbering
+below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
+14→15; Steps 13 and 14 are mode-exclusive, both always precede Step 15).
 
-  Step 1: Peak Margin (SNR)
+  Step 1: Noise Floor (caller — analyze_spectrum_shape_multi / sweep loop)
+    quickselect 25th percentile of the usable bins (DC spike + edge bins
+    excluded) — the shelf every margin below is measured against
+
+  Step 2: Candidate Peaks (caller)
+    CFAR multi-peak (cfar_mode != OFF) OR fixed threshold: bins with
+    margin >= Step-3 gate, sorted by power, NMS by separation, top N
+    → Each candidate independently runs Steps 3-12
+
+  Step 3: Peak Margin (SNR gate)
     peak_margin = peak_value - noise_floor
-    Must exceed spectrum_margin (default 20 ≈ 4 dB)
+    Must reach shape_gate_margin() — the EFFECTIVE gate:
+      normal mode, Sens <= 75: gate = spectrum_margin (default 20 ≈ 4 dB)
+      normal mode, Sens > 75:  gate = spectrum_margin + (Sens-75)/2
+                               (fresh default Sens=85 → gate = 25)
+      Sensitive mode:          gate = spectrum_margin - 2, NO Sens scaling
     → Rejects sub-CFAR noise spikes
 
-  Step 2: Minimum Width
+  Step 4: Width Measurement (walk — MEASURES, never rejects)
+    Expand left/right from the peak while bins >= noise + margin/3
+    (/2 when Shape-Bypass very-strong); DC spike = hard wall
+    → Produces left/right/signal_width consumed by Steps 5-11 — this is
+      why width ALWAYS runs before sharpness/valley/flatness/symmetry:
+      they all measure the SAME [left..right] band
+
+  Step 5: Minimum Width
     signal_width must exceed spectrum_min_width (default 9 bins ≈ 700 kHz)
     → Rejects single-bin noise spikes
 
-  Step 3: Maximum Width
+  Step 6: Maximum Width
     signal_width (Step-4 fragment) AND the WHOLE emission extent (Step 6b,
     hysteresis segmentation at the HALF-POWER level: peak − 6 dB, floored at
     noise + margin/3) must both be below spectrum_max_width
@@ -779,27 +806,31 @@ Each step can independently reject a detection.
     → Одно излучение = одна запись за кадр (раньше — до 8 записей за кадр,
       десятки записей за проход свипа). Паритет с DB-режимом.
 
-  Step 4: Peak Sharpness
-    sharpness = (peak_margin * 100) / avg_margin
-    Must exceed spectrum_peak_sharpness (default 120)
-    → Rejects flat-top signals (WiFi ≈ 100-110), accepts analog FM video
-      (quasi-flat carrier block, ≈ 100-130 at medium range)
+  Step 7: Peak Sharpness
+    sharpness = (peak_margin * 100) / avg_margin over [left..right]
+    Must exceed spectrum_peak_sharpness (default 100)
+    → PERMISSIVE by design: analog FM video measures 100-130 and passes;
+      WiFi flat-top ≈ 100-110 sits IN the overlap — at defaults WiFi is
+      classified by Flat (Step 10), not Sharp. Raise to 140-160 on
+      WiFi-dense sites (cost: weak FPV at 100-120 starts dropping).
 
-  Step 5: Peak-to-Width Ratio
+  Step 8: Peak-to-Width Ratio
     ratio = (peak_margin * 10) / signal_width
     Must exceed spectrum_peak_ratio (default 0 = disabled)
     → Optional: rejects wide, low signals
 
-  Step 6: Valley Depth
-    max_valley_margin = max margin of bins flanking the signal
-    Must be below spectrum_valley_depth (default 80)
-    → Rejects flat-top WiFi/BT (deep valleys = drone V-shape)
+  Step 9: Valley Depth
+    max_valley_margin = max margin of bins flanking the signal band
+    Must stay below spectrum_valley_depth (default 90 ≈ 18 dB)
+    → Rejects flat-top WiFi/BT (flank still high = no valley): FPV flanks
+      12-16 dB pass, WiFi flanks >20 dB are cut
 
-  Step 7: Flatness
+  Step 10: Flatness
     flatness_pct = (high_power_bins * 100) / signal_width
     Must be below spectrum_flatness (default 45%)
     → Rejects WiFi flat-top (>50%), accepts drone V-shape (<20%)
-    → Only applied when peak_margin >= 40 AND signal_width > 4
+    → Only applied when peak_margin >= effective guard AND signal_width > 4;
+      guard = 40 at Sens <= 75, lowered by (Sens-75)/2 at high Sens (floor 15)
     НАПРАВЛЕНИЕ: Flat — это ВЕРХНЯЯ граница плоскостности.
     МЕНЬШЕ Flat = ЖЁСТЧЕ (режет больше плоских сигналов),
     БОЛЬШЕ Flat = МЯГЧЕ (пропускает более плоские), 0 = выключен.
@@ -824,36 +855,50 @@ Each step can independently reject a detection.
     — отклонить), и FPV (с пиком — принять). ШИРИНА ОДИНАКОВАЯ — решает
     ФОРМА. Именно поэтому Flat работает там, где MaxW бессилен.
 
-  Step 8: Symmetry
+  Step 11: Symmetry
     symmetry = min(left_width, right_width) * 100 / max(left_width, right_width)
     Must exceed spectrum_symmetry (default 0 = disabled)
     → Optional: rejects asymmetric noise
 
-  Step 9: Neighbor Margin
-    center bin must exceed strongest neighbor within 10 MHz by neighbor_margin_db
-    Default 2 dB
-    → Rejects wideband noise (WiFi, BT, microwave)
-
-  Step 10: RSSI Variance
-    calculate_rssi_variance() must be < 100
-    → Rejects chaotic noise (real drones have stable RSSI)
-
-  Step 11: Mahalanobis Gate
-    D²_M must be < mahalanobis_threshold_x10 / 10
-    → Rejects statistical outliers (noise, spurs)
-
-  Step 12: Spectral Kurtosis
+  Step 12: Spectral Kurtosis (last IN-FRAME step — still inside
+           apply_shape_filters; runs BEFORE Steps 13-15)
     kurtosis_x10 must exceed kurtosis_min_x10 (default 20 = 2.0)
     → Rejects Gaussian noise (kurtosis ≈ 0), accepts drone peaks (> 3)
-    → Default OFF (opt-in)
+    → Default OFF (opt-in); skipped for very-strong / Sensitive / margin < 40
 
-Very-Strong Signal Bypass:
-  When peak_margin > 80 (~16 dB): skip valley/symmetry/kurtosis
-  When peak_margin > 96 (~19 dB): additionally skip max_width
+  ==== Tracking-layer post-filters — run AT TRACKING TIME, i.e. only after
+  ==== the in-frame verdict (shape-passed Steps 1-12 OR TBD-confirmed) ====
+
+  Step 13: Neighbor Margin (DB mode only; SKIPPED for shape-validated
+           detections — guards RSSI-only and TBD paths)
+    center freq must exceed strongest neighbor within 10 MHz by
+    neighbor_margin_db (default 2 dB)
+    → Rejects wideband noise (WiFi, BT, microwave)
+
+  Step 14: Mahalanobis Gate (SWEEP mode only, inside apply_sweep_tracking)
+    D²_M must be < mahalanobis_threshold_x10 / 10 (default 40 → 4.0)
+    → Rejects statistical outliers (noise, spurs); default OFF (opt-in)
+
+  Step 15: RSSI Variance (BOTH modes — runs LAST, inside the tracker update,
+           after Step 13 in DB / Step 14 in sweep)
+    calculate_rssi_variance() must be <= 100 (DEFAULT_RSSI_VARIANCE_THRESHOLD)
+    → Rejects chaotic noise (real drones have stable RSSI); default OFF;
+      a rejected sample still refreshes history — only the threat upgrade
+      is withheld (observe_rssi)
+
+Very-Strong Signal Bypass (opt-in — requires Shape Bypass checkbox ON,
+default OFF; with it OFF every gate below runs at ANY signal strength):
+  When ON and peak_margin > 80 (~16 dB): skip valley/symmetry/kurtosis,
+    width walk uses /2 instead of /3 (narrower measurement)
+  When ON and peak_margin > 96 (~19 dB): additionally skip max_width
+  Flatness stays ON for very-strong peaks in Sensitive mode (only the
+  weak-peak flatness guard is skipped there)
   → Handles close-range wideband FPV signals
 
 Sensitive Mode:
-  When ON: reduces spectrum_margin by 2, skips sharpness/valley/symmetry/kurtosis
+  When ON: effective gate = spectrum_margin - 2 (NO Sens scaling), skips
+  sharpness/valley/symmetry/kurtosis AND flatness for weak peaks
+  (flatness kept only for very-strong peaks when Bypass is ON)
   → For weak/long-range signals
 
 ================================================================================
@@ -1292,7 +1337,7 @@ WiFi — ШИРОКОПОЛОСНЫЙ сигнал (20-40+ МГц), а окно 
        WiFi имеет flatness 50-80% (плоский верх), аналоговый FPV < 30%.
        Значение 60 = «отклонить сигнал, у которого >60% бинов в полосе
        несут ≥90% пиковой мощности» — плоские верхи отсеиваются.
-  3) spectrum_peak_sharpness: 120 → 140 (дополнительно, WiFi-плотное место).
+  3) spectrum_peak_sharpness: 100 → 140 (дополнительно, WiFi-плотное место).
   4) rssi_threshold_dbm: -95 → -85 … -80, если WiFi близко и сильный.
        Близкий WiFi «заорёт» на любом пороге — порог режет именно его,
        а подлетающий дрон быстро выйдет из шума.
@@ -1314,7 +1359,7 @@ WiFi — ШИРОКОПОЛОСНЫЙ сигнал (20-40+ МГц), а окно 
        2.4 ГГц: 2412, 2417, 2422 … 2472 МГц (каналы 1-13, шаг 5 МГц)
        5 ГГц:   5180, 5200, 5220, 5240, 5500, 5520 … 5745 МГц
      Попадание «в канальную сетку» = почти наверняка WiFi.
-  3) spectrum_peak_sharpness: 120 → 140.
+  3) spectrum_peak_sharpness: 100 → 140.
   4) Радикально и безопасно: исключите эту частоту из DRONES.TXT (DB) или
      поставьте Detection Window (sweep), не покрывающую каналы роутера.
 
@@ -1325,8 +1370,8 @@ WiFi — ШИРОКОПОЛОСНЫЙ сигнал (20-40+ МГц), а окно 
 
 Действия:
   1) MaxW тут НЕ поможет (BT узкий) — работают flatness + sharpness.
-  2) spectrum_flatness ≤ 45 (новый дефолт); spectrum_peak_sharpness: 120 → 140.
-  3) BT-пакеты короткие и скачут по частоте — RSSI-variance (шаг 10
+  2) spectrum_flatness ≤ 45 (новый дефолт); spectrum_peak_sharpness: 100 → 140.
+  3) BT-пакеты короткие и скачут по частоте — RSSI-variance (шаг 15
      цепочки) и консолидация по радиусу сами давят «мусорность».
   4) Если BT-фон постоянный (колонка стоит рядом) — поднимите
      rssi_threshold_dbm на 5-10 дБ.
@@ -1345,7 +1390,7 @@ WiFi — ШИРОКОПОЛОСНЫЙ сигнал (20-40+ МГц), а окно 
   3) НЕ включайте Sensitive mode на WiFi-плотных местах: он отключает
      sharpness и valley — два фильтра, которые держат WiFi. Sensitive —
      для чистого поля, когда дрон слабый и в эфире никого нет.
-  4) valley_depth (Vly) оставить 80 — он уже на стороне дрона.
+  4) valley_depth (Vly) оставить 90 — он уже на стороне дрона.
 
 СЦЕНАРИЙ 5. Микроволновка / широкополосный шум / «поднялась вся полоса»
 ------------------------------------------------------------
@@ -1402,7 +1447,10 @@ WiFi — ШИРОКОПОЛОСНЫЙ сигнал (20-40+ МГц), а окно 
 ================================================================================
   END OF DOCUMENTATION
   Generated: 2026-09-06
-  Updated:   2026-09-21 (Step 6c edge-clip guard + sweep emission dedup +
+  Updated:   2026-09-23 (§14 renumbered 1:1 to scanner.cpp — 15 steps, in-frame
+             vs tracking split; дефолты Sharp=100 / Valley=90 / Flat=45;
+             effective Step-3 gate formula; mode scope 13/14/15)
+  History:   2026-09-21 (Step 6c edge-clip guard + sweep emission dedup +
              раздел 24 «Как отсечь WiFi»)
   Codebase: 49 files, ~8,500+ lines C++
   Platform: HackRF One / PortaPack Mayhem / STM32F405RG

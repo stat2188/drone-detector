@@ -2,6 +2,8 @@
 #define SPECTRUM_PREVIEW_WIDGET_HPP
 
 #include <cstdint>
+
+#include "constants.hpp"
 #include "ui_widget.hpp"
 #include "ui_painter.hpp"
 
@@ -27,16 +29,19 @@ public:
         uint8_t symmetry) noexcept;
 
 private:
-    // Initializers mirror the ANALOG FPV defaults in constants.hpp; runtime
-    // values always arrive via set_params() from DroneSettingsView.
-    uint8_t margin_{20};
-    uint8_t min_width_{9};
-    uint8_t max_width_{200};
-    uint8_t sharpness_{120};
-    uint8_t peak_ratio_{0};
-    uint8_t valley_depth_{80};
-    uint8_t flatness_{45};
-    uint8_t symmetry_{0};
+    // Initializers ARE the constants.hpp defaults (single source of truth —
+    // a default change there updates this preview automatically; the old
+    // hardcoded set still said sharpness=120 / valley=80 after the defaults
+    // moved to 100 / 90); runtime values always arrive via set_params()
+    // from DroneSettingsView.
+    uint8_t margin_{DEFAULT_SPECTRUM_MARGIN};
+    uint8_t min_width_{DEFAULT_SPECTRUM_MIN_WIDTH};
+    uint8_t max_width_{DEFAULT_SPECTRUM_MAX_WIDTH};
+    uint8_t sharpness_{DEFAULT_SPECTRUM_PEAK_SHARPNESS};
+    uint8_t peak_ratio_{DEFAULT_SPECTRUM_PEAK_RATIO};
+    uint8_t valley_depth_{DEFAULT_SPECTRUM_VALLEY_DEPTH};
+    uint8_t flatness_{DEFAULT_SPECTRUM_FLATNESS};
+    uint8_t symmetry_{DEFAULT_SPECTRUM_SYMMETRY};
 
     static ui::Color amplitude_color(int32_t h, int32_t max_h) noexcept;
 };

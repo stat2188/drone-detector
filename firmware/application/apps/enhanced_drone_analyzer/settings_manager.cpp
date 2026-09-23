@@ -448,6 +448,13 @@ ErrorCode SettingsFileManager::load(SettingsStruct& out) noexcept {
     }
 
     constexpr size_t READ_CHUNK_SIZE = 256;
+    // DELIBERATE static placement (BSS: 384 B total, NOT stack): `File file`
+    // above already costs 556 B of stack (FIL sector buffer — file.hpp), and
+    // adding 384 B of locals would push this frame to ~940 B against the
+    // 4 KB process stack shared with the calling view constructor.
+    // @invariant Non-reentrant by design — both callers run synchronously on
+    //            the UI thread (see settings_manager.hpp load() @pre), so the
+    //            shared scratch buffers can never overlap between calls.
     static uint8_t chunk[READ_CHUNK_SIZE];
     static uint8_t line_buf[128];
     size_t line_len = 0;

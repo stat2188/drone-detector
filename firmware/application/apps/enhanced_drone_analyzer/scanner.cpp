@@ -928,6 +928,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         // scanned as separate DB channels) whenever the other carrier is
         // stronger. The check still guards RSSI-only and TBD detections.
         const bool shape_validated = has_shape_result;
+        // Step 13 (README §14 chain): Neighbor-margin tracking post-filter.
         if (config_.neighbor_margin_db > 0 && !shape_validated) {
             neighbor_margin_checker_.add(frequency, effective_rssi);
             if (!neighbor_margin_checker_.check_margin(frequency, effective_rssi, config_.neighbor_margin_db)) {
@@ -1243,6 +1244,9 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
         // history never refreshed, so the variance stayed frozen above the
         // threshold forever, threat never escalated, and the tracker could
         // go stale while the (noisy) signal was still present.
+        // Step 15 (README §14 chain): RSSI-variance post-filter — runs LAST in
+        // both modes (after Step 13 in DB / Step 14 in sweep), inside the
+        // tracker update; a rejected sample still refreshes history.
         if (config_.rssi_variance_enabled) {
             const uint32_t variance = tracked_drones_[index].calculate_rssi_variance();
             if (variance > static_cast<uint32_t>(DEFAULT_RSSI_VARIANCE_THRESHOLD)) {
@@ -2924,6 +2928,7 @@ void DroneScanner::apply_sweep_tracking(
     // Mahalanobis gate
     bool mahalanobis_rejected = false;
     bool drone_created_here = false;
+    // Step 14 (README §14 chain): Mahalanobis tracking post-filter — SWEEP only.
     if (config_.mahalanobis_enabled) {
         size_t drone_idx = 0;
         bool drone_found = false;
