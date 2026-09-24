@@ -250,7 +250,11 @@ private:
 
     void enter_sweep_mode() noexcept;
     void exit_sweep_mode(bool suppress_auto_restart = false) noexcept;
-    void on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept;
+    // display_only=true: integrate into composite WITHOUT detector/AGC/
+    // retune (EMPTY-FIFO fallback duplicate fix — the frame was already fed
+    // to process_spectrum_sweep in the drain loop; re-feeding doubles TBD
+    // votes and median weight). Live path uses display_only=false.
+    void on_sweep_spectrum(const ChannelSpectrum& spectrum, bool display_only = false) noexcept;
     void retune_sweep_window(SweepWindow& win, const char* prefix = nullptr) noexcept;
     void update_sweep_pair_display() noexcept;
     [[nodiscard]] uint8_t pair_first(uint8_t idx) const noexcept;

@@ -1008,6 +1008,31 @@ public:
     [[nodiscard]] bool is_adaptive_cfar_enabled() const noexcept;
 
     /**
+     * @brief Full Step-3 shape gate margin WITHOUT locking (sweep fast path).
+     * @return shape_gate_margin() value, or 0 if the mutex is contended.
+     * @details Sweep runs on the UI thread with the scanner thread stopped,
+     *   but perform_scan_cycle() may still hold DATA_MUTEX on entry/exit
+     *   races. Blocking here would stall the 60 Hz DisplayFrameSync tick and
+     *   drop FIFO frames (= sensitivity loss). TryLock + 0-fallback keeps the
+     *   prefilter fail-open (0 margin = everything passes to full analysis).
+     * @note Stack: ~8 B. No heap, no FP.
+     */
+    [[nodiscard]] uint8_t shape_gate_margin_try() const noexcept;
+
+    /**
+     * @brief Shape-detection enable flag WITHOUT blocking (sweep fast path).
+     * @return ScanConfig::spectrum_detection_enabled, or TRUE if the mutex
+     *         is contended (fail-open: the prefilter then evaluates with
+     *         whatever margin shape_gate_margin_try() returned — 0 on the
+     *         same contention — so everything passes to full analysis).
+     * @details Companion to shape_gate_margin_try(): the UI drain prefilter
+     *   must bypass the shape gate in RSSI-only mode exactly like the
+     *   detector-side gate in process_spectrum_sweep() does.
+     * @note Stack: ~4 B. No heap, no FP.
+     */
+    [[nodiscard]] bool is_spectrum_shape_enabled_try() const noexcept;
+
+    /**
      * @brief Get sweep step frequency in Hz
      * @return Sweep step frequency (bins per step × bin size)
      * @note Uses unified constant SWEEP_BIN_SIZE from constants.hpp

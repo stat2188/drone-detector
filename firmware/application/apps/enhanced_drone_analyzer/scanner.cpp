@@ -5,6 +5,7 @@
 
 #include "scanner.hpp"
 #include "sweep_processor.hpp"
+#include "sweep_sensitivity.hpp"
 #include "receiver_model.hpp"
 #include "portapack.hpp"
 #include "portapack_persistent_memory.hpp"
@@ -1703,6 +1704,40 @@ bool DroneScanner::is_adaptive_cfar_enabled() const noexcept {
     return config_.adaptive_cfar_enabled;
 }
 
+uint8_t DroneScanner::shape_gate_margin_try() const noexcept {
+    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    if (!lock.is_locked()) {
+        return 0;
+    }
+    // Inline of shape_gate_margin() internals (cannot call the locking
+    // version — ChibiOS fast mutexes are NOT recursive, same-thread relock
+    // would deadlock). Logic duplicated byte-for-byte from
+    // shape_gate_margin()/effective_spectrum_margin() above; any change
+    // there MUST be mirrored here.
+    uint8_t base = config_.spectrum_margin;
+    if (config_.sensitive_mode && base > 2) {
+        base = static_cast<uint8_t>(base - 2);
+    } else if (config_.sensitive_mode) {
+        base = 1;
+    }
+    const int32_t rssi_sens = -(config_.rssi_threshold_dbm + 95);
+    if (!config_.sensitive_mode && rssi_sens > 0) {
+        const uint16_t scaled = static_cast<uint16_t>(base) +
+            static_cast<uint16_t>(rssi_sens / 2);
+        return (scaled > 255) ? 255 : static_cast<uint8_t>(scaled);
+    }
+    return base;
+}
+
+bool DroneScanner::is_spectrum_shape_enabled_try() const noexcept {
+    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    // Fail-open on contention: report "enabled" so the caller still runs
+    // the prefilter with the margin shape_gate_margin_try() returned on
+    // the same contention (0 => everything passes). Never fail-closed
+    // here: dropping the frame would lose sensitivity.
+    return lock.is_locked() ? config_.spectrum_detection_enabled : true;
+}
+
 ErrorCode DroneScanner::set_config(const ScanConfig& config) noexcept {
     ErrorCode validate_result = validate_config_internal(config);
     if (validate_result != ErrorCode::SUCCESS) {
@@ -3110,6 +3145,25 @@ void DroneScanner::process_spectrum_sweep(
     // the top of this function); the filter warms within one revisit dwell
     // and its output smooths the tracked primary-peak RSSI below.
     rssi_median_filter_.add(spectrum_value_to_dbm(frame_peak_power, frame_total_gain));
+
+    // SWEEP FAST PREFILTER (sensitivity/CPU fix) — SINGLE SOURCE OF TRUTH:
+    // sweep_sensitivity.hpp::sweep_fast_prefilter — the SAME helper the UI
+    // drain loop calls, so the bypass rule and half-gate semantics exist
+    // exactly once (no byte-for-byte copy to keep in sync).
+    // Pure-noise slices die here in ~30 cycles (2 compares, after the
+    // scan/quickselect already paid above) instead of ~2000+ cycles of
+    // CFAR + 12-step shape chain + TBD scan. Gate is HALF the Step 3
+    // margin: genuine weak (below-gate TBD) targets stay alive — only
+    // dead-flat noise is cut. Waterfall push + median feed above already
+    // ran, so TBD/median warm-up is unaffected. RSSI-only mode
+    // (spectrum_detection_enabled=false) bypasses the gate inside the
+    // helper — threshold tracking owns every frame there.
+    // Stack: ~8 B. No heap, no FP, no locks.
+    if (!sweep_fast_prefilter(
+            config_.spectrum_detection_enabled,
+            frame_peak_power, noise_floor, cfg_margin)) {
+        return;
+    }
 
     // Step 2: Find ALL candidate peaks (CFAR multi-peak or fixed-threshold).
     // Stack: CFARPeak × 8 = 16 bytes. Well within 512B limit.

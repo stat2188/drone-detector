@@ -17,6 +17,7 @@
 #include "audio_alerts.hpp"
 #include "audio.hpp"
 #include "constants.hpp"
+#include "sweep_sensitivity.hpp"
 #include "string_format.hpp"
 #include "baseband_api.hpp"
 #include "portapack_persistent_memory.hpp"
@@ -94,6 +95,7 @@ void DroneScannerUI::register_handlers() noexcept {
                 // loop is bounded (FIFO depth is 4) so it cannot spin.
                 ChannelSpectrum& spectrum = this->spectrum_buffer_;
                 bool have_frame = false;
+                bool fallback_display_only = false;
                 if (this->composite_active_) {
                     ChannelSpectrum& discard = this->spectrum_discard_;
                     uint8_t drained = 0;
@@ -140,20 +142,64 @@ void DroneScannerUI::register_handlers() noexcept {
                             // (oldest first), so these samples precede the
                             // final frame's sample — the median filter and the
                             // per-window waterfall stay time-ordered.
-                            // KNOWN benign overlap: on a jitter tick the
-                            // EMPTY-FIFO FALLBACK below reuses the LAST
-                            // drained frame, which is then detected once more
-                            // via on_sweep_spectrum(). That is a same-slice
-                            // duplicate sample — the median window is order-
-                            // insensitive and TBD counts one identical frame;
-                            // fallback ticks are rare (M0 keeps the FIFO
-                            // non-empty at ~154 fps production).
-                            // Cost: ≤ 3 extra detector runs per tick, each
-                            // O(256 bins) integer math (~2% of a 16.7 ms tick).
-                            // No locking: the sweep path runs on the UI thread
-                            // with the scanner thread stopped (see
+                            // PREFILTER (CPU fix): pure-noise drained slices
+                            // skip detector entry (quickselect + waterfall
+                            // push + CFAR + 12-step shape + TBD scan) instead
+                            // of paying ~2000+ cycles for them.
+                            // SINGLE SOURCE OF TRUTH:
+                            // sweep_sensitivity.hpp::sweep_fast_prefilter —
+                            // the SAME helper process_spectrum_sweep() calls,
+                            // so the RSSI-only bypass (spectrum_detection_
+                            // enabled=false => never gate) and the half-gate
+                            // rule exist exactly once.
+                            // Config snapshot via TryLock (fail-open):
+                            // shape_gate_margin_try() returns 0 on contention
+                            // => gate 0 => everything analyzed;
+                            // is_spectrum_shape_enabled_try() returns true
+                            // on contention => gate evaluated, but with the
+                            // same 0 margin => passes. Blocking here would
+                            // stall the 60 Hz DisplayFrameSync tick and drop
+                            // FIFO frames (= sensitivity loss).
+                            // Peak/noise scanned here: one 236-bin min/max
+                            // pass, stack ~8 B, no quickselect. The scan is
+                            // min-based and min <= p25 always holds, so this
+                            // gate is a strict SUBSET of the detector's
+                            // 25th-percentile gate — it can never drop a
+                            // frame the detector would have accepted.
+                            // The dup scan vs process_spectrum_sweep Step 1
+                            // is INTENTIONAL: it lets ~90% pure-noise drained
+                            // slices skip the whole detector, while survivors
+                            // still get the 25th-percentile + median feed
+                            // inside the detector, so TBD/median warm-up is
+                            // unaffected.
+                            // No blocking locks: the sweep path runs on the
+                            // UI thread with the scanner thread stopped (see
                             // process_spectrum_sweep() docs in scanner.hpp).
+                            bool drain_detect = true;
                             if (this->scanner_ptr_ != nullptr) {
+                                uint8_t d_peak = 0;
+                                uint8_t d_nf = UINT8_MAX;  // min-accumulator seed
+                                const uint8_t* d_db = discard.db.data();
+                                for (size_t di = FFT_EDGE_SKIP_NARROW;
+                                     di < FFT_DC_SPIKE_START; ++di) {
+                                    const uint8_t v = d_db[di];
+                                    if (v > d_peak) d_peak = v;
+                                    if (v < d_nf) d_nf = v;
+                                }
+                                for (size_t di = FFT_DC_SPIKE_END;
+                                     di < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW;
+                                     ++di) {
+                                    const uint8_t v = d_db[di];
+                                    if (v > d_peak) d_peak = v;
+                                    if (v < d_nf) d_nf = v;
+                                }
+                                drain_detect = sweep_fast_prefilter(
+                                    this->scanner_ptr_->is_spectrum_shape_enabled_try(),
+                                    d_peak,
+                                    d_nf,
+                                    this->scanner_ptr_->shape_gate_margin_try());
+                            }
+                            if (drain_detect && this->scanner_ptr_ != nullptr) {
                                 auto& dwin = this->sweep_[this->active_sweep_idx_];
                                 const FreqHz d_fft_freq = (this->last_tuned_freq_ != 0)
                                     ? this->last_tuned_freq_
@@ -178,15 +224,17 @@ void DroneScannerUI::register_handlers() noexcept {
                     // 1-3 stale frames and no fresh one yet. In that case the
                     // LAST drained frame is still newer than anything the old
                     // single-out() path would have processed two ticks later,
-                    // so reuse it instead of idling the tick: copy it into the
-                    // live buffer. No double-processing hazard: the frame was
-                    // already popped (it cannot be served again), and the
-                    // settle counter still discards it when a retune is
-                    // pending — detection/drop semantics are unchanged, only
-                    // the idle-tick stall is removed.
+                    // so reuse it for DISPLAY ONLY (display_only=true): the
+                    // frame was ALREADY fed to the detector in the S1 drain
+                    // loop above, and re-feeding would double TBD votes and
+                    // median weight. The settle counter still discards it when
+                    // a retune is pending — detection/drop semantics unchanged,
+                    // only the idle-tick display stall is removed.
+                    // Stack: ChannelSpectrum copy ~272 B BSS-to-BSS, no stack.
                     if (!have_frame && drained > 0) {
                         spectrum = discard;
                         have_frame = true;
+                        fallback_display_only = true;
                     }
                 } else {
                     // Use class member buffer instead of local stack to prevent M0 overflow
@@ -194,7 +242,10 @@ void DroneScannerUI::register_handlers() noexcept {
                 }
                 if (have_frame) {
                     if (this->composite_active_) {
-                        this->on_sweep_spectrum(spectrum);
+                        // have_frame from fifo.out() above is live
+                        // (display_only=false); fallback reuse is display-only
+                        // (display_only=true, set above).
+                        this->on_sweep_spectrum(spectrum, fallback_display_only);
                     } else {
                         this->on_channel_spectrum(spectrum);
                         this->db_scan_count_++;
@@ -1419,7 +1470,7 @@ void DroneScannerUI::exit_sweep_mode(bool suppress_auto_restart) noexcept {
     sweep_transition_guard_.clear();
 }
 
-void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept {
+void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum, bool display_only) noexcept {
     // Bounds check — prevent out-of-bounds access if state corrupted
     if (active_sweep_idx_ >= MAX_SWEEP_WINDOWS) {
         baseband::spectrum_streaming_stop();
@@ -1466,7 +1517,7 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
             return;
         }
 
-        if (scanner_ptr_ != nullptr) {
+        if (scanner_ptr_ != nullptr && !display_only) {
             // Use the exact frequency the radio was tuned to when this FFT was captured.
             // f_center may have already been incremented from the previous frame's step.
             const FreqHz fft_freq = (last_tuned_freq_ != 0) ? last_tuned_freq_ : win.f_center;
@@ -1476,8 +1527,11 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
             // DC gap = hard measurement boundary) — never on display-mapped buffers.
             scanner_ptr_->process_spectrum_sweep(active_sweep_idx_, spectrum, fft_freq, win.f_min, win.f_max);
 
-            // AGC for sweep mode — applies optimal gains to each frame's spectrum
-            apply_agc(spectrum.db.data());
+            // AGC for sweep mode — PASS-BOUNDARY ONLY (frozen mid-pass).
+            // Mid-pass gain steps shift the reference level of the composite
+            // max-hold and the TBD envelope by 4-14 dB mid-integration,
+            // desensitizing weak targets and spawning phantoms. AGC now runs
+            // only when this step COMPLETED the pass (line_full below).
         }
     }
 
@@ -1535,6 +1589,15 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         // This replaces the per-frame quickselect that previously ran in
         // set_composite_data() / set_sweep2_data(), saving ~1200 comparisons/frame.
         drone_display_.update_noise_floor();
+
+        // AGC PASS-BOUNDARY UPDATE (sensitivity fix): gains are frozen
+        // mid-pass so the composite max-hold and the TBD envelope share one
+        // reference level for the whole integration. 500 ms rate limiter
+        // inside AutoGainControl stays the second guard.
+        // Skipped for display_only fallback reuse (stale duplicated frame).
+        if (!display_only) {
+            apply_agc(spectrum.db.data());
+        }
 
         // Hand off cycle-peak RSSI for movement trend calculation.
         // Must run BEFORE apply_rssi_decay() so prev_cycle_peak_rssi_ is set
