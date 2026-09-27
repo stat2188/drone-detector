@@ -980,40 +980,41 @@ constexpr uint8_t DEFAULT_SPECTRUM_MARGIN = 20;
 /**
  * @brief Default minimum signal width in bins (1-100)
  * @note Signals narrower than this are rejected as needle spikes
- * @note 9 bins ≈ 700 kHz (ANALOG FPV DEFAULT) — an analog FM video carrier
- *       always smears across multiple bins; 9 bins still passes at long range
- *       where the peak shrinks, while rejecting single/double-bin noise spikes
- * @note 2 bins = 156 kHz (previous default) — accepted narrowband control
- *       bursts (ELRS, FrSky) but also let 2-bin noise spikes through
+ * @note 2 bins ≈ 156 kHz (PERMISSIVE DEFAULT — "pass narrow AND wide"):
+ *       accepts narrowband control bursts (ELRS/FrSky ≈ 2-8 bins) that the
+ *       previous 9-bin default rejected at ANY range. Single-bin spikes are
+ *       still rejected (width 1 < 2); the margin gate (Step 3), CFAR /
+ *       fixed-threshold candidate collection, the RSSI threshold and the
+ *       tracking post-filters remain the noise-spike defense.
+ * @note 9 bins ≈ 700 kHz (previous default) — tuned for analog FPV carriers,
+ *       but made narrowband control links structurally undetectable even
+ *       when strongly present on the spectrum.
  * @note 20 bins = 1.56 MHz (aggressive filtering)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 9;
+constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 2;
 
 /**
  * @brief Default maximum signal width in bins (1-255)
  * @note Signals wider than this are rejected as flat-topped U/I noise
- * @note 200 bins ≈ 15.6 MHz (ANALOG FPV DEFAULT, Step-6b emission-extent
- *       semantics): the extent is measured at the HALF-POWER level (peak − 6 dB,
- *       floored at noise + Mar/3). The −6 dB band of an analog FM video carrier
- *       is ~constant in MHz across its usable range — 8-14 MHz = 100-180 bins —
- *       so 200 accepts real FPV video at ANY range. The previous default of 40
- *       bins (≈3.1 MHz), tuned for the old crest-fragment semantics, rejected
- *       REAL FPV video at any range where the video skirt rose above the extent
- *       threshold — analog FPV detection was structurally dead. WiFi 20 MHz
- *       OFDM at −6 dB still measures ≈200-236 bins (rejected at the MaxW=200
- *       boundary and by the sharpness gate: flat OFDM tops sit at sharpness
- *       100-115 < 120). Residual medium-width flat noise is caught
- *       independently by the sharpness (Step 7), valley (Step 9) and
- *       opt-in flatness (Step 10) filters.
- * @note 40 bins ≈ 3.1 MHz (previous default) — was tuned for the OLD
- *       crest-fragment width semantics; under the emission-extent semantics it
- *       rejected wide analog FPV. Revert only if the primary threat is
- *       narrowband (ELRS/FrSky control links) and WiFi rejection must be
- *       maximally aggressive
- * @note 230 bins = ~18 MHz — full FPV channel slot; lets borderline flat noise
- *       through at low SNR (only 6 usable bins of margin remain)
+ * @note 255 (PERMISSIVE DEFAULT — "pass narrow AND wide"): no width cap.
+ *       In the current raw-FFT chain (has_dc_gap=true everywhere) the Step-4
+ *       walk and emission_extent() are DC-gap bounded — the measurable
+ *       extent can NEVER exceed 114 bins (bins 6..119 / 136..249) — so any
+ *       value >= 114 is behaviorally identical; 255 makes "no cap" explicit
+ *       instead of implying the old 15.6 MHz ceiling. Wideband (WiFi
+ *       20-40 MHz) rejection in sweep is owned by the Step 6c BOTH-EDGES
+ *       rule (an emission spanning the ENTIRE usable window is wider than
+ *       any FPV channel); DB-scan flat-top rejection is owned by the
+ *       tracking post-filters (neighbor margin, Mahalanobis, RSSI variance)
+ *       and by Flat when the user re-enables it.
+ * @note 200 bins ≈ 15.6 MHz (previous default) — inert under the DC-gap cap
+ *       (extent <= 114) but read by users as a real ceiling in the UI
+ * @note CAUTION: do not lower below ~100 bins (7.8 MHz) unless the primary
+ *       threat is narrowband only — values in the 100-114 range start
+ *       clipping the widest legitimate analog FPV video skirts (8-14 MHz
+ *       at −6 dB, measured per DC-gap sideband half)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 200;
+constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 255;
 
 /**
  * @brief Default minimum peak sharpness ratio (50-250)
@@ -1029,12 +1030,13 @@ constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 200;
  *       targets; that was survivable only while TBD resurrected every shape
  *       reject — once TBD honors the user's shape verdicts, 120 structurally
  *       cuts medium-range analog FPV. 100 passes the ENTIRE documented FPV
- *       band (100-130, dual-peak shapes 80-120 included) and leaves WiFi/BT
- *       flat-top classification to the flatness gate (Flat=45: FPV <=30% vs
- *       WiFi >=50%), which is width-independent and the primary WiFi
- *       discriminator. On WiFi-dense sites with lingering flat-noise leaks
- *       raise to 120-150 — documented trade-off: WILL reject medium-range
- *       analog FPV again.
+ *       band (100-130, dual-peak shapes 80-120 included). NOTE: at exactly
+ *       100 the gate is a mathematical no-op (avg_margin <= peak_margin, so
+ *       sharpness >= 100 always) — WiFi/BT flat-top classification is owned
+ *       by the flatness gate, which is now OFF by default (Flat=0, see
+ *       DEFAULT_SPECTRUM_FLATNESS) and by Step 6c in sweep. On WiFi-dense
+ *       sites with lingering flat-noise leaks raise to 120-150 —
+ *       documented trade-off: WILL reject medium-range analog FPV again.
  * @note History: 75 (accepted flat noise) → 150 (rejected medium-range
  *       analog FPV) → 120 (clipped the FPV 100-130 band once TBD stopped
  *       resurrecting) → 100.
@@ -1055,39 +1057,56 @@ constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 0;
 
 /**
  * @brief Default valley depth threshold (0-200)
- * @note Measures margin of bins immediately flanking the signal peak
- * @note Inverted-V: deep valleys (flanking bins have margin < 5)
- * @note Flat U/I: shallow valleys (flanking bins still elevated)
- * @note 0 = no valley depth filtering (disabled)
  * @note REJECT rule: max flanking valley margin >= threshold → reject, so
- *       RAISING the value LOOSENS the filter.
- * @note 90 (PERMISSIVE DEFAULT — "detect what fits the bands"): at close
- *       range (~10 m) ALL bins in the signal bandwidth are elevated 12-16 dB
- *       above noise, including the flanking bins. The previous default of 80
- *       (16 dB) sat exactly on the inclusive reject boundary of that band —
- *       normal spread/multipath pushed real video flanks past 80 and cut
- *       legitimate close-range targets (tolerable while TBD resurrected
- *       rejects, fatal once it stopped). 90 (18 dB) clears the whole
- *       documented FPV flank band with 2 dB headroom; WiFi/BT flat-tops
- *       (flanks > 20 dB consistently) stay separated by a 10+ dB margin.
- *       The check is additionally skipped for very_strong peaks and in
- *       sensitive mode. On noisy sites with flat-noise leaks lower to 70-80.
- * @note Previous defaults: 55 (rejected strong FPV at close range), 80.
+ *       RAISING the value LOOSENS the filter; 0 = disabled (the whole block,
+ *       including the O(width) dual-peak ridge scan, is skipped outright).
+ * @note FPV DEFAULT = 0 (OFF) — the shipped 90 was mathematically INERT.
+ *       Proof: Step 4 stops the width walk at the first bin below
+ *       elevated = noise + peak_margin/3, so the flank bin Step 9 measures is
+ *       always < peak_margin/3, i.e. <= (255-1)/3 = 84 units in EVERY mode
+ *       (the elevated_sum clamp is unreachable: peak <= 255 forces
+ *       noise + margin/3 <= 255). A threshold of 90 could therefore never
+ *       reject anything — while still paying the dual-peak ridge scan for
+ *       every peak of every frame. 0 = byte-identical accept/reject
+ *       behavior, honest alignment with the PERMISSIVE SET (Flat/Sym/Ratio
+ *       are 0 too).
+ * @note To ARM the filter: threshold D fires only on flank >= D, which
+ *       requires peak_margin >= 3*(D+1) — D=70..80 bites only near-saturation
+ *       events (margin >= 213): receiver OVERLOAD (README section 24,
+ *       scenario 5) but also saturated close-range FPV — the historical
+ *       "80 cut targets at ~10 m" report is exactly the margin >= 243
+ *       boundary. D <= 55 cuts legitimate mid-range FPV (fires at
+ *       margin >= 168). Against ordinary WiFi it never helps: WiFi margin
+ *       stays below 213 in all normal placements.
+ * @note History: 55 (rejected strong FPV at close range) → 80 (bit only
+ *       margin >= 243) → 90 (provably never fires — documented, but paid
+ *       the ridge scan) → 0 (explicit OFF, same behavior, zero cost).
  */
-constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 90;
+constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 0;
 
 /**
  * @brief Default peak flatness threshold (0-100, percentage)
  * @note flatness = (high_power_bins * 100) / signal_width
  * @note Measures how many bins are at 90%+ of peak power
  * @note WiFi/BT flat-top: flatness ~ 50-80% (many bins near peak)
- * @note Drone V-shape / analog FM video: flatness ~ 5-30% (peak bin dominates
- *       the 90%-of-peak count at usable SNR)
+ * @note Fat analog FPV block with a BLUNT top: flatness ~ 40-70% — this is
+ *       NOT separable from WiFi by this metric at close/mid range.
  * @note Higher threshold = MORE PERMISSIVE (admits flatter signals); LOWER
  *       threshold = stricter (rejects more flat-top signals). The value is
  *       the MAXIMUM allowed flatness: flatness_pct > threshold → REJECT.
  *       0 = filter disabled.
- * @note 0 = no flatness filtering (disabled)
+ * @note 0 (DEFAULT — "pass narrow AND wide"): flatness is DISABLED by
+ *       default. Rationale: the filter only engages above
+ *       FLATNESS_MIN_PEAK_MARGIN (~8 dB), i.e. exactly on the STRONG peaks
+ *       that are clearly visible on the spectrum — a fat FPV carrier with a
+ *       slightly blunt top measured 45-70% and was rejected on nearly every
+ *       pass, and the shape reject additionally vetoed its TBD rescue
+ *       (note_shape_veto), so the scanner sailed past it "almost always".
+ *       With 0 the verdict no longer depends on top-bluntness: narrow and
+ *       wide signals pass on width/margin alone. Trade-off: WiFi/BT
+ *       flat-top discrimination is OFF — re-enable on WiFi-dense sites
+ *       (45 = documented midpoint: FPV <=30% / WiFi >=50%; direction:
+ *       МЕНЬШЕ = жёстче, БОЛЬШЕ = мягче; см. README раздел 24).
  * @note SEMANTICS: flatness is a SHAPE filter, not a width filter. It does
  *       NOT measure width and does NOT suppress it — MinW/MaxW own width
  *       (Steps 5/6). Flatness runs AFTER the band is measured and classifies
@@ -1095,27 +1114,14 @@ constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 90;
  *       >= 90% of peak power. A flat top (WiFi/BT) scores 50-80% (REJECT),
  *       a sharp peak (drone/FM) scores <30% (PASS). Two signals of the SAME
  *       width can invert the verdict — the shape decides, which is exactly
- *       why flatness works where MaxW cannot.
- * @note OPTIMAL DEFAULT: 60 — the PRIMARY WiFi/BT rejection filter.
- *       Rationale: MaxW was re-tuned to 200 bins (Step-6b emission-extent
- *       semantics) so analog FPV video (8-18 MHz) passes at ANY range —
- *       which also lets WiFi 20 MHz OFDM through whenever its extent is
- *       edge-clipped in sweep or fragmented by ripple. With MaxW=200 the
- *       sharpness gate (WiFi ≈ 100-115 < 120) is the only remaining WiFi
- *       gate and its 4-17% separation margin collapses on OFDM ripple
- *       crests. Flat=45 restores the width-independent discriminator:
- *       the midpoint of the documented separation gap (FPV <=30%,
- *       WiFi >=50%) — rejects the ENTIRE documented WiFi range while
- *       keeping a 15-point margin above the FPV maximum.
- *       SAFETY for weak FPV: flatness is skipped entirely below
- *       FLATNESS_MIN_PEAK_MARGIN (~8 dB, the far-field regime where the
- *       old 0-default mattered), skipped in sensitive mode for weak peaks,
- *       and skipped for narrow signals (<= FLATNESS_MIN_SIGNAL_WIDTH).
- *       Close-range strong FPV (quasi-flat FM block) measures <30% — passes.
- *       WiFi-плотные площадки: ПОНИЖАЙТЕ до 35-40 (меньше = жёстче;
- *       см. README раздел 24). ПОДЪЁМ порога, наоборот, ОСЛАБЛЯЕТ фильтр.
+ *       why flatness works where MaxW cannot (when the user turns it on).
+ * @note SAFETY guards when ENABLED (unchanged): skipped entirely below
+ *       FLATNESS_MIN_PEAK_MARGIN (~8 dB), skipped in sensitive mode for weak
+ *       peaks, and skipped for narrow signals (<= FLATNESS_MIN_SIGNAL_WIDTH).
+ *       WiFi-плотные площадки: ВКЛЮЧИТЕ и ПОНИЖАЙТЕ от 45 к 35-40
+ *       (меньше = жёстче; см. README раздел 24).
  */
-constexpr uint8_t DEFAULT_SPECTRUM_FLATNESS = 45;
+constexpr uint8_t DEFAULT_SPECTRUM_FLATNESS = 0;
 
 /**
  * @brief Minimum peak margin for flatness check to be meaningful (in spectrum.db units)
@@ -1183,6 +1189,55 @@ constexpr uint8_t VERY_STRONG_SIGNAL_MARGIN = 80;
  *       max_width when their inflated width exceeded 200 bins.
  */
 constexpr uint8_t EXTREME_SIGNAL_MARGIN = 96;
+
+// ============================================================================
+// Track-Before-Detect (TBD) Confirmation Constants
+// ============================================================================
+// TBD is the multi-frame weak-signal integrator: it confirms a bin that never
+// cleared the Step-3 margin gate but stays elevated across TBD_MIN_FRAMES
+// frames of the same waterfall window (~9 dB integration gain). Its confirm
+// threshold is the RSSI threshold (Sens) FLOORED at the noise-relative value
+// below, because the RSSI term alone is not a noise-relative criterion:
+//   threshold_units = (rssi_threshold_dbm + total_gain) * 5 + 255
+// clamps to 0 for any total gain <= 54 dB at the default Sens (-105 dBm), and
+// "3 of N frames above 0" is then satisfied by pure noise (a bin only has to
+// be non-zero). Until now that hole was masked inadvertently by the frame-drop
+// prefilter (sweep_sensitivity.hpp::sweep_fast_prefilter), which discarded the
+// frame before TBD could look at it and thereby also amputated the genuine
+// below-half-gate weak-signal class.
+
+/**
+ * @brief Noise-relative floor for the TBD confirm threshold (spectrum.db units, 5 units = 1 dB).
+ * @note 6 units = 1.2 dB ≈ 3σ of the per-bin noise fluctuation around the
+ *       25th-percentile shelf (σ ≈ 2 units by the codebase's own noise model),
+ *       so a single noise bin reaches it in ~0.1% of frames and a 3-of-N
+ *       coincidence is negligible, while genuine below-gate emissions
+ *       (1-4 dB above the shelf) stay reachable.
+ * @note MUST stay BELOW DEFAULT_SPECTRUM_MARGIN / 2 (12 units = 2.4 dB): the
+ *       TBD confirm threshold doubles as the sweep frame-reachability limit
+ *       (sweep_sensitivity.hpp::sweep_tbd_frame_reachable), so a floor above
+ *       half the Step-3 gate would cut frames BEFORE the integrator can vote
+ *       — reintroducing the regression this constant removes. A
+ *       static_assert() below enforces the relation at compile time.
+ * @note Supersedes the aspirational TBD_THRESHOLD_MARGIN (= 10, "half of
+ *       spectrum margin") that sat in scanner.hpp as DEAD code until
+ *       2026-07-27: same idea, now actually wired into the confirm gate.
+ * @note Sensitivity direction: LOWER = more sensitive (more noise votes),
+ *       HIGHER = stricter. 0 would restore the pre-fix behaviour only in
+ *       combination with the RSSI clamp — do not set it to 0.
+ */
+constexpr uint8_t TBD_MIN_ELEVATION_UNITS = 6;
+
+// Parity guard: the floor must remain usable as a frame-reachability limit.
+// 2 × TBD_MIN_ELEVATION_UNITS <= DEFAULT_SPECTRUM_MARGIN keeps the floor at
+// or below half of the DEFAULT Step-3 gate, so the reachability test can never
+// be stricter than the prefilter's half-gate for the default configuration.
+static_assert(
+    (2u * static_cast<uint16_t>(TBD_MIN_ELEVATION_UNITS)) <=
+        static_cast<uint16_t>(DEFAULT_SPECTRUM_MARGIN),
+    "TBD_MIN_ELEVATION_UNITS must stay <= DEFAULT_SPECTRUM_MARGIN / 2: the "
+    "TBD floor is also the sweep frame-reachability limit, and a higher floor "
+    "would cut frames before the weak-signal integrator can vote");
 
 // ============================================================================
 // CFAR Detection Constants (Constant False Alarm Rate)

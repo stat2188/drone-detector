@@ -166,12 +166,30 @@ void DroneScannerUI::register_handlers() noexcept {
                             // gate is a strict SUBSET of the detector's
                             // 25th-percentile gate — it can never drop a
                             // frame the detector would have accepted.
+                            // TBD REACHABILITY (sensitivity parity): a frame
+                            // that fails the half-gate is still ADMITTED when
+                            // it could contribute a weak-signal vote to the
+                            // multi-frame integrator. That decision belongs to
+                            // the integrator's OWN criterion (RSSI threshold
+                            // floored at the noise shelf + TBD_MIN_ELEVATION_
+                            // UNITS), not to half of the shape gate: the
+                            // half-gate discards the below-half-gate class that
+                            // TBD exists to confirm, and it RISES with the
+                            // Sensitivity knob (inverted response for weak
+                            // targets). Same helper and same threshold
+                            // derivation as the detector, which then runs only
+                            // the cheap TBD pass for such a frame (no CFAR, no
+                            // shape chain) — the CPU saving is preserved.
+                            // Dropping the frame HERE would be irrecoverable:
+                            // the detector pushes frames into waterfall_history_
+                            // BEFORE its own gate, but a frame discarded at this
+                            // level never reaches the detector and its vote is
+                            // lost outright.
                             // The dup scan vs process_spectrum_sweep Step 1
-                            // is INTENTIONAL: it lets ~90% pure-noise drained
-                            // slices skip the whole detector, while survivors
-                            // still get the 25th-percentile + median feed
-                            // inside the detector, so TBD/median warm-up is
-                            // unaffected.
+                            // is INTENTIONAL: it lets pure-noise drained slices
+                            // skip the whole detector, while survivors still get
+                            // the 25th-percentile + median feed inside the
+                            // detector, so TBD/median warm-up is unaffected.
                             // No blocking locks: the sweep path runs on the
                             // UI thread with the scanner thread stopped (see
                             // process_spectrum_sweep() docs in scanner.hpp).
@@ -193,11 +211,20 @@ void DroneScannerUI::register_handlers() noexcept {
                                     if (v > d_peak) d_peak = v;
                                     if (v < d_nf) d_nf = v;
                                 }
+                                const bool d_shape_on =
+                                    this->scanner_ptr_->is_spectrum_shape_enabled_try();
                                 drain_detect = sweep_fast_prefilter(
-                                    this->scanner_ptr_->is_spectrum_shape_enabled_try(),
+                                    d_shape_on,
                                     d_peak,
                                     d_nf,
                                     this->scanner_ptr_->shape_gate_margin_try());
+                                if (!drain_detect) {
+                                    drain_detect = sweep_tbd_frame_reachable(
+                                        d_shape_on,
+                                        d_peak,
+                                        d_nf,
+                                        this->scanner_ptr_->sweep_tbd_threshold_units_try());
+                                }
                             }
                             if (drain_detect && this->scanner_ptr_ != nullptr) {
                                 auto& dwin = this->sweep_[this->active_sweep_idx_];

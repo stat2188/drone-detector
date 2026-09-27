@@ -1033,6 +1033,24 @@ public:
     [[nodiscard]] bool is_spectrum_shape_enabled_try() const noexcept;
 
     /**
+     * @brief TBD confirm threshold (raw units) WITHOUT blocking (sweep fast path).
+     * @return sweep_tbd_threshold_units(config_.rssi_threshold_dbm, current
+     *         total gain), or 0 if the mutex is contended.
+     * @details Companion to shape_gate_margin_try()/is_spectrum_shape_enabled_try():
+     *   the UI drain prefilter must apply the SAME TBD reachability rule as the
+     *   detector (process_spectrum_sweep), otherwise a drained frame never
+     *   reaches waterfall_history_ — the detector pushes the frame BEFORE its
+     *   own gate, but a frame dropped by the UI gate is lost outright and the
+     *   integrator loses its vote.
+     * @note Contention is FAIL-OPEN in the sensitivity direction: the returned
+     *   0 is floored by sweep_tbd_effective_threshold() inside the caller
+     *   (noise_floor + TBD_MIN_ELEVATION_UNITS), so a contended read can only
+     *   ever ADD frames to the integrator, never drop them.
+     * @note Stack: ~8 B. No heap, no FP.
+     */
+    [[nodiscard]] uint8_t sweep_tbd_threshold_units_try() const noexcept;
+
+    /**
      * @brief Get sweep step frequency in Hz
      * @return Sweep step frequency (bins per step × bin size)
      * @note Uses unified constant SWEEP_BIN_SIZE from constants.hpp
@@ -1940,15 +1958,19 @@ private:
      * @param out_extent Optional. When non-null and the call returns true,
      *        receives the SignalExtent of the whole emission around the peak
      *        (Step 6b). Callers use it for emission dedup (sweep mode).
-     * @param reject_edge_clipped When true, Step 6c rejects any emission whose
-     *        extent reaches the FFT window boundary while the boundary bin is
-     *        still above the half-power level — the signal CONTINUES beyond
-     *        this capture window, so the measured width is a clipped fragment,
-     *        not the real bandwidth. This is the primary WiFi rejection gate in
-     *        sweep mode: a 20-40+ MHz WiFi band straddles every 20 MHz slice
-     *        boundary, while an 8-18 MHz analog FPV carrier fits centered and
-     *        never touches the edges. DB scan passes false (VTX drift may sit
-     *        at the DB window edge BY DESIGN — see SWEEP_SLICE_BW notes).
+     * @param reject_edge_clipped When true, Step 6c applies the BOTH-EDGES
+     *        rule: an emission is rejected only when its extent reaches BOTH
+     *        FFT window boundaries while both edge bins are still above the
+     *        half-power level — it spans the ENTIRE usable window
+     *        (>= ~17.8 MHz), i.e. it continues out of both sides and its true
+     *        bandwidth is wider than any FPV channel. This stays the primary
+     *        WiFi rejection gate in sweep mode: a 20-40+ MHz WiFi band spans
+     *        the full usable window at EVERY sweep position, while an 8-14 MHz
+     *        analog FPV carrier only ever touches ONE boundary (and only at
+     *        unlucky slice phases) — the old single-edge rule rejected such
+     *        fat peaks on every pass because the retune grid phase is fixed.
+     *        DB scan passes false (VTX drift may sit at the DB window edge
+     *        BY DESIGN — see SWEEP_SLICE_BW notes).
      * @return true if drone-like signal detected
      */
     [[nodiscard]] bool analyze_spectrum_shape_impl(
@@ -2149,10 +2171,11 @@ private:
      *       narrow envelope, wideband emitters do not. Envelope values are a
      *       max over frames, so noise inflation stays inside the same
      *       fluctuation band the MAR anchoring was tuned for (max over 8 frames
-     *       of ~2-unit noise sigma stays below the gate/3 elevation).
+     *       of ~2-unit noise sigma stays below the gate/2 elevation).
      * @note MAR anchoring preserved: elevation above the noise shelf is
-     *       max(envelope_peak_margin, shape_gate_margin())/3 — TBD peaks sit
-     *       below the gate, where bare peak_margin/3 (1-3 units) sinks into
+     *       max(envelope_peak_margin, shape_gate_margin())/2 (Step 6b
+     *       half-power parity) — TBD peaks sit below the gate, where bare
+     *       peak_margin/2 (1-3 units) sinks into
      *       the noise fluctuation band and MaxW falsely rejects weak targets.
      * @note MinW parity (FIX, permissive semantics): MinW is applied ONLY to
      *       in-frame targets (envelope peak margin >= shape_gate_margin()).
@@ -2162,7 +2185,21 @@ private:
      *       (max(env_margin, gate)/2) against a frame defined at the gate —
      *       cutting exactly the weak targets TBD exists to find. Below-gate
      *       targets keep the MaxW guard only; persistence (TBD_MIN_FRAMES) +
-     *       present-now already reject most 1-2 bin noise there.
+     *       present-now + the noise-relative confirm floor
+     *       (sweep_tbd_effective_threshold) own the noise rejection there.
+     * @note TBD-OWNED WIDEBAND GUARD (Step 6c parity, NOT user-configurable):
+     *       reject when the walk reached BOTH walls of the peak's OWN sideband
+     *       (slice-edge wall + DC-gap wall), i.e. the half-power contour fills
+     *       a whole half-window — the largest extent the DC-gap-bounded walk
+     *       can ever measure. Step 6c's BOTH-EDGES rule cannot be reused
+     *       verbatim: in the TBD domain the DC gap splits any straddling
+     *       emission into sideband fragments, so "both slice edges" is
+     *       unreachable for a peak confined to one sideband. Reaching a wall
+     *       already proves the boundary bin stayed above the walk threshold
+     *       (the walk only steps onto bins that passed it), so no extra level
+     *       test is needed. Below-gate envelopes measure only their core (the
+     *       walk anchor sits ABOVE their own peak) and reach neither wall —
+     *       the weak-signal path is untouched by construction.
      * @note Both TBD call sites (DB scan and process_spectrum_sweep) measure
      *       width in RAW BIN space: bin size is identical in both modes
      *       (DB_CAPTURE_RATE_HZ == SWEEP_SLICE_BW, static_assert in
@@ -2177,6 +2214,41 @@ private:
         uint8_t noise_floor,
         size_t edge_skip
     ) const noexcept;
+
+    /**
+     * @brief Sweep-mode Track-Before-Detect pass (multi-frame weak-signal integrator).
+     * @details Extracted from process_spectrum_sweep() so the sweep prefilter can
+     *   still offer TBD-reachable frames to the integrator while skipping the
+     *   heavy CFAR + 12-step shape chain (see sweep_sensitivity.hpp::
+     *   sweep_tbd_frame_reachable). Contains the COMPLETE TBD decision —
+     *   window warmth, noise-floored confirm threshold, present-now requirement,
+     *   the D5 shape veto and the narrowband guard — so both call sites
+     *   (prefilter-cut frame, normal frame with no shape pass) can never
+     *   diverge in semantics.
+     * @param win_idx            Active sweep window index (tracker/integrator key).
+     * @param spectrum           Raw FFT frame (same buffer Step 1 measured).
+     * @param center_freq        Tune frequency of THIS frame (bin → Hz mapping).
+     * @param f_min, f_max       Sweep range bounds (tracking range gate).
+     * @param noise_floor        25th-percentile shelf of THIS frame (Step 1).
+     * @param frame_total_gain   Cached LNA+VGA(+RF amp) of THIS frame.
+     * @param any_peak_passed_shape Single-frame chain already tracked an emission
+     *        in this frame — TBD must not second-guess it.
+     * @param shape_blocked_tbd  A peak cleared the Step-3 gate and failed the
+     *        shape chain in this frame — the user's verdict is final.
+     * @note Called on the UI thread with the scanner thread stopped (no mutex).
+     * @note Stack: ~40 bytes (no recursion, no local buffers, no FP, no heap).
+     */
+    void sweep_tbd_pass(
+        uint8_t win_idx,
+        const ChannelSpectrum& spectrum,
+        FreqHz center_freq,
+        FreqHz f_min,
+        FreqHz f_max,
+        uint8_t noise_floor,
+        int32_t frame_total_gain,
+        bool any_peak_passed_shape,
+        bool shape_blocked_tbd
+    ) noexcept;
 
     /**
      * @brief Sweep-mode post-detection: range check, detection-window gate,
@@ -2471,15 +2543,22 @@ private:
     AdaptiveThreshold adaptive_threshold_;
 
     /**
-     * @brief Waterfall-based Track-Before-Detect result cache.
-     * @note When single-frame detection fails but multi-frame integration
-     *       confirms a signal, this caches the TBD detection for tracking.
+     * @brief Track-Before-Detect multi-frame confirmation window (frames).
+     * @note Normal (DB) scan: counts frames at the same center frequency.
+     *       Sweep mode: counts frames of the same sweep-step dwell (the drain
+     *       loop feeds up to 4 frames per tick at one tuned frequency, so the
+     *       window warms within a single tick).
      */
     static constexpr uint8_t TBD_MIN_FRAMES = 3;
-    // TBD_THRESHOLD_MARGIN removed (was 10, "half of spectrum margin") — dead
-    // constant from the original TBD design. The multi-frame confirm gate uses
-    // the RSSI threshold (Sens), and the narrowband guard's width elevation is
-    // anchored to shape_gate_margin() inside tbd_peak_is_narrowband().
+    // TBD confirm threshold = max(RSSI threshold (Sens), noise_floor +
+    // TBD_MIN_ELEVATION_UNITS) — ONE derivation, in
+    // sweep_sensitivity.hpp::sweep_tbd_effective_threshold(), consumed by the
+    // DB confirm gate, the sweep confirm gate and the sweep frame gate
+    // (sweep_tbd_frame_reachable). The historical TBD_THRESHOLD_MARGIN
+    // (= 10, "half of spectrum margin") was dead code; that gap is closed by
+    // the noise-relative floor in constants.hpp. The narrowband guard's width
+    // elevation stays anchored to shape_gate_margin() inside
+    // tbd_peak_is_narrowband().
 
     // P0-2 note: sweep path caches one frame_total_gain per
     // process_spectrum_sweep() call; DB-scan helpers below intentionally keep

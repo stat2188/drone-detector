@@ -9,7 +9,7 @@ TABLE OF CONTENTS
 -----------------
   1. Overview
   2. Architecture & Layer Diagram
-  3. File Inventory (49 files)
+  3. File Inventory (42 files)
   4. Hardware Constraints & Memory Budget
   5. Core Data Types
   6. Detection Pipeline
@@ -19,7 +19,7 @@ TABLE OF CONTENTS
   10. Settings & Persistence
   11. Thread Model & Synchronization
   12. Audio Alert System
-  13. Pattern Matching (RF Fingerprinting)
+  13. Pattern Matching (REMOVED)
   14. Detection Filter Chain
   15. CFAR Detection (All 7 Modes)
   16. Mahalanobis Gate Filter
@@ -50,7 +50,6 @@ Key Capabilities:
   - Spectrum shape analysis (V-shape, sharpness, valley depth, flatness, symmetry)
   - Automatic RF frontend gain control
   - Audio alerts with SOS patterns for critical threats
-  - Pattern matching via SAD-based RF fingerprinting
   - RSSI history with movement trend detection (approaching/receding/static)
   - Persistent settings on SD card (/EDA/SETTINGS.TXT)
   - Database scanning from freqman-format files (/FREQMAN/*.TXT)
@@ -70,19 +69,18 @@ Target Platform:
   ┌─────────────────────────────────────────────────────────────┐
   │                    UI LAYER (M4 Core)                       │
   │  DroneScannerUI  │  DroneDisplay  │  DroneSettingsView     │
-  │  DroneSweepView  │  PatternManagerView                     │
+  │  DroneSweepView  │                                         │
   │  SpectrumPreviewWidget │ MiniWaterfall                      │
   ├─────────────────────────────────────────────────────────────┤
   │                   LOGIC LAYER (M4 Core)                     │
   │  DroneScanner (core logic) │ ScannerThread                  │
-  │  CFARDetector │ PeakDetector │ PatternMatcher               │
+  │  CFARDetector │ MedianFilter<T,N> │ SweepProcessor          │
   │  MahalanobisDetector │ RSSIDetector                         │
   │  AdaptiveThreshold │ SpectralKurtosis                       │
-  │  MedianFilter<T,N> │ SweepProcessor                        │
   │  AutoGainControl │ NeighborMarginChecker                    │
   ├─────────────────────────────────────────────────────────────┤
   │                   DATA LAYER (M4 Core)                      │
-  │  DatabaseManager │ PatternManager │ SettingsFileManager     │
+  │  DatabaseManager                    SettingsFileManager     │
   │  TrackedDrone[16] │ DisplayDroneEntry[16]                   │
   │  ScanConfig │ SettingsStruct │ WaterfallHistory              │
   ├─────────────────────────────────────────────────────────────┤
@@ -121,7 +119,7 @@ Lock Ordering (deadlock prevention):
   MUST be acquired in ascending order only.
 
 ================================================================================
-3. FILE INVENTORY (49 files)
+3. FILE INVENTORY (42 files)
 ================================================================================
 
   File                          Lines   Purpose
@@ -152,14 +150,6 @@ Lock Ordering (deadlock prevention):
   audio_alerts.cpp              ~200+   Beep generation, SOS patterns
   rssi_detector.hpp             ~120    RSSIDetector declaration
   rssi_detector.cpp             ~200+   RSSI processing
-  pattern_matcher.hpp           ~103    SAD pattern matching declaration
-  pattern_matcher.cpp           ~200+   Pattern matching implementation
-  pattern_types.hpp             ~99     SignalPattern, PatternFeatures structs
-  pattern_types.cpp             ~50+    Pattern type implementations
-  pattern_manager.hpp           ~108    PatternManager declaration
-  pattern_manager.cpp           ~400+   SD card pattern CRUD
-  pattern_manager_view.hpp      ~143    Pattern capture UI declaration
-  pattern_manager_view.cpp      ~400+   Pattern capture UI implementation
   mahalanobis_gate.hpp          ~150    Mahalanobis gate declaration
   mahalanobis_gate.cpp          ~200+   Q8.8 fixed-point statistics
   median_filter.hpp             ~146    Stack-based median filter (template)
@@ -168,13 +158,14 @@ Lock Ordering (deadlock prevention):
   spectral_kurtosis.hpp         ~202    Higher-order statistics computation
   sweep_processor.hpp           ~89     FFT bin → composite pixel mapping
   sweep_processor.cpp           ~200+   Process frame, reorder frame
+  sweep_sensitivity.hpp         ~247    Sweep prefilter + TBD-reachability helpers
   mini_waterfall.hpp            ~166    Compact scrolling waterfall
   waterfall_history.hpp         ~174    Multi-frame FFT ring buffer
   spectrum_preview_widget.hpp   ~44     Settings preview widget
   spectrum_preview_widget.cpp   ~100+   Preview rendering
   freqman_types.hpp             ~23     freqman_type enum
 
-Total: ~49 files, ~8,500+ lines of C++ code.
+Total: ~42 files, ~7,000+ lines of C++ code.
 
 ================================================================================
 4. HARDWARE CONSTRAINTS & MEMORY BUDGET
@@ -528,12 +519,6 @@ The EDA follows the standard Mayhem UI pattern:
     ├── OptionsField window_select_      — switch window 1-4
     └── Save/Defaults buttons
 
-  PatternManagerView (inherits ui::View)
-    ├── Spectrum display                 — 240px with bin selection
-    ├── Pattern list (OptionsField)
-    ├── Capture/Save/Delete/Toggle buttons
-    └── Frequency input (NumberField)
-
 Widget Update Pattern:
   void on_tick() {  // Called by DisplayFrameSync message
       const auto result = logic_layer_.get_detection();
@@ -695,44 +680,24 @@ update() called at ~60 Hz from refresh_ui():
   - Stops looping when no HIGH/CRITICAL threats remain
 
 ================================================================================
-13. PATTERN MATCHING (RF FINGERPRINTING)
+13. PATTERN MATCHING (REMOVED — heading kept for §14+ numbering)
 ================================================================================
 
-PatternMatcher: SAD-based (Sum of Absolute Differences)
-  - Normalizes 256-bin FFT to 16-bin waveform
-  - Compares against saved patterns via SAD score (0-1000)
-  - Frequency-proximity pre-filter (center_freq + range_width)
+REMOVED — this section documented the RF-fingerprinting feature: SAD-based
+16-bin matching (pattern_matcher.*, pattern_types.*, pattern_manager.*,
+PatternManagerView) against /EDA/PATTERNS/*.TXT, with PeakDetector::find()
+supplying the captured peak + noise floor. The code was deleted in commits
+"del pattern logick" and b8c29abf (peak_detector.cpp/hpp died with its last
+consumer); a tree-wide grep finds zero code references outside this README
+(verified 2026-09-27).
 
-Pattern Storage:
-  Directory: /EDA/PATTERNS/
-  Format: <name>.TXT (one CSV line per file)
-  CSV: name,wave[16],features[4],threshold,flags,center_freq,range_width
-  Max patterns: MAX_PATTERNS (10)
+Why heading number 13 stays: sections 14+ are cross-referenced from
+scanner.cpp comments, settings tooltips and README section 24 — renumbering
+would silently break those pointers.
 
-PatternFeatures (4 bytes):
-  peak_position  — 16-bin space (0..15)
-  peak_value     — captured peak amplitude (0-255)
-  noise_floor    — captured noise floor (0-255)
-  margin         — peak_value - noise_floor
-
-Match Threshold:
-  Auto-tuned at save time from captured SNR margin
-  Higher margin → higher threshold (stricter matching)
-
-Capture Flow:
-  1. User captures live spectrum via PatternManagerView
-  2. PeakDetector::find() identifies peak + noise floor
-  3. PatternMatcher::normalize() → 16-bin waveform
-  4. match_threshold = f(margin) at save time
-  5. Saved to /EDA/PATTERNS/<name>.TXT
-
-Matching Flow:
-  1. normalize(fft_256) → wave_16
-  2. For each enabled pattern:
-     a. Frequency proximity check (if center_freq set)
-     b. compute_similarity(wave_16, pattern_wave) → score
-     c. If score >= pattern.match_threshold → match
-  3. Return best match (highest score)
+Where the old PeakDetector math lives now: INLINE in the section-14 chain —
+25th-percentile quickselect noise floor (Step 1), strongest-peak scan
+(Step 2) and width walk (Steps 4/6b). No separate class is needed.
 
 ================================================================================
 14. DETECTION FILTER CHAIN (15 Steps: 1-12 in-frame, 13-15 tracking)
@@ -747,6 +712,52 @@ Steps 1-2 run in the caller (once per frame); Steps 3-12 run inside
 apply_shape_filters(); Steps 13-15 run later, AT TRACKING TIME. Numbering
 below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
 14→15; Steps 13 and 14 are mode-exclusive, both always precede Step 15).
+
+  FRAME GATE (SWEEP FAST PREFILTER — sweep mode only; runs after Steps 1-2
+  measured the shelf and scanned the peak, BEFORE the heavy chain):
+    peak_margin < Step-3 gate / 2 → frame dropped before CFAR + shape chain
+    (~2 compares instead of ~2000+ cycles). RSSI-only mode
+    (spectrum_detection_enabled OFF) bypasses the gate entirely.
+    TBD EXEMPTION (sensitivity contract): a half-gate failure drops the frame
+    ONLY when sweep_tbd_frame_reachable() also fails — i.e. the peak is below
+    the TBD confirm floor (next block). Reachability is an EQUIVALENCE, not a
+    heuristic: such a peak cannot produce the present-now vote TBD requires,
+    so dropping it changes no TBD decision. Frames in
+    [noise + floor, gate/2) therefore still reach the integrator instead of
+    being cut outright — the weak-signal regression this contract restores.
+    The UI drain loop applies the SAME two-condition test with its min-based
+    shelf (<= p25), a strict subset of the detector's p25 gate: it can never
+    drop a frame the detector would keep. Mutex contention on the RSSI/gain
+    snapshot fails OPEN (units 0 → only the noise floor applies): contention
+    can only ADD frames, never cut sensitivity.
+
+  Track-Before-Detect (multi-frame confirm — DB scan AND sweep):
+    When no single-frame candidate passed Steps 1-12 (and no gate-cleared
+    peak was shape-rejected — the user's verdict is final) and
+    waterfall_history_ holds >= TBD_MIN_FRAMES (3) of the last HISTORY_DEPTH
+    (8) frames at this frequency (see sweep_tbd_pass()):
+      candidate bin = per-bin MAX envelope over the window (DC spike skipped)
+      threshold     = MAX(RSSI threshold in units, noise_floor + 6)
+        "RSSI in units" = clamp((rssi_threshold_dbm + total_gain) * 5 + 255,
+        0..255) — the inverse of spectrum_value_to_dbm()
+      confirm       = count_above_threshold(bin, threshold) >= 3
+                      AND present-now (frame age 0 also >= threshold — stale
+                      history alone can never confirm)
+                      AND tbd_peak_is_narrowband() (narrowband guard)
+    → The noise-relative floor (TBD_MIN_ELEVATION_UNITS = 6 units = 1.2 dB ≈
+      3σ of the ~2-unit noise sigma) is what makes "3 of 8 frames" a
+      NOISE-RELATIVE statement: at default Sens (−105 dBm) with gain <= 54 dB
+      the absolute RSSI term clamps to 0 units, so without the floor ANY
+      non-zero bin would count as a vote. static_assert pins the floor to
+      <= DEFAULT_SPECTRUM_MARGIN / 2 so it can never outgrow the half-gate.
+    → The narrowband guard is a MAR-anchored half-power walk + MinW (only
+      in-frame peaks) + MaxW + a TBD-owned sideband BOTH-EDGES wideband rule
+      (Step 6c parity — NOT user-configurable; TBD never runs apply_shape_
+      filters()). Below-gate envelopes measure only their core and are
+      untouched by the width rules.
+    → Reachable weak band: [noise + 1.2 dB, Step-3 gate), gated by
+      persistence — this is the multi-frame path the single-frame chain
+      (Steps 1-12, gate-bound) can never see.
 
   Step 1: Noise Floor (caller — analyze_spectrum_shape_multi / sweep loop)
     quickselect 25th percentile of the usable bins (DC spike + edge bins
@@ -774,28 +785,34 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
       they all measure the SAME [left..right] band
 
   Step 5: Minimum Width
-    signal_width must exceed spectrum_min_width (default 9 bins ≈ 700 kHz)
+    signal_width must exceed spectrum_min_width (default 2 bins ≈ 156 kHz)
     → Rejects single-bin noise spikes
 
   Step 6: Maximum Width
     signal_width (Step-4 fragment) AND the WHOLE emission extent (Step 6b,
     hysteresis segmentation at the HALF-POWER level: peak − 6 dB, floored at
     noise + margin/3) must both be below spectrum_max_width
-    (default 200 bins ≈ 15.6 MHz)
-    → Rejects WiFi 20 MHz OFDM (extent ≈ 236 usable bins) and BT flat-tops.
+    (default 255 bins = NO CAP — «проходят и узкие, и широкие»)
+    → NOTE: in the raw-FFT chain the walk is DC-gap bounded, so the extent
+      can never exceed 114 bins — any value >= 114 is behaviorally
+      identical. Wideband (WiFi) rejection is owned by Step 6c (sweep)
+      instead of MaxW.
     CAUTION: values below ~100 bins (7.8 MHz) reject analog FPV video
     carriers (8-18 MHz) — the emission extent measures the FULL video band,
     not the crest fragment
 
   Step 6c: Edge-Clip Guard (SWEEP only, always ON — no setting)
-    Если extent излучения упёрся в край 20-МГц окна Слайса И уровень на
-    краевом бине всё ещё выше порога «половина мощности» (peak − 6 dB,
-    floored at noise + margin/3) — сигнал ПРОДОЛЖАЕТСЯ за краем окна.
-    Измеренная ширина — обрезанный фрагмент, а не реальная полоса → REJECT.
-    → WiFi (20-40+ МГц) лежит ПОПЕРЁК границы каждого слайса и режется этим
-      guard'ом почти в каждом положении свипа.
-    → Аналоговый FPV (8-18 МГц) умещается по центру слайса и краёв не
-      касается — соседний слайс примет его «по центру», дрон не теряется.
+    ПРАВИЛО «ОБА КРАЯ»: extent отклоняется ТОЛЬКО если он упёрся в ОБА края
+    окна слайса, и оба краевых бина ещё выше порога «половина мощности»
+    (peak − 6 dB, floored at noise + margin/3) — излучение перекрывает ВСЁ
+    usable-окно (≥ ~17.8 МГц) и продолжается за ОБЕ стороны → REJECT.
+    → WiFi (20-40+ МГц) перекрывает usable-окно в КАЖДОМ положении свипа
+      (касается обоих краёв всегда) — режется этим guard'ом всегда.
+    → ЖИРНЫЙ аналоговый FPV (8-15 МГц, слегка притуплённый верх) касается
+      ОДНОГО края только при неудачной ФАЗЕ относительно фиксированного
+      грида перестройки (грид одинаков между проходами!) — одиночное
+      касание теперь ПРОХОДИТ. Старое правило одного края отрезало такой
+      пик на КАЖДОМ проходе — источник симптома «пропускает почти всегда».
     → В DB-режиме guard ВЫКЛЮЧЕН: дрейф VTX у края DB-окна допустим
       по дизайну (SWEEP_SLICE_BW notes).
 
@@ -821,13 +838,19 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
 
   Step 9: Valley Depth
     max_valley_margin = max margin of bins flanking the signal band
-    Must stay below spectrum_valley_depth (default 90 ≈ 18 dB)
-    → Rejects flat-top WiFi/BT (flank still high = no valley): FPV flanks
-      12-16 dB pass, WiFi flanks >20 dB are cut
+    Must stay below spectrum_valley_depth (default 0 = OFF)
+    → Mechanics: the flank bin sits below the Step-4 walk threshold
+      (noise + margin/3), so it measures <= floor((margin-1)/3) <= 84 —
+      the old default 90 could NEVER fire (provably inert) while still
+      paying the O(width) dual-peak scan per peak per frame. Default 0
+      skips the block with byte-identical behavior. Arming D fires only
+      at margin >= 3*(D+1): 70-80 = overload guard only (>= 213) that
+      also cuts saturated close-range FPV; <= 55 cuts mid-range FPV.
+      Ordinary WiFi never reaches 213 — valley cannot fight it.
 
   Step 10: Flatness
     flatness_pct = (high_power_bins * 100) / signal_width
-    Must be below spectrum_flatness (default 45%)
+    Must be below spectrum_flatness (default 0 = OFF — включается вручную)
     → Rejects WiFi flat-top (>50%), accepts drone V-shape (<20%)
     → Only applied when peak_margin >= effective guard AND signal_width > 4;
       guard = 40 at Sens <= 75, lowered by (Sens-75)/2 at high Sens (floor 15)
@@ -1039,7 +1062,6 @@ Stack-Heavy Functions (monitored):
   absorb_from()                — ~128 bytes (merged[12])
   refresh_ui()                 — uses BSS for refresh_drones_[]
   DroneSettingsView ctor       — ~480B (all widgets in class)
-  PatternManagerView::capture_and_save() — ~288B (PeakDetector sort_buf)
 
 ================================================================================
 19. ERROR HANDLING STRATEGY
@@ -1078,19 +1100,11 @@ ErrorResult<T> (optional-like):
 
   /EDA/
     SETTINGS.TXT         — EDA settings (all fields)
-    PATTERNS/
-      *.TXT              — RF fingerprint patterns (CSV)
-      DJI_Mavic.TXT      — Example pattern
-      FPV_Analog.TXT     — Example pattern
 
 File Format — SETTINGS.TXT:
   Version: 1
   Key=Value pairs (one per line)
   Keys match SettingsStruct field names
-
-File Format — PATTERNS/*.TXT:
-  CSV: name,wave[16],features[4],threshold,flags,center_freq,range_width
-  25 fields (new format), 29 fields (old format, still supported)
 
 File Format — DRONES.TXT:
   freqman format: f=frequency,d=description
@@ -1152,9 +1166,9 @@ Code Quality:
      - Wideband/hybrid/panoramic modes removed for simplicity
      - Sweep mode covers the wideband use case
 
-  2. Pattern matching limited to 16-bin SAD
-     - No frequency-dependent features in comparison
-     - Frequency proximity filter is coarse (±range_width)
+  2. Pattern matching (RF fingerprinting) REMOVED
+     - pattern_* files, PatternManagerView and PeakDetector were deleted;
+       §13 heading is kept only so §14+ cross-reference numbering stays stable
 
   3. Database limited to 100 entries
      - Fixed array, no dynamic expansion
@@ -1218,20 +1232,21 @@ Spectrum Shape Defaults (PERMISSIVE SET — "detect what fits the bands";
 the width/margin frames are user-tunable, the strict shape descriptors are
 loosened so real targets are not clipped at the band edge):
   DEFAULT_SPECTRUM_MARGIN         = 20    (≈4 dB, analog FPV)
-  DEFAULT_SPECTRUM_MIN_WIDTH      = 9     (≈700 kHz, analog FPV)
-  DEFAULT_SPECTRUM_MAX_WIDTH      = 200   (≈15.6 MHz, analog FPV — Step-6b
-                                           emission extent; 40 rejected real
-                                           FM video carriers 8-18 MHz)
+  DEFAULT_SPECTRUM_MIN_WIDTH      = 2     (≈156 kHz — narrow ELRS/FrSky
+                                           bursts pass; 1-bin spikes still die)
+  DEFAULT_SPECTRUM_MAX_WIDTH      = 255   (NO CAP — extent is DC-gap bounded
+                                           at 114 bins anyway; wide passes)
   DEFAULT_SPECTRUM_PEAK_SHARPNESS = 100   (PERMISSIVE: below the measured FPV
                                            band 100-130; WiFi ≈ 100-110 is
                                            classified by Flat, not Sharp)
   DEFAULT_SPECTRUM_PEAK_RATIO     = 0     (disabled)
-  DEFAULT_SPECTRUM_VALLEY_DEPTH   = 90    (PERMISSIVE: 18 dB vs FPV flanks
-                                           12-16 dB; WiFi flanks >20 dB)
-  DEFAULT_SPECTRUM_FLATNESS       = 45    (unchanged — primary WiFi/BT filter;
-                                           midpoint of the gap FPV <=30% /
-                                           WiFi >=50%; weak peaks below ~8 dB
-                                           margin exempt. МЕНЬШЕ = жёстче!)
+  DEFAULT_SPECTRUM_VALLEY_DEPTH   = 0     (OFF — the old 90 was provably
+                                           inert: flank < margin/3 <= 84;
+                                           arming <=84 cuts close FPV)
+  DEFAULT_SPECTRUM_FLATNESS       = 0     (OFF — fat blunt-topped FPV was
+                                           rejected here on every pass at
+                                           >=8 dB SNR; re-enable at 45 on
+                                           WiFi-dense sites. МЕНЬШЕ = жёстче!)
   DEFAULT_SPECTRUM_SYMMETRY       = 0     (disabled)
 
 CFAR Defaults:
@@ -1312,11 +1327,11 @@ WiFi — ШИРОКОПОЛОСНЫЙ сигнал (20-40+ МГц), а окно 
      (FPV: <30%) → пропуск. Ширина у «плоского» и «острого» сигнала
      может быть ОДИНАКОВАЯ — решает форма, поэтому Flat работает там,
      где ширина бессильна.
-     ГЛАВНЫЙ фильтр. Дефолт теперь 45 (включён). НАПРАВЛЕНИЕ — ВЕРХНЯЯ
-     граница: МЕНЬШЕ = жёстче, БОЛЬШЕ = мягче, 0 = выкл. ВАЖНО: если на
-     SD-карте уже лежит /EDA/SETTINGS.TXT со строкой
-     «spectrum_flatness=0», файл ПЕРЕБИВАЕТ новый дефолт — исправьте
-     строку на 45 или удалите её.
+     ГЛАВНЫЙ фильтр. Дефолт теперь 0 (ВЫКЛ): притуплённые жирные FPV-пики
+     измерялись в 45-70% и отсекались им на ≥8 dB SNR (шаг активен только
+     на СИЛЬНЫХ пиках — т.е. ровно на видимых на спектре). НАПРАВЛЕНИЕ —
+     ВЕРХНЯЯ граница: МЕНЬШЕ = жёстче, БОЛЬШЕ = мягче, 0 = выкл.
+     Для борьбы с WiFi ВКЛЮЧИТЕ его вручную (45) в Settings.
   2. SHARPNESS (Sharp) — WiFi ≈ 100-110, FPV ≈ 100-130. Тонкая настройка.
   3. RSSI-порог — близкий WiFi сильный; поднимите порог.
   4. Статистика (RSSI variance, Mahalanobis) — уже работают сами.
@@ -1331,8 +1346,8 @@ WiFi — ШИРОКОПОЛОСНЫЙ сигнал (20-40+ МГц), а окно 
 Действия:
   1) Убедитесь, что стоит ЭТА сборка (edge-clip guard + dedup). Это уже
      убирает основной поток мусора.
-  2) Settings → spectrum_flatness ≤ 45 (новый дефолт; если в SETTINGS.TXT
-     стоит «spectrum_flatness=0» — файл перебивает дефолт, исправьте).
+  2) Settings → spectrum_flatness: ВКЛЮЧИТЕ (дефолт теперь 0 = выкл) —
+     поставьте 45, при необходимости опустите до 35-40.
      НЕ ЗАБЫВАЙТЕ НАПРАВЛЕНИЕ: меньше = жёстче.
        WiFi имеет flatness 50-80% (плоский верх), аналоговый FPV < 30%.
        Значение 60 = «отклонить сигнал, у которого >60% бинов в полосе
@@ -1341,8 +1356,8 @@ WiFi — ШИРОКОПОЛОСНЫЙ сигнал (20-40+ МГц), а окно 
   4) rssi_threshold_dbm: -95 → -85 … -80, если WiFi близко и сильный.
        Близкий WiFi «заорёт» на любом пороге — порог режет именно его,
        а подлетающий дрон быстро выйдет из шума.
-  5) spectrum_max_width оставить 200. НЕ снижайте ниже ~130 — отрежете
-     реальный FPV-видеоканал (8-18 МГц).
+  5) spectrum_max_width оставить 255 (дефолт = без потолка). НЕ снижайте
+     ниже ~130 — отрежете реальный FPV-видеоканал (8-18 МГц).
 
 Ожидаемый результат: WiFi-полоса либо не даёт записей вовсе, либо даёт
 ОДНУ консолидированную запись вместо десятков.
@@ -1353,8 +1368,8 @@ WiFi — ШИРОКОПОЛОСНЫЙ сигнал (20-40+ МГц), а окно 
 работает ваш/соседский роутер.
 
 Действия:
-  1) spectrum_flatness ≤ 45 (новый дефолт; меньше = жёстче). Это главный
-     инструмент и в DB-режиме (в старых SETTINGS.TXT может стоять 0).
+  1) spectrum_flatness: ВКЛЮЧИТЕ 45 (дефолт теперь 0 = выкл; меньше =
+     жёстче). Это главный инструмент и в DB-режиме.
   2) Сверьте частоту записи с таблицей WiFi-каналов:
        2.4 ГГц: 2412, 2417, 2422 … 2472 МГц (каналы 1-13, шаг 5 МГц)
        5 ГГц:   5180, 5200, 5220, 5240, 5500, 5520 … 5745 МГц
@@ -1370,7 +1385,7 @@ WiFi — ШИРОКОПОЛОСНЫЙ сигнал (20-40+ МГц), а окно 
 
 Действия:
   1) MaxW тут НЕ поможет (BT узкий) — работают flatness + sharpness.
-  2) spectrum_flatness ≤ 45 (новый дефолт); spectrum_peak_sharpness: 100 → 140.
+  2) spectrum_flatness: ВКЛЮЧИТЕ 45 (дефолт 0 = выкл); spectrum_peak_sharpness: 100 → 140.
   3) BT-пакеты короткие и скачут по частоте — RSSI-variance (шаг 15
      цепочки) и консолидация по радиусу сами давят «мусорность».
   4) Если BT-фон постоянный (колонка стоит рядом) — поднимите
@@ -1390,7 +1405,12 @@ WiFi — ШИРОКОПОЛОСНЫЙ сигнал (20-40+ МГц), а окно 
   3) НЕ включайте Sensitive mode на WiFi-плотных местах: он отключает
      sharpness и valley — два фильтра, которые держат WiFi. Sensitive —
      для чистого поля, когда дрон слабый и в эфире никого нет.
-  4) valley_depth (Vly) оставить 90 — он уже на стороне дрона.
+  4) valley_depth (Vly): дефолт 0 (выкл). Старый порог 90 был математически
+     недостижим (фланк хода всегда < margin/3 ≤ 84) и не защищал ни от чего.
+     Включать 70-80 стоит только против перегрузки приёмника (сценарий 5):
+     порог срабатывает лишь при margin ≥ 213 — он режет и насыщенный
+     близкий FPV (история: «80 резал на ~10 м»), а на обычный WiFi не
+     срабатывает вовсе.
 
 СЦЕНАРИЙ 5. Микроволновка / широкополосный шум / «поднялась вся полоса»
 ------------------------------------------------------------
@@ -1447,11 +1467,14 @@ WiFi — ШИРОКОПОЛОСНЫЙ сигнал (20-40+ МГц), а окно 
 ================================================================================
   END OF DOCUMENTATION
   Generated: 2026-09-06
-  Updated:   2026-09-23 (§14 renumbered 1:1 to scanner.cpp — 15 steps, in-frame
+  Updated:   2026-09-25 (FPV-relaxed defaults: MinW 9→2, MaxW 200→255,
+             Flat 45→0; Step 6c → BOTH-EDGES rule so fat blunt FPV peaks
+             are no longer clipped at the fixed retune-grid phase)
+  History:   2026-09-23 (§14 renumbered 1:1 to scanner.cpp — 15 steps, in-frame
              vs tracking split; дефолты Sharp=100 / Valley=90 / Flat=45;
              effective Step-3 gate formula; mode scope 13/14/15)
-  History:   2026-09-21 (Step 6c edge-clip guard + sweep emission dedup +
+             2026-09-21 (Step 6c edge-clip guard + sweep emission dedup +
              раздел 24 «Как отсечь WiFi»)
-  Codebase: 49 files, ~8,500+ lines C++
+  Codebase: 42 files, ~7,000+ lines C++
   Platform: HackRF One / PortaPack Mayhem / STM32F405RG
 ================================================================================

@@ -850,9 +850,16 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         // Previously used legacy approximation (rssi_threshold + 120) which
         // produced threshold ~37 vs actual ~170, making TBD pass everything.
         const int32_t total_gain_tbd = get_current_total_gain();
-        const int32_t tbd_raw_threshold = (rssi_threshold + total_gain_tbd) * 5 + 255;
-        const uint8_t threshold = static_cast<uint8_t>(
-            (tbd_raw_threshold < 0) ? 0 : (tbd_raw_threshold > 255 ? 255 : tbd_raw_threshold));
+        // Confirm threshold = inverse-encoded RSSI term (Sens, here with the
+        // DB hysteresis offset) FLOORED at this frame's noise shelf +
+        // TBD_MIN_ELEVATION_UNITS. Single derivation shared with the sweep
+        // confirm gate and the sweep frame gate — without the floor the RSSI
+        // term clamps to 0 for any total gain <= 54 dB (default Sens) and
+        // "active_frames >= TBD_MIN_FRAMES" degrades to "non-zero in N frames",
+        // which pure noise satisfies.
+        const uint8_t threshold = sweep_tbd_effective_threshold(
+            sweep_tbd_threshold_units(rssi_threshold, total_gain_tbd),
+            tbd_noise_floor);
         const uint8_t active_frames = waterfall_history_.count_above_threshold(tbd_peak_bin, threshold);
 
         // PRESENT-NOW requirement (FIX): frame age 0 in the waterfall IS the
@@ -1738,6 +1745,21 @@ bool DroneScanner::is_spectrum_shape_enabled_try() const noexcept {
     return lock.is_locked() ? config_.spectrum_detection_enabled : true;
 }
 
+uint8_t DroneScanner::sweep_tbd_threshold_units_try() const noexcept {
+    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    if (!lock.is_locked()) {
+        // Fail-open: 0 is floored by sweep_tbd_effective_threshold() in the
+        // caller, so a contended read can only ADD frames to the integrator
+        // (never drop one) — the same policy as the two accessors above.
+        return 0;
+    }
+    // get_current_total_gain() reads cached receiver_model fields (no SPI, no
+    // lock) and is already called per frame on this thread by
+    // process_spectrum_sweep() and apply_sweep_tracking().
+    return sweep_tbd_threshold_units(config_.rssi_threshold_dbm,
+                                     get_current_total_gain());
+}
+
 ErrorCode DroneScanner::set_config(const ScanConfig& config) noexcept {
     ErrorCode validate_result = validate_config_internal(config);
     if (validate_result != ErrorCode::SUCCESS) {
@@ -2539,20 +2561,25 @@ bool DroneScanner::apply_shape_filters(
         if (emission.width() > config_.spectrum_max_width) return false;
 
         // Step 6c: EDGE-CLIP GUARD (sweep-only; reject_edge_clipped=true).
-        // An emission whose extent reaches the window boundary while the
-        // boundary bin is still above the half-power continuation level
-        // CONTINUES beyond this capture window — the measured width is a
-        // clipped fragment, not the real bandwidth. WiFi (20-40+ MHz) lies
-        // ACROSS every 20 MHz sweep slice boundary; analog FPV (8-18 MHz)
-        // fits centered in a slice and never touches the edges, so the guard
-        // rejects WiFi fragments without killing FPV detection (the sweep
-        // pattern revisits the target centered in an adjacent slice).
+        // BOTH-EDGES RULE (FPV-relaxed): an emission is a clipped fragment
+        // ONLY when it touches BOTH window boundaries while both edge bins
+        // are still above the half-power continuation level — i.e. it spans
+        // the ENTIRE usable slice window (>= ~17.8 MHz), which no FPV
+        // channel does (analog video at −6 dB: 8-14 MHz) but WiFi/BT-wide
+        // OFDM (20-40+ MHz) does at EVERY sweep position.
+        // Why not single-edge: the retune grid (f_min + k*step) is FIXED
+        // across passes, so a fat FPV peak (~10-15 MHz) sits at a fixed
+        // phase inside the slice — if that phase puts one skirt on the
+        // boundary, the old single-edge rule rejected it on EVERY pass
+        // (the "wide FPV sails past the scanner almost always" failure).
+        // The same peak now passes (one edge only) and is rejected only if
+        // it genuinely continues out of BOTH sides of the window.
         // clip_level mirrors emission_extent()'s cont_level formula exactly
         // (noise + max(peak_margin/2, gate/3)) so "extent touched the walk
         // boundary" and "edge bin still above clip_level" agree by
         // construction. DB scan passes false: VTX drift may sit at the DB
         // window edge BY DESIGN and must not be rejected.
-        // Stack: 6 bytes. Flash: ~40 bytes. Zero loops, zero divisions.
+        // Stack: 8 bytes. Flash: ~48 bytes. Zero loops, zero divisions.
         if (reject_edge_clipped) {
             const uint8_t gate_6c = shape_gate_margin();
             const uint8_t half_power_6c = static_cast<uint8_t>(peak_margin / 2);
@@ -2562,13 +2589,13 @@ bool DroneScanner::apply_shape_filters(
                 (half_power_6c > gate_floor_6c) ? half_power_6c : gate_floor_6c;
             const uint16_t clip_level =
                 static_cast<uint16_t>(noise_floor) + clip_elevation;
-            if (emission.left <= edge_skip
-                && data[edge_skip] >= clip_level) {
-                return false;  // emission runs off the LEFT window edge
-            }
-            if (emission.right >= upper_limit - 1
-                && data[upper_limit - 1] >= clip_level) {
-                return false;  // emission runs off the RIGHT window edge
+            const bool clip_left =
+                (emission.left <= edge_skip) && (data[edge_skip] >= clip_level);
+            const bool clip_right =
+                (emission.right >= upper_limit - 1) &&
+                (data[upper_limit - 1] >= clip_level);
+            if (clip_left && clip_right) {
+                return false;  // spans the whole window — wider than any FPV
             }
         }
 
@@ -2750,11 +2777,13 @@ bool DroneScanner::apply_shape_filters(
     // FPV) but KEEPS it for very_strong peaks: with max_width/valley/symmetry
     // all bypassed at very_strong, disabling flatness too would let a
     // close-range WiFi/BT flat-top pass unfiltered.
-    // NOTE (audit update): default spectrum_flatness is NOW 45 (enabled) —
-    // the primary WiFi/BT gate. Flatness still skips WEAK peaks
-    // (peak_margin < effective_flatness_min) and, in sensitive mode, ALL
-    // non-very-strong peaks — far-field FPV is unaffected by the default.
-    // A user can still set 0 in Settings to disable (legacy behavior).
+    // NOTE (audit update): default spectrum_flatness is now 0 (DISABLED) —
+    // a fat blunt-topped FPV peak measured 45-70% and was rejected here on
+    // nearly every pass (this step only engages above ~8 dB margin, i.e.
+    // exactly on strong visible peaks). When the user ENABLES Flat in
+    // Settings it remains the primary WiFi/BT gate and still skips WEAK
+    // peaks (peak_margin < effective_flatness_min) and, in sensitive mode,
+    // ALL non-very-strong peaks — far-field FPV is unaffected either way.
     if (config_.spectrum_flatness > 0 && peak_margin >= effective_flatness_min
         && (!config_.sensitive_mode || very_strong)) {
         // Denominator: signal width excluding DC spike bins (if present)
@@ -2917,13 +2946,41 @@ bool DroneScanner::tbd_peak_is_narrowband(
     // cut exactly the weak flickery targets TBD exists to find. Rule: MinW
     // applies only to IN-FRAME targets (envelope peak margin >= gate, the
     // same gate Step 3 uses); below-gate targets keep the MaxW guard only —
-    // persistence (TBD_MIN_FRAMES) + present-now already reject most 1-2 bin
-    // noise there. Width gates stay sensitivity-neutral: the confirm
-    // threshold above remains RSSI-only.
+    // persistence (TBD_MIN_FRAMES) + present-now + the noise-relative confirm
+    // floor (sweep_tbd_effective_threshold) own the noise rejection there.
+    // Width gates stay sensitivity-neutral for the weak path: a below-gate
+    // envelope measures width 1 by construction (the walk anchor sits ABOVE
+    // its own peak), so neither width gate can clip it.
     if (peak_margin >= eff_margin
         && signal_width < config_.spectrum_min_width) {
         return false;
     }
+
+    // TBD-OWNED WIDEBAND GUARD (Step 6c parity, NOT user-configurable).
+    // The MaxW check below is spectrum_max_width — a USER setting that is
+    // allowed to mean "no cap" (255) — and TBD is the ONLY detection path that
+    // never runs apply_shape_filters(), i.e. it gets no Step 6c at all. With a
+    // raised MaxW, TBD would have no wideband rejection whatsoever and a
+    // WiFi/BT flat-top could be confirmed after TBD_MIN_FRAMES frames, so the
+    // rule is owned here instead of delegated to a user setting.
+    // Rule (mirror of Step 6c BOTH-EDGES): the envelope is wider than any FPV
+    // channel when its walk reached BOTH walls of its OWN sideband — the
+    // slice-edge wall and the DC-gap wall (the walk is DC-gap bounded, so a
+    // sideband is the largest extent it can ever measure). Reaching a wall
+    // already proves the boundary bin stayed above the walk threshold — the
+    // walk only steps onto bins that passed it — so no extra level test is
+    // needed here. An 8-14 MHz analog FPV carrier touches only the DC-gap
+    // wall (its energy spans both sidebands), and below-gate envelopes reach
+    // neither wall: the weak-signal path is untouched by construction.
+    // Stack: 0 B extra. Flash: ~40 B.
+    const bool peak_in_upper_sideband = (peak_bin < FFT_DC_SPIKE_START);
+    const size_t sideband_lo =
+        peak_in_upper_sideband ? edge_skip : FFT_DC_SPIKE_END;
+    const size_t sideband_hi = peak_in_upper_sideband
+        ? (FFT_DC_SPIKE_START - 1)
+        : (upper_limit - 1);
+    if (left <= sideband_lo && right >= sideband_hi) return false;
+
     return signal_width <= config_.spectrum_max_width;
 }
 
@@ -3146,22 +3203,55 @@ void DroneScanner::process_spectrum_sweep(
     // and its output smooths the tracked primary-peak RSSI below.
     rssi_median_filter_.add(spectrum_value_to_dbm(frame_peak_power, frame_total_gain));
 
-    // SWEEP FAST PREFILTER (sensitivity/CPU fix) — SINGLE SOURCE OF TRUTH:
+    // SWEEP FAST PREFILTER (sensitivity/CPU) — SINGLE SOURCE OF TRUTH:
     // sweep_sensitivity.hpp::sweep_fast_prefilter — the SAME helper the UI
     // drain loop calls, so the bypass rule and half-gate semantics exist
     // exactly once (no byte-for-byte copy to keep in sync).
-    // Pure-noise slices die here in ~30 cycles (2 compares, after the
-    // scan/quickselect already paid above) instead of ~2000+ cycles of
-    // CFAR + 12-step shape chain + TBD scan. Gate is HALF the Step 3
-    // margin: genuine weak (below-gate TBD) targets stay alive — only
-    // dead-flat noise is cut. Waterfall push + median feed above already
-    // ran, so TBD/median warm-up is unaffected. RSSI-only mode
-    // (spectrum_detection_enabled=false) bypasses the gate inside the
-    // helper — threshold tracking owns every frame there.
-    // Stack: ~8 B. No heap, no FP, no locks.
+    // Pure-noise slices skip the ~2000+ cycles of CFAR + 12-step shape chain,
+    // BUT the gate no longer decides alone. The multi-frame TBD integrator is
+    // the weak-signal path, and its reach is set by ITS OWN criterion (RSSI
+    // threshold floored at the noise shelf + TBD_MIN_ELEVATION_UNITS) — not by
+    // half of the Step-3 shape gate. That half-gate (2.0-3.2 dB and RISING with
+    // the Sensitivity knob, so the control responded INVERTED for weak
+    // targets) discarded every frame below it, making TBD structurally blind
+    // exactly where it must work.
+    // The frame is dropped only when BOTH hold:
+    //   1) the heavy single-frame chain would find nothing (half-gate), AND
+    //   2) the frame cannot contribute a TBD present-now vote — proven by
+    //      sweep_tbd_frame_reachable() (peak below the effective threshold).
+    //      That test is an equivalence, not a heuristic: no bin of such a frame
+    //      can satisfy spectrum.db[bin] >= threshold, so neither a present-now
+    //      vote nor a count_above_threshold() vote is lost by skipping it.
+    // A TBD-reachable frame takes the cheap integrator path and returns without
+    // touching the heavy chain — the CPU win of the prefilter is preserved.
+    // Waterfall push + median feed above already ran, so TBD/median warm-up is
+    // unaffected. RSSI-only mode (spectrum_detection_enabled=false) bypasses
+    // both tests inside the helpers — threshold tracking owns every frame.
+    // Stack: ~12 B. No heap, no FP, no locks.
     if (!sweep_fast_prefilter(
             config_.spectrum_detection_enabled,
             frame_peak_power, noise_floor, cfg_margin)) {
+        const uint8_t tbd_threshold_units = sweep_tbd_threshold_units(
+            config_.rssi_threshold_dbm, frame_total_gain);
+        if (!sweep_tbd_frame_reachable(
+                config_.spectrum_detection_enabled,
+                frame_peak_power, noise_floor, tbd_threshold_units)) {
+            return;  // neither heavy-detectable nor TBD-reachable
+        }
+        // Weak-signal path only: no CFAR, no shape chain, no tracking — the
+        // integrator gets its vote. HONEST COST: sweep_tbd_pass() returns
+        // early until the waterfall is warm, then walks the 228-bin envelope
+        // over <= HISTORY_DEPTH (8) frames — ~1.8k indexed loads, order of
+        // 10^4 cycles warm. This branch is NOT ~200 cycles: what the
+        // prefilter saves here is only the SKIPPED heavy chain (CFAR + the
+        // 12-step shape); the envelope scan is the price of weak-signal
+        // reach and the pre-prefilter TBD tail paid it too. Frames below
+        // noise_floor + TBD_MIN_ELEVATION_UNITS still die in the two
+        // compares above (~30 cycles).
+        sweep_tbd_pass(win_idx, spectrum, center_freq, f_min, f_max,
+                       noise_floor, frame_total_gain,
+                       /*any_peak_passed_shape=*/false,
+                       /*shape_blocked_tbd=*/false);
         return;
     }
 
@@ -3339,9 +3429,10 @@ void DroneScanner::process_spectrum_sweep(
         // apply_shape_filters, has_dc_gap=true), so MaxW semantics are
         // identical in both modes by construction. Edge skip matches the
         // candidate-collection region (FFT_EDGE_SKIP_NARROW = 6 bins).
-        // reject_edge_clipped=true: sweep-only Step 6c — a WiFi band that
-        // straddles the slice boundary is a CLIPPED fragment of a wider
-        // emission and must not pass MaxW on its truncated width. DB scan
+        // reject_edge_clipped=true: sweep-only Step 6c, BOTH-EDGES rule —
+        // only an emission spanning the ENTIRE usable window (WiFi 20-40+
+        // MHz at every sweep position) is a clipped fragment; a single-edge
+        // touch (fat FPV at an unlucky fixed slice phase) passes. DB scan
         // keeps false (VTX drift to the DB window edge is by design).
         int32_t shape_rssi = RSSI_MIN_DBM;
         if (bypass_shape) {
@@ -3392,72 +3483,98 @@ void DroneScanner::process_spectrum_sweep(
     }
 
     // ---- Sweep-mode Track-Before-Detect (TBD) ----
-    // When single-frame detection fails for all peaks, check if multi-frame
-    // integration confirms a weak signal. Uses waterfall_history_ to accumulate
-    // power across recent frames at the same tuned frequency.
-    // Provides ~9 dB SNR gain (8 frames = 3× sensitivity improvement).
-    // Only runs when waterfall_history_ has enough frames and single-frame
-    // detection found nothing (peak_count == 0 or all peaks rejected by shape).
-    if (!any_peak_passed_shape && !shape_blocked_tbd &&
-        waterfall_history_.is_warm(TBD_MIN_FRAMES) && config_.spectrum_detection_enabled) {
-        // Find the peak bin from multi-frame integration across usable bins
-        size_t tbd_peak_bin = FFT_EDGE_SKIP_NARROW;
-        uint8_t tbd_peak_power = 0;
-        for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW; ++i) {
-            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-            const uint8_t max_power = waterfall_history_.get_max_across_frames(i);
-            if (max_power > tbd_peak_power) {
-                tbd_peak_power = max_power;
-                tbd_peak_bin = i;
-            }
-        }
+    // Single-frame detection tracked nothing in this frame: offer the frame to
+    // the multi-frame integrator (~9 dB SNR gain; the only path that can
+    // confirm a target which never clears the Step-3 shape gate). The complete
+    // TBD decision lives in sweep_tbd_pass() below, so the prefilter-cut path
+    // (cheap integrator-only branch near the top of this function) and this
+    // path can never diverge in semantics.
+    sweep_tbd_pass(win_idx, spectrum, center_freq, f_min, f_max, noise_floor,
+                   frame_total_gain, any_peak_passed_shape,
+                   shape_blocked_tbd);
+}
 
-        // Check if this bin was active in enough recent frames
-        // P0-2: same cached gain (identical value — gain cannot change
-        // mid-frame). Removes the last per-frame receiver_model re-read.
-        const int32_t total_gain_tbd = frame_total_gain;
-        const int32_t tbd_raw_threshold = (config_.rssi_threshold_dbm + total_gain_tbd) * 5 + 255;
-        const uint8_t threshold = static_cast<uint8_t>(
-            (tbd_raw_threshold < 0) ? 0 : (tbd_raw_threshold > 255 ? 255 : tbd_raw_threshold));
-        const uint8_t active_frames = waterfall_history_.count_above_threshold(tbd_peak_bin, threshold);
+void DroneScanner::sweep_tbd_pass(
+    uint8_t win_idx,
+    const ChannelSpectrum& spectrum,
+    FreqHz center_freq,
+    FreqHz f_min,
+    FreqHz f_max,
+    uint8_t noise_floor,
+    int32_t frame_total_gain,
+    bool any_peak_passed_shape,
+    bool shape_blocked_tbd
+) noexcept {
+    // GUARD (caller verdict): a shape-validated detection, or an explicit
+    // shape rejection, in this frame outranks the integrator — TBD honours
+    // widths only and would resurrect the rejected signal TBD_MIN_FRAMES
+    // later, silently voiding the user's Valley/Sharpness/Flatness/Symmetry
+    // settings. Below-gate peaks never reach this guard, so the weak-signal
+    // purpose of TBD is preserved.
+    if (any_peak_passed_shape || shape_blocked_tbd) return;
+    if (!config_.spectrum_detection_enabled) return;
+    if (!waterfall_history_.is_warm(TBD_MIN_FRAMES)) return;
 
-        // PRESENT-NOW requirement (FIX): frame age 0 in the waterfall IS the
-        // current frame (pushed at :2992), so stale history alone can never
-        // confirm — closes the "rejected frames 1..3, clean frame 4 confirms"
-        // resurrection path. Sensitivity-neutral: a marginal target just
-        // waits for an "up" flicker frame.
-        // SHAPE-VETO (D5 cross-frame fix): bins rejected by the shape chain
-        // while above cfg_margin earlier in THIS waterfall window stay
-        // vetoed — a peak flickering below the gate no longer slips past
-        // shape_blocked_tbd and gets resurrected with width-only validation.
-        if (active_frames >= TBD_MIN_FRAMES
-            && spectrum.db[tbd_peak_bin] >= threshold
-            && !shape_vetoed(tbd_peak_bin)) {
-            // Multi-frame confirmed — compute integrated RSSI
-            const uint16_t integrated = waterfall_history_.get_integrated_power(tbd_peak_bin);
-            const uint8_t avg_power = static_cast<uint8_t>(integrated / waterfall_history_.size());
-            const int32_t tbd_rssi = spectrum_value_to_dbm(avg_power, total_gain_tbd);
-
-            // NARROWBAND GUARD (MaxW): mirror of the normal-mode TBD guard.
-            // TBD must never resurrect a wideband flat-top (WiFi/BT) that the
-            // single-frame shape chain (MaxW steps of apply_shape_filters)
-            // already rejected — enforce MaxW on the multi-frame ENVELOPE.
-            // RAW BIN space, not LG pixels: bin size is identical in both
-            // scan modes (DB_CAPTURE_RATE_HZ == SWEEP_SLICE_BW), so MaxW bins
-            // mean the same bandwidth as in DB scan. noise_floor here is the
-            // 25th percentile of the raw usable bins (Step 1 above) — the
-            // same reference the envelope is compared against.
-            if (tbd_rssi > config_.rssi_threshold_dbm &&
-                tbd_peak_is_narrowband(
-                    tbd_peak_bin, FFT_BIN_COUNT,
-                    noise_floor, FFT_EDGE_SKIP_NARROW)) {
-                const FreqHz tbd_freq = fft_bin_to_freq(center_freq, tbd_peak_bin);
-                apply_sweep_tracking(
-                    win_idx, tbd_freq, tbd_rssi, center_freq, f_min, f_max
-                );
-            }
+    // The ENVELOPE (per-bin max over the window) is where a multi-frame target
+    // has to show up, so the candidate bin is searched there rather than in
+    // this frame alone.
+    size_t tbd_peak_bin = FFT_EDGE_SKIP_NARROW;
+    uint8_t tbd_peak_power = 0;
+    for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW; ++i) {
+        if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+        const uint8_t max_power = waterfall_history_.get_max_across_frames(i);
+        if (max_power > tbd_peak_power) {
+            tbd_peak_power = max_power;
+            tbd_peak_bin = i;
         }
     }
+
+    // Confirm threshold: RSSI term (Sens) FLOORED at this frame's noise shelf +
+    // TBD_MIN_ELEVATION_UNITS — the SAME single derivation the DB confirm gate
+    // and the sweep frame-reachability gate use, so all three agree by
+    // construction. Frame-level gain is cached (P0-2: it cannot change
+    // mid-frame).
+    const uint8_t threshold = sweep_tbd_effective_threshold(
+        sweep_tbd_threshold_units(config_.rssi_threshold_dbm, frame_total_gain),
+        noise_floor);
+    const uint8_t active_frames =
+        waterfall_history_.count_above_threshold(tbd_peak_bin, threshold);
+
+    // PRESENT-NOW requirement (FIX): frame age 0 in the waterfall IS the current
+    // frame (pushed before this pass), so stale history alone can never confirm
+    // — closes the "rejected frames 1..3, clean frame 4 confirms" resurrection
+    // path. Sensitivity-neutral: a marginal target just waits for an "up"
+    // flicker frame instead of confirming during a fade.
+    // SHAPE-VETO (D5 cross-frame fix): bins the shape chain rejected while
+    // above the gate earlier in THIS waterfall window stay vetoed — a peak
+    // flickering below the gate no longer slips past shape_blocked_tbd and gets
+    // resurrected with width-only validation.
+    if (active_frames < TBD_MIN_FRAMES) return;
+    if (spectrum.db[tbd_peak_bin] < threshold) return;
+    if (shape_vetoed(tbd_peak_bin)) return;
+
+    // Multi-frame confirmed — integrated RSSI over the envelope window.
+    const uint16_t integrated = waterfall_history_.get_integrated_power(tbd_peak_bin);
+    const uint8_t avg_power = static_cast<uint8_t>(integrated / waterfall_history_.size());
+    const int32_t tbd_rssi = spectrum_value_to_dbm(avg_power, frame_total_gain);
+
+    // NARROWBAND GUARD: TBD must never resurrect a wideband flat-top (WiFi/BT)
+    // that the single-frame shape chain rejected — it re-applies the width
+    // semantics on the multi-frame ENVELOPE (the union of bin positions the
+    // emission occupied across the window). RAW BIN space, not LG pixels: bin
+    // size is identical in both scan modes (DB_CAPTURE_RATE_HZ ==
+    // SWEEP_SLICE_BW) and noise_floor is the same 25th-percentile shelf this
+    // pass used as the confirm reference. The guard additionally owns a
+    // TBD-internal sideband-span rule, so it stays effective even when the user
+    // raises spectrum_max_width to "no cap" — see tbd_peak_is_narrowband().
+    if (tbd_rssi <= config_.rssi_threshold_dbm) return;
+    if (!tbd_peak_is_narrowband(tbd_peak_bin, FFT_BIN_COUNT,
+                                noise_floor, FFT_EDGE_SKIP_NARROW)) {
+        return;
+    }
+
+    const FreqHz tbd_freq = fft_bin_to_freq(center_freq, tbd_peak_bin);
+    apply_sweep_tracking(win_idx, tbd_freq, tbd_rssi, center_freq, f_min, f_max);
 }
 
 } // namespace drone_analyzer
