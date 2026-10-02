@@ -295,6 +295,57 @@ constexpr size_t CFAR_MIN_PEAK_SEPARATION = 10;
 constexpr size_t CFAR_MAX_CONCURRENT_PEAKS = 8;
 
 /**
+ * @brief Keep the K strongest candidates during a linear scan (in-place top-K).
+ * @note Replaces the weakest slot when a stronger candidate arrives instead of
+ *       truncating at the first K bins encountered. The old first-come
+ *       behavior let a busy left sideband (wideband plateau = K+ passing
+ *       bins) starve the right sideband entirely — the scan filled the buffer
+ *       by ascending bin index and never revisited later bins. O(K) work per
+ *       replacement, ZERO extra memory: the caller's fixed array is reused in
+ *       place (no dynamic allocation, no VLAs — STM32F405 rules).
+ * @tparam PeakT Aggregate exposing `.power` and `.bin` (CFARPeak, caller-local SimplePeak)
+ * @param peaks Fixed-size candidate array (K deduced from the reference)
+ * @param count In/out candidate count; 0 <= count <= K on every call
+ * @param cand  New candidate to consider (kept if strictly stronger than the
+ *              current weakest, or equal-power AND at least
+ *              CFAR_MIN_PEAK_SEPARATION away from it — see tie note below)
+ * @note Stack: ~12 bytes (index + compare). Flash: ~40 bytes (inlined).
+ */
+template <typename PeakT, size_t K>
+void keep_strongest(PeakT (&peaks)[K], size_t& count, const PeakT& cand) noexcept {
+    if (count < K) {
+        peaks[count++] = cand;
+        return;
+    }
+    size_t weakest = 0;
+    for (size_t i = 1; i < K; ++i) {
+        if (peaks[i].power < peaks[weakest].power) weakest = i;
+    }
+    if (cand.power > peaks[weakest].power) {
+        peaks[weakest] = cand;
+        return;
+    }
+    // EQUAL-POWER TIE (audit fix — D4 residual): a perfectly flat plateau
+    // fills all K slots with the FIRST K bins by ascending index (strict `>`
+    // never evicts equals), so an equal-power emitter on the far sideband
+    // could still be starved — the exact failure D4 exists to prevent.
+    // On a tie, swap in the candidate only when it is a DISTINCT location
+    // (>= CFAR_MIN_PEAK_SEPARATION from the weakest slot): during the single
+    // ascending scan the exchange slot then rotates across regions, admitting
+    // the second region while adjacent plateau bins (< separation from the
+    // current occupant) are still rejected. Post-conditions unchanged
+    // (0 <= count <= K); the downstream Phase-2 sort + Phase-3 NMS absorb any
+    // duplicate the distance test lets through. Stack: +8 bytes (2 indices),
+    // registers only. Flash: ~24 bytes.
+    if (cand.power == peaks[weakest].power) {
+        const size_t a = static_cast<size_t>(cand.bin);
+        const size_t b = static_cast<size_t>(peaks[weakest].bin);
+        const size_t distance = (a > b) ? (a - b) : (b - a);
+        if (distance >= CFAR_MIN_PEAK_SEPARATION) peaks[weakest] = cand;
+    }
+}
+
+/**
  * @brief CFAR (Constant False Alarm Rate) detector
  * @note Adapts detection threshold to local noise level
  * @note Supports CA-CFAR, GO-CFAR, SO-CFAR, and Hybrid modes
@@ -547,58 +598,6 @@ public:
     }
 
     /**
-     * @brief Run CFAR on entire spectrum and return peak bin
-     * @param spectrum FFT spectrum data
-     * @param bin_count Total bins
-     * @param mode CFAR mode
-     * @param ref_cells Reference cells
-     * @param guard_cells Guard cells
-     * @param threshold_x10 Threshold offset ×10 in spectrum.db units (additive, see detect())
-     * @param skip_start Skip bins from start (for edge/DC)
-     * @param skip_end Skip bins from end (for edge)
-     * @param alpha CA weight for hybrid mode ×100
-     * @param beta GO weight for hybrid mode ×100
-     * @param gamma SO weight for hybrid mode ×100
-     * @param os_k_percent OS-CFAR k-th order percentile (50-90)
-     * @param vi_threshold_x10 VI-CFAR variability threshold ×10 (5-50)
-     * @return Peak bin index that passed CFAR, or bin_count if none detected
-     */
-    [[nodiscard]] static size_t find_peak_cfar(
-        const uint8_t* spectrum,
-        size_t bin_count,
-        CFARMode mode,
-        uint8_t ref_cells,
-        uint8_t guard_cells,
-        uint8_t threshold_x10,
-        size_t skip_start,
-        size_t skip_end,
-        uint8_t alpha = 50,
-        uint8_t beta = 30,
-        uint8_t gamma = 20,
-        uint8_t os_k_percent = 75,
-        uint8_t vi_threshold_x10 = 15
-    ) noexcept {
-        if (mode == CFARMode::OFF || spectrum == nullptr) return bin_count;
-
-        size_t peak_bin = bin_count;
-        uint8_t peak_power = 0;
-
-        for (size_t i = skip_start; i < bin_count - skip_end; ++i) {
-            // Skip DC spike
-            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-
-            if (detect(spectrum, bin_count, i, mode, ref_cells, guard_cells, 
-                       threshold_x10, alpha, beta, gamma, os_k_percent, vi_threshold_x10)) {
-                if (spectrum[i] > peak_power) {
-                    peak_power = spectrum[i];
-                    peak_bin = i;
-                }
-            }
-        }
-        return peak_bin;
-    }
-
-    /**
      * @brief Run CFAR on entire spectrum and return ALL peaks above threshold.
      * @param spectrum FFT spectrum data
      * @param bin_count Total bins
@@ -653,12 +652,16 @@ public:
 
             if (detect(spectrum, bin_count, i, mode, ref_cells, guard_cells,
                        threshold_x10, alpha, beta, gamma, os_k_percent, vi_threshold_x10)) {
-                if (candidate_count < CFAR_MAX_CONCURRENT_PEAKS * 2) {
-                    // uint8_t bin: i < limit <= bin_count <= FFT_BIN_COUNT
-                    // (256) at every call site — cast never truncates.
-                    candidates[candidate_count++] =
-                        {static_cast<uint8_t>(i), spectrum[i]};
-                }
+                // TOP-K collection (audit fix D4): keep the strongest
+                // candidates in place instead of the first ones encountered —
+                // a busy left sideband (wideband plateau = 16+ passing bins)
+                // no longer starves the right sideband before the scan
+                // reaches it. Phase-2 sort + Phase-3 NMS then run over the
+                // strongest set.
+                // uint8_t bin: i < limit <= bin_count <= FFT_BIN_COUNT (256)
+                // at every call site — cast never truncates.
+                keep_strongest(candidates, candidate_count,
+                               CFARPeak{static_cast<uint8_t>(i), spectrum[i]});
             }
         }
 
@@ -1886,27 +1889,22 @@ private:
     [[nodiscard]] uint8_t resolve_det_win_label_internal(uint8_t win_idx, FreqHz freq_hz) const noexcept;
 
     /**
-     * @brief Internal: Analyze spectrum shape for U/V signal peaks
-     * @param spectrum Channel spectrum data (256 bins, 0-255 each)
-     * @param out_rssi Estimated RSSI in dBm if signal detected
-     * @return true if drone-like signal detected (elevated peak with width)
-     * @note Noise floor = flat line. Signal = elevated U/V peak above noise.
-     * @pre Mutex must be held (LockOrder::DATA_MUTEX)
-     */
-    [[nodiscard]] bool analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32_t& out_rssi) noexcept;
-
-    /**
      * @brief Multi-peak spectrum shape analysis for detecting independent signals
      * @param spectrum Channel spectrum data (256 bins, 0-255 each)
      * @param out_result Output: array of shape detections (up to MAX_SHAPE_DETECTIONS)
      * @param center_freq Tuned center frequency for bin-to-RF conversion (Hz)
      * @return true if at least one drone-like signal detected
-     * @note Unlike analyze_spectrum_shape() which returns only the strongest peak,
-     *       this method finds ALL CFAR peaks and runs shape filters on each independently.
-     *       Critical for detecting multiple FPV transmitters in the same 20 MHz FFT frame.
-     *       Uses CFARDetector::find_peaks() (multi-peak) instead of find_peak_cfar() (single).
-     * @note Stack: ~48 bytes (ShapeDetectionResult) + ~12 bytes (CFARPeak
-     *       candidates, 6 × 2 B) = ~60 bytes
+     * @note Finds ALL candidate peaks (CFAR multi-peak or the fixed-threshold
+     *       fallback: every bin at/above the Step-3 gate, sorted strongest-
+     *       first, NMS'd — same semantics as the sweep loop) and runs the shape
+     *       chain on each independently. Critical for detecting multiple FPV
+     *       transmitters in the same 20 MHz FFT frame — the old fallback (global
+     *       max + two ±5-bin probes) structurally found ONE target per frame at
+     *       the default CFARMode::OFF.
+     * @note Stack: ≤ ~200 bytes (ShapeDetectionResult + non-CFAR
+     *       candidates[12]×8 B + accepted extents[6]×8 B; CFAR branch swaps the
+     *       96 B fallback array for a 12 B CFARPeak array) — inside the 512 B
+     *       frame budget.
      * @note center_freq MUST be the frequency passed by the caller, NOT current_frequency_.
      *       The scanner thread mutates current_frequency_ concurrently — reading it from
      *       the UI thread causes a torn 64-bit read (non-atomic on Cortex-M4F).
@@ -1950,8 +1948,9 @@ private:
 
     /**
      * @brief Shared spectrum shape analysis with configurable edge skip.
-     * @note Called by both analyze_spectrum_shape() and process_spectrum_sweep()
-     *       to eliminate 200-line code duplication and ensure identical filter logic.
+     * @note Called by process_spectrum_sweep() (the DB multi-peak path calls
+     *       apply_shape_filters() directly) to keep ONE implementation of the
+     *       filter chain for the sweep loop.
      * @param spectrum 256-bin FFT data
      * @param out_rssi Output: RSSI in dBm if signal detected
      * @param edge_skip Number of edge bins to skip (FFT_EDGE_SKIP=10 for normal, FFT_EDGE_SKIP_NARROW=6 for sweep)
@@ -1959,18 +1958,20 @@ private:
      *        receives the SignalExtent of the whole emission around the peak
      *        (Step 6b). Callers use it for emission dedup (sweep mode).
      * @param reject_edge_clipped When true, Step 6c applies the BOTH-EDGES
-     *        rule: an emission is rejected only when its extent reaches BOTH
-     *        FFT window boundaries while both edge bins are still above the
-     *        half-power level — it spans the ENTIRE usable window
-     *        (>= ~17.8 MHz), i.e. it continues out of both sides and its true
-     *        bandwidth is wider than any FPV channel. This stays the primary
-     *        WiFi rejection gate in sweep mode: a 20-40+ MHz WiFi band spans
-     *        the full usable window at EVERY sweep position, while an 8-14 MHz
-     *        analog FPV carrier only ever touches ONE boundary (and only at
-     *        unlucky slice phases) — the old single-edge rule rejected such
-     *        fat peaks on every pass because the retune grid phase is fixed.
-     *        DB scan passes false (VTX drift may sit at the DB window edge
-     *        BY DESIGN — see SWEEP_SLICE_BW notes).
+     *        rule: an emission is rejected only when it spans the ENTIRE
+     *        usable window (>= ~17.8 MHz) — walls on both window boundaries
+     *        at the half-power level. Because the walks are DC-gap bounded
+     *        (has_dc_gap=true), a single extent can touch only ONE window
+     *        wall; the rule therefore BRIDGES the DC gap: the emission must
+     *        reach its far wall and its DC-adjacent bin, the opposite
+     *        DC-adjacent bin must hold the half-power level, and the whole
+     *        opposite sideband must hold it up to its own wall (one
+     *        continuous wall-to-wall emission). A single-edge touch (fat FPV
+     *        at an unlucky fixed slice phase) never satisfies the bridge and
+     *        passes — the documented FPV relaxation; WiFi/BT 20-40+ MHz
+     *        satisfies it at EVERY sweep position. DB scan passes false
+     *        (VTX drift may sit at the DB window edge BY DESIGN — see
+     *        SWEEP_SLICE_BW notes).
      * @return true if drone-like signal detected
      */
     [[nodiscard]] bool analyze_spectrum_shape_impl(
@@ -2019,26 +2020,33 @@ private:
      * @param has_dc_gap   true = DC spike bins (120-135) are a hard boundary —
      *                     the walk NEVER bridges them (ADC offset energy)
      * @return Extent [left, right]: expansion continues while bins >= the
-     *         HALF-POWER level noise_floor + max(peak_margin/2, gate/3)
-     *         (peak − 6 dB, floored above the noise fluctuation band) — shallow
-     *         dips do NOT split the emission; only dips deeper than −6 dB do.
-     *         Hysteresis trim then removes outer shoulders that never reached
-     *         noise_floor + max(gate, peak_margin/2).
-     * @note HALF-POWER ANCHOR: the −6 dB band of an analog FM video carrier is
-     *       ~constant in MHz across its usable range, so MaxW maps to REAL
-     *       bandwidth (8-18 MHz FPV = 102-230 bins at 78.125 kHz/bin). The old
-     *       gate/3 anchor (+1.3 dB over the shelf) made the extent balloon to
-     *       the full 18 MHz FPV channel at close range (≈230 bins) while a
-     *       WiFi 20 MHz top measured ≈236 bins — the two were
-     *       indistinguishable by width at ANY MaxW setting. At −6 dB the FPV
-     *       video band measures 100-140 bins (passes MaxW=200) and WiFi
-     *       rejection shifts to the sharpness gate (flat OFDM fragments,
-     *       sharpness ≈ 100-115 < 120) + valley + opt-in flatness.
+     *         QUARTER-POWER continuation level noise_floor +
+     *         max(peak_margin/4, gate/3) — deliberately BELOW the Step-4
+     *         fragment bar (noise + margin/3), so shallow dips the fragment
+     *         stopped at still bridge and the extent can genuinely EXCEED
+     *         the fragment. Hysteresis trim then removes outer shoulders that
+     *         never reached noise_floor + max(gate, peak_margin/2)
+     *         (half-power trim — for smooth skirts the extent therefore
+     *         still ends at the -6 dB point, keeping MaxW ≈ real bandwidth).
+     * @note QUARTER-POWER ANCHOR (audit fix D2): with the old half-power
+     *       continuation anchor, cont >= Step-4 bar always held, so the extent
+     *       was a strict SUBSET of the fragment by construction — the Step 6b
+     *       MaxW check could never fire after Step 6 and dedup recorded only
+     *       one crest of a rippled top. Quarter-power keeps
+     *       cont_elevation <= margin/3 (margin/4 < margin/3; gate/3 <= margin/3
+     *       since margin >= gate by Step 3) — STRICTLY below the fragment bar
+     *       whenever margin > gate; at margin == gate the two levels coincide,
+     *       which is behaviorally safe because Step 6 (the fragment check)
+     *       then enforces the identical MaxW verdict — while the gate/3 floor
+     *       keeps weak peaks (margin ≈ gate) out of the ~2-unit noise sigma
+     *       band; interior dips deeper than quarter-power still split the
+     *       emission (legit video+audio nulls), shallow ripples merge
+     *       (WiFi crest-to-crest).
      * @pre peak_margin == bin_value(peak_idx) - noise_floor and
      *      peak_margin >= shape_gate_margin() when called from
      *      apply_shape_filters (Step 3 guarantees this) — the trim loops are
      *      bounded by peak_idx and never extend the extent past the peak.
-     * @note Stack: ~24 bytes. Flash: ~120 bytes. No allocation, no float, O(n).
+     * @note Stack: ~24 bytes. Flash: ~140 bytes. No allocation, no float, O(n).
      */
     template <typename BinFn>
     [[nodiscard]] SignalExtent emission_extent(
@@ -2072,14 +2080,19 @@ private:
         const uint8_t half_power = static_cast<uint8_t>(peak_margin / 2);
         const uint16_t start_level = static_cast<uint16_t>(noise_floor)
             + ((half_power > gate) ? half_power : gate);
-        // HALF-POWER continuation anchor: peak − 6 dB, floored at gate/3 so
-        // weak peaks never sink into the noise fluctuation band (clamps
-        // guarantee gate >= 3, so gate/3 >= 1 — the floor is
-        // defense-in-depth only). half_power is hoisted above (shared with
-        // start_level — the hysteresis pair is built from ONE half-power
-        // anchor, guaranteeing cont_level <= start_level).
+        // Continuation anchor floor: gate/3 keeps weak peaks (peak_margin ≈
+        // gate) out of the noise fluctuation band (clamps guarantee gate >= 3,
+        // so gate/3 >= 1). The anchor VALUE itself is quarter-power — see the
+        // CONTINUATION ANCHOR comment below.
         const uint8_t gate_floor = (gate >= 3) ? static_cast<uint8_t>(gate / 3) : 1;
-        const uint8_t cont_elevation = (half_power > gate_floor) ? half_power : gate_floor;
+        // CONTINUATION ANCHOR (audit fix D2 — see @note above): quarter-power
+        // sits strictly below the Step-4 fragment bar (margin/3, /2 when
+        // very_strong) so the extent can exceed the fragment; the gate/3 floor
+        // protects weak peaks. cont_elevation <= start_elevation by
+        // construction (margin/4 <= margin/2, gate/3 <= gate), so the
+        // hysteresis pair stays ordered (cont_level <= start_level).
+        const uint8_t quarter_power = static_cast<uint8_t>(peak_margin / 4);
+        const uint8_t cont_elevation = (quarter_power > gate_floor) ? quarter_power : gate_floor;
         const uint16_t cont_level =
             static_cast<uint16_t>(noise_floor) + cont_elevation;
         const size_t upper_limit = data_size - edge_skip;
@@ -2128,10 +2141,12 @@ private:
      *                     instead (dedup must not over-suppress bypassed signals).
      * @return true if signal passes all shape filters
      * @note Stack: ~0 bytes (all state via parameters).
-     * @note Shared by analyze_spectrum_shape_impl() (DB scan) and
-     *       process_spectrum_sweep() (sweep) — ALL MaxW semantics,
-     *       including the Step 6b emission-extent check, are therefore
-     *       identical in both modes by construction.
+     * @note Shared by analyze_spectrum_shape_multi() (DB scan, direct calls)
+     *       and process_spectrum_sweep() via analyze_spectrum_shape_impl()
+     *       (sweep) — ALL MaxW semantics, including the Step 6b
+     *       emission-extent check and the Step 6c BOTH-EDGES guard
+     *       (sweep-only), are therefore identical in both modes by
+     *       construction.
      */
     [[nodiscard]] bool apply_shape_filters(
         const uint8_t* data,
@@ -2421,8 +2436,9 @@ private:
     SystemTime confirm_start_time_{0};
     static constexpr uint32_t CONFIRM_TIMEOUT_MS = 5000;  // 5 seconds to gather confirmations
 
-    // Sort buffer for analyze_spectrum_shape (mutable: used as scratch pad in const methods)
-    // Used by analyze_spectrum_shape() for noise floor and apply_shape_filters() for kurtosis.
+    // Sort buffer (mutable: used as scratch pad in const methods)
+    // Used by analyze_spectrum_shape_multi() for the noise floor and
+    // apply_shape_filters() Step 12 for kurtosis.
     static constexpr size_t SPECTRUM_SORT_BUF_SIZE = 256;
     mutable uint8_t spectrum_sort_buf_[SPECTRUM_SORT_BUF_SIZE];
 

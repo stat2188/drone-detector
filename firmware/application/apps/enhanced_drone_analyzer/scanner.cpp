@@ -758,20 +758,42 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         has_shape_result = analyze_spectrum_shape_multi(spectrum, shape_result, frequency);
 
         if (has_shape_result && shape_result.count > 0) {
-            // Primary detection: strongest peak that passed shape filters
+            // Primary detection: strongest peak that passed shape filters.
+            // FIX (audit D6 — RSSI ATTRIBUTION): the gate AND the recorded
+            // strength now come from THIS peak (detections[0]), not from
+            // `rssi` (frame/median maximum). The old code gated on the frame
+            // maximum while tracking the shape-passed peak, so a weak drone
+            // peak below the threshold could ride a strong WiFi frame over
+            // the gate and be tracked with the WiFi's power (threat
+            // classification inflated). spectrum_rssi is a single bin of the
+            // SAME frame measured in the SAME cell set as extract_rssi, so it
+            // never exceeds the raw frame peak by construction.
             const int32_t spectrum_rssi = shape_result.detections[0].rssi;
-            // Shape passed — enforce RSSI threshold with hysteresis
-            if (rssi > rssi_threshold) {
+            if (spectrum_rssi > rssi_threshold) {
                 signal_detected = true;
                 signal_present_ = true;
-                // Use shape-analysis RSSI if it's stronger than the simple peak.
-                // Safety bound: don't allow spectrum_rssi to exceed rssi by more than
-                // SHAPE_RSSI_MAX_EXCESS_DB — prevents single-sample noise spikes that
-                // happen to pass shape filters from inflating effective_rssi.
+                // Effective RSSI = the tracked peak itself, clamped to the
+                // legacy excess bound: a shape-validated peak may sit at most
+                // SHAPE_RSSI_MAX_EXCESS_DB above the (possibly median-filtered)
+                // frame RSSI — protects statistics/threat classification from
+                // conversion outliers when the median lags a fresh signal.
+                // PATCH 1 (audit D6 follow-up): floor the CAP at the gate that
+                // just fired. When the median lags the fresh peak by more than
+                // SHAPE_RSSI_MAX_EXCESS_DB + hysteresis, the raw cap
+                // (rssi + 10) can sit BELOW rssi_threshold while
+                // signal_detected == true — that fed rssi_detector_ (below)
+                // a below-gate sample (violating its "above-threshold only"
+                // contract) and tracked a drone UNDER the detection gate.
+                // Invariant now: signal_detected ⇒ effective_rssi >= threshold.
+                // Stack: ~4 bytes (2 register locals). SRAM: 0. Flash: ~24 B.
                 constexpr int32_t SHAPE_RSSI_MAX_EXCESS_DB = 10;
-                if (spectrum_rssi > effective_rssi
-                    && spectrum_rssi <= rssi + SHAPE_RSSI_MAX_EXCESS_DB) {
+                const int32_t excess_cap = rssi + SHAPE_RSSI_MAX_EXCESS_DB;
+                if (spectrum_rssi <= excess_cap) {
                     effective_rssi = spectrum_rssi;
+                } else {
+                    effective_rssi = (excess_cap > rssi_threshold)
+                        ? excess_cap
+                        : rssi_threshold;
                 }
             } else if (signal_present_) {
                 signal_present_ = false;
@@ -2050,80 +2072,6 @@ void DroneScanner::reset_neighbor_checker() noexcept {
 // Spectrum Shape Analysis — detect U/V peaks above flat noise floor
 // ============================================================================
 
-bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32_t& out_rssi) noexcept {
-    // Step 1: Find noise floor via 25th percentile of usable bins.
-    // 25th percentile (not median) is more robust when signal occupies >50% of
-    // usable bins (WiFi-dense 2.4 GHz environment). Median becomes signal-biased
-    // in that case, inflating the noise floor estimate and causing real drone
-    // signals to fail the peak_margin check.
-    uint8_t* sorted = spectrum_sort_buf_;
-    size_t sort_count = 0;
-    for (size_t i = FFT_EDGE_SKIP; i < FFT_BIN_COUNT - FFT_EDGE_SKIP; ++i) {
-        if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-        sorted[sort_count++] = spectrum.db[i];
-    }
-    const uint8_t noise_floor = (sort_count > 0)
-        ? quickselect_percentile(sorted, sort_count, 25)
-        : 0;
-
-    // Step 2: Find peak bin and peak value
-    uint8_t peak_value = noise_floor;
-    size_t peak_index = FFT_EDGE_SKIP;
-
-    if (config_.cfar_mode != CFARMode::OFF) {
-        // Use adaptive threshold ONLY when explicitly enabled.
-        // When disabled, use the user-configured fixed threshold directly.
-        // Prevents silent threshold drift from AdaptiveThreshold's internal state
-        // when the user has not opted into auto-tuning.
-        const uint8_t effective_threshold = config_.adaptive_cfar_enabled
-            ? adaptive_threshold_.get_optimal_threshold()
-            : config_.cfar_threshold_x10;
-
-        const size_t cfar_peak = CFARDetector::find_peak_cfar(
-            spectrum.db.data(), FFT_BIN_COUNT,
-            config_.cfar_mode, config_.cfar_ref_cells, config_.cfar_guard_cells,
-            effective_threshold, FFT_EDGE_SKIP, FFT_EDGE_SKIP,
-            config_.cfar_hybrid_alpha, config_.cfar_hybrid_beta, config_.cfar_hybrid_gamma,
-            config_.os_cfar_k_percent, config_.vi_cfar_threshold_x10
-        );
-
-        if (cfar_peak >= FFT_BIN_COUNT) {
-            // No detection — feed negative result to adaptive threshold
-            // only when adaptive mode is active (avoids polluting internal state).
-            if (config_.adaptive_cfar_enabled) {
-                adaptive_threshold_.update(
-                    false, RSSI_MIN_DBM,
-                    spectrum_value_to_dbm(noise_floor, get_current_total_gain()),
-                    config_.cfar_threshold_x10);
-            }
-            return false;
-        }
-
-        // Detection found — feed positive result to adaptive threshold
-        if (config_.adaptive_cfar_enabled) {
-            adaptive_threshold_.update(
-                true,
-                spectrum_value_to_dbm(spectrum.db[cfar_peak], get_current_total_gain()),
-                spectrum_value_to_dbm(noise_floor, get_current_total_gain()),
-                config_.cfar_threshold_x10);
-        }
-
-        peak_index = cfar_peak;
-        peak_value = spectrum.db[cfar_peak];
-    } else {
-        for (size_t i = FFT_EDGE_SKIP; i < FFT_BIN_COUNT - FFT_EDGE_SKIP; ++i) {
-            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-            if (spectrum.db[i] > peak_value) {
-                peak_value = spectrum.db[i];
-                peak_index = i;
-            }
-        }
-    }
-
-    const int32_t total_gain = get_current_total_gain();
-    return analyze_spectrum_shape_impl(spectrum, peak_index, peak_value, noise_floor, out_rssi, FFT_EDGE_SKIP, total_gain);
-}
-
 bool DroneScanner::analyze_spectrum_shape_impl(
     const ChannelSpectrum& spectrum,
     size_t peak_index,
@@ -2269,46 +2217,75 @@ bool DroneScanner::analyze_spectrum_shape_multi(
             }
         }
     } else {
-        // No CFAR — find top N peaks by simple maximum (non-CFAR fallback)
+        // No CFAR — FIXED-THRESHOLD FALLBACK, byte-for-byte parity with the
+        // sweep loop's fixed-threshold collection.
+        // FIX (audit D3 + D10): the old code collected the global maximum plus
+        // two probes at max_bin ± 5 — structurally AT MOST ONE independent
+        // target per frame at the default CFARMode::OFF, so this _multi
+        // function's raison d'être (multiple FPV transmitters in one 20 MHz
+        // frame) was dead in the default configuration; the probes could also
+        // land below FFT_EDGE_SKIP (max_bin in [10..14]) in the rolloff zone
+        // excluded from floor/RSSI. Now: collect EVERY bin at/above the
+        // full Step-3 gate (shape_gate_margin) within the usable region
+        // (edge policy + DC gap — the SAME cell set as Step 1 / extract_rssi /
+        // Step 4), keep the strongest MAX_SHAPE_DETECTIONS*2 in place (top-K —
+        // no buffer growth), sort strongest-first, NMS by
+        // CFAR_MIN_PEAK_SEPARATION. Stack: candidates[12]×8 B = 96 B (ARM32),
+        // same array size as before — well within the 512 B frame budget.
         struct SimplePeak { size_t bin; uint8_t power; };
         SimplePeak candidates[MAX_SHAPE_DETECTIONS * 2];
         size_t cand_count = 0;
 
-        uint8_t max_val = noise_floor;
-        size_t max_bin = FFT_EDGE_SKIP;
+        const uint8_t gate = shape_gate_margin();
         for (size_t i = FFT_EDGE_SKIP; i < FFT_BIN_COUNT - FFT_EDGE_SKIP; ++i) {
             if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-            if (spectrum.db[i] > max_val) {
-                max_val = spectrum.db[i];
-                max_bin = i;
+            const int32_t margin =
+                static_cast<int32_t>(spectrum.db[i]) - static_cast<int32_t>(noise_floor);
+            // margin > 0 preserves the old "max_val <= noise_floor → nothing"
+            // semantics even if a pathological gate==0 config ever exists.
+            if (margin > 0 && margin >= static_cast<int32_t>(gate)) {
+                keep_strongest(candidates, cand_count, SimplePeak{i, spectrum.db[i]});
             }
         }
 
-        if (max_val <= noise_floor) return false;
+        if (cand_count == 0) return false;
 
-        // Collect the global max and immediate neighbors as candidates
-        candidates[cand_count++] = {max_bin, max_val};
-        // Check bins ±5 around the maximum for secondary peaks
-        for (int32_t offset = -5; offset <= 5; offset += 10) {
-            const size_t check_bin = static_cast<size_t>(static_cast<int32_t>(max_bin) + offset);
-            if (check_bin >= FFT_BIN_COUNT || check_bin == max_bin) continue;
-            if (check_bin >= FFT_DC_SPIKE_START && check_bin < FFT_DC_SPIKE_END) continue;
-            // Gate secondary candidates with the FULL Step 3 margin
-            // (shape_gate_margin), same >= semantics as Step 3. Previously the
-            // raw config margin was used here, which (a) nullified the
-            // sensitive-mode relaxation for secondary peaks — the same dead-
-            // relaxation defect the sweep candidate gate had — and (b) at high
-            // sensitivity admitted candidates Step 3 would only reject.
-            if (static_cast<int32_t>(spectrum.db[check_bin])
-                >= static_cast<int32_t>(noise_floor) + shape_gate_margin()) {
-                candidates[cand_count++] = {check_bin, spectrum.db[check_bin]};
+        // Sort by power descending (insertion sort — small array)
+        for (size_t i = 1; i < cand_count; ++i) {
+            const SimplePeak key = candidates[i];
+            size_t j = i;
+            while (j > 0 && candidates[j - 1].power < key.power) {
+                candidates[j] = candidates[j - 1];
+                --j;
             }
+            candidates[j] = key;
         }
 
-        // EMISSION DEDUP (same as the CFAR branch): the ±5 probes sample the
-        // SAME flat top as the global max — without dedup, one wideband
-        // emission was re-measured up to 3 times per frame and each probe
-        // that survived the per-peak width threshold became its own detection.
+        // Non-maximum suppression (parity with sweep + CFAR): peaks within
+        // CFAR_MIN_PEAK_SEPARATION of a stronger kept peak are sidelobes of
+        // the same crest — dropped here; whole-emission ripple crests are
+        // owned by the extent dedup below.
+        size_t kept = 0;
+        for (size_t i = 0; i < cand_count; ++i) {
+            bool suppressed = false;
+            for (size_t j = 0; j < kept; ++j) {
+                const size_t a = candidates[i].bin;
+                const size_t b = candidates[j].bin;
+                const size_t bin_diff = (a > b) ? (a - b) : (b - a);
+                if (bin_diff < CFAR_MIN_PEAK_SEPARATION) {
+                    suppressed = true;
+                    break;
+                }
+            }
+            if (!suppressed) candidates[kept++] = candidates[i];
+        }
+        cand_count = kept;
+
+        // EMISSION DEDUP (same as the CFAR branch): candidates arrive
+        // strongest-first; the first passing crest of a wideband emission
+        // records its whole SignalExtent and later candidates inside it are
+        // ripple crests of the SAME emitter — skipped instead of spawning
+        // duplicate detections.
         SignalExtent accepted[MAX_SHAPE_DETECTIONS]{};
         size_t accepted_count = 0;
         for (size_t i = 0; i < cand_count && out_result.count < MAX_SHAPE_DETECTIONS; ++i) {
@@ -2339,11 +2316,10 @@ bool DroneScanner::analyze_spectrum_shape_multi(
                 out_result.count++;
             } else {
                 // TBD-RESURRECTION GUARD (FIX): mirror of the CFAR branch.
-                // NOTE: candidates[0] is the global max with NO margin gate —
-                // its margin may legitimately sit below the gate (weak target),
-                // in which case the flag stays false and TBD keeps integrating.
-                // The ±5 secondary probes ARE margin-gated, so for them the
-                // condition below exactly reproduces "passed Step 3".
+                // Every fixed-threshold candidate cleared the full Step-3 gate
+                // by construction (collection gate == shape_gate_margin, and
+                // margin > 0 above), so a shape failure here ALWAYS sets the
+                // veto — identical semantics to the CFAR branch.
                 if ((candidates[i].power > noise_floor)
                     && (candidates[i].power - noise_floor) >= shape_gate_margin()) {
                     out_result.shape_rejected_after_margin = true;
@@ -2412,9 +2388,10 @@ bool DroneScanner::apply_shape_filters(
     // FAIL-CLOSED GUARD: raw_peak <= noise_floor would underflow the uint8
     // peak_margin below (wraps to ~250, silently passing the Step 3 gate).
     // Every current call site pre-validates (CFAR peaks sit above noise; the
-    // non-CFAR fallback checks max_val <= noise_floor; the sweep fixed-threshold
-    // gate admits only bins >= noise_floor + margin) — this guard makes the
-    // contract explicit instead of relying on caller discipline.
+    // non-CFAR fallback collects only bins with margin >= shape_gate_margin()
+    // and margin > 0; the sweep fixed-threshold gate admits only bins >=
+    // noise_floor + margin) — this guard makes the contract explicit instead
+    // of relying on caller discipline.
     if (raw_peak <= noise_floor) return false;
 
     // FAIL-CLOSED GUARD: same validation contract as tbd_peak_is_narrowband.
@@ -2517,6 +2494,22 @@ bool DroneScanner::apply_shape_filters(
 
     const size_t signal_width = right - left + 1;
 
+    // Walk-stop classification (audit fix D8): distinguish a THRESHOLD stop
+    // (a real, measurable flank) from a MEASUREMENT BOUNDARY stop (window edge
+    // or DC wall — the shape beyond the boundary was never observed). Steps
+    // 9/11 must not read boundary artifacts as shape evidence: symmetry used
+    // to count a clipped flank as width 0, collapse sym_pct to 0% and reject
+    // ANY signal parked at a window/DC boundary for "asymmetry" that was
+    // actually an observation gap. Valley already treats an unavailable flank
+    // as margin 0 (no veto) — see its comment at Step 9.
+    // Stack: 2 bytes (bools, typically register-allocated). Flash: ~24 bytes.
+    const bool left_clipped =
+        (left <= edge_skip)
+        || (has_dc_gap && peak_idx >= FFT_DC_SPIKE_END && left == FFT_DC_SPIKE_END);
+    const bool right_clipped =
+        (right >= upper_limit - 1)
+        || (has_dc_gap && peak_idx < FFT_DC_SPIKE_START && right == FFT_DC_SPIKE_START - 1);
+
     // Step 5: Minimum width
     if (signal_width < config_.spectrum_min_width) return false;
 
@@ -2547,14 +2540,18 @@ bool DroneScanner::apply_shape_filters(
 
         // Step 6b: EMISSION EXTENT (the real MaxW semantics).
         // signal_width (Step 4) is the FRAGMENT above the peak-relative /3
-        // threshold; emission_extent() is the WHOLE emission the fragment
-        // belongs to, measured at the HALF-POWER level (peak − 6 dB, floored
-        // at gate/3): shallow dips no longer split the emission; only dips
-        // deeper than −6 dB do (legit video+audio nulls still split). The
-        // −6 dB band is amplitude-stable in MHz, so MaxW maps to real
-        // bandwidth: analog FM video (8-18 MHz) measures 100-140 bins and
-        // passes MaxW=200 at ANY range, while WiFi rejection shifts to the
-        // sharpness gate (flat OFDM tops ≈ 100-115 < 120) + valley depth.
+        // threshold; emission_extent() measures the WHOLE emission the
+        // fragment belongs to: the walk runs at the QUARTER-POWER level
+        // (noise + max(margin/4, gate/3)) so shallow dips the fragment stopped
+        // at now bridge (audit fix D2 — with the old half-power anchor the
+        // extent was a strict subset of the fragment and this check could
+        // never fire after Step 6), and the HALF-POWER trim removes noise-
+        // shelf shoulders, so for smooth skirts the extent still ends at the
+        // -6 dB point: MaxW keeps mapping to real bandwidth — analog FM video
+        // (8-18 MHz) measures ~100-140 bins and passes MaxW=200 at ANY range,
+        // while WiFi rejection shifts to the sharpness gate (flat OFDM tops
+        // ≈ 100-115 < 120) + valley depth. Interior dips deeper than
+        // quarter-power still split (legit video+audio nulls).
         const SignalExtent emission = emission_extent(
             [data](size_t i) noexcept { return data[i]; },
             peak_idx, data_size, noise_floor, peak_margin, edge_skip, has_dc_gap);
@@ -2562,24 +2559,38 @@ bool DroneScanner::apply_shape_filters(
 
         // Step 6c: EDGE-CLIP GUARD (sweep-only; reject_edge_clipped=true).
         // BOTH-EDGES RULE (FPV-relaxed): an emission is a clipped fragment
-        // ONLY when it touches BOTH window boundaries while both edge bins
-        // are still above the half-power continuation level — i.e. it spans
-        // the ENTIRE usable slice window (>= ~17.8 MHz), which no FPV
-        // channel does (analog video at −6 dB: 8-14 MHz) but WiFi/BT-wide
-        // OFDM (20-40+ MHz) does at EVERY sweep position.
+        // ONLY when it spans the ENTIRE usable slice window (>= ~17.8 MHz
+        // wall-to-wall at the half-power level), which no FPV channel does
+        // (analog video at −6 dB: 8-14 MHz) but WiFi/BT-wide OFDM (20-40+
+        // MHz) does at EVERY sweep position.
+        // FIX (audit D1 — WAS DEAD CODE): the Step-4/emission walks are
+        // DC-gap bounded (has_dc_gap=true), so a single extent can touch at
+        // most ONE window wall (left sideband caps at bin 119, right starts
+        // at 136) — the old `clip_left && clip_right` on one extent was
+        // structurally false for EVERY peak and rejected nothing while the
+        // docs called this "the primary sweep WiFi gate". The rule now
+        // BRIDGES the DC gap: the emission must reach its FAR window wall at
+        // half power, its DC-adjacent bin must hold half power, the opposite
+        // DC-adjacent bin must hold half power, and the whole opposite
+        // sideband must hold half power up to its own wall — one continuous
+        // wall-to-wall emission across the window.
         // Why not single-edge: the retune grid (f_min + k*step) is FIXED
         // across passes, so a fat FPV peak (~10-15 MHz) sits at a fixed
         // phase inside the slice — if that phase puts one skirt on the
         // boundary, the old single-edge rule rejected it on EVERY pass
         // (the "wide FPV sails past the scanner almost always" failure).
-        // The same peak now passes (one edge only) and is rejected only if
-        // it genuinely continues out of BOTH sides of the window.
-        // clip_level mirrors emission_extent()'s cont_level formula exactly
-        // (noise + max(peak_margin/2, gate/3)) so "extent touched the walk
-        // boundary" and "edge bin still above clip_level" agree by
-        // construction. DB scan passes false: VTX drift may sit at the DB
-        // window edge BY DESIGN and must not be rejected.
-        // Stack: 8 bytes. Flash: ~48 bytes. Zero loops, zero divisions.
+        // One-edge touches never satisfy the bridge (the opposite sideband is
+        // not full) → the FPV relaxation survives; two adjacent emitters
+        // filling the window wall-to-wall are indistinguishable from one
+        // 17.8 MHz emission across the DC hole and are rejected as such.
+        // clip_level = half-power (peak − 6 dB floored at gate/3), as
+        // documented — it is >= emission_extent()'s quarter-power walk level,
+        // so wall tests are strictly stronger than the walk that found the
+        // boundary. DB scan passes false: VTX drift may sit at the DB window
+        // edge BY DESIGN and must not be rejected.
+        // Stack: ~20 bytes (levels, flags, counters). Flash: ~200 bytes.
+        // Worst case ~228 byte-compares, only when the emission already
+        // touches its far wall (rare) — no division, no float.
         if (reject_edge_clipped) {
             const uint8_t gate_6c = shape_gate_margin();
             const uint8_t half_power_6c = static_cast<uint8_t>(peak_margin / 2);
@@ -2589,12 +2600,53 @@ bool DroneScanner::apply_shape_filters(
                 (half_power_6c > gate_floor_6c) ? half_power_6c : gate_floor_6c;
             const uint16_t clip_level =
                 static_cast<uint16_t>(noise_floor) + clip_elevation;
-            const bool clip_left =
-                (emission.left <= edge_skip) && (data[edge_skip] >= clip_level);
-            const bool clip_right =
-                (emission.right >= upper_limit - 1) &&
-                (data[upper_limit - 1] >= clip_level);
-            if (clip_left && clip_right) {
+
+            bool spans_window = false;
+            if (!has_dc_gap) {
+                // Generic (DC-free) buffer: ONE walk can touch both walls —
+                // original both-edges semantics apply directly.
+                spans_window = (emission.left <= edge_skip)
+                    && (emission.right >= upper_limit - 1)
+                    && (data[edge_skip] >= clip_level)
+                    && (data[upper_limit - 1] >= clip_level);
+            } else if (peak_idx < FFT_DC_SPIKE_START) {
+                // Peak in the LEFT sideband [edge_skip..119]. Far wall = left
+                // window edge; DC crossing = emission reached bin 119 at
+                // continuation level (re-tested here at half power), and then
+                // the whole right sideband must hold half power to its wall.
+                // PATCH 2 (audit D1 follow-up): the O(width) sideband scan is
+                // now gated on BOTH the near (DC) and the FAR wall —
+                // spans_window requires wall_left anyway, so evaluating it
+                // first is behavior-identical (spans_window = wall_left &&
+                // wall_right unchanged) and makes the header comment ("~228
+                // byte-compares only when the emission already touches its far
+                // wall") literally true: emissions that reach the DC bridge
+                // but leave through ONE wall never run the scan.
+                // Stack: ~0 bytes (reuses existing locals).
+                const bool wall_left = (emission.left <= edge_skip)
+                    && (data[edge_skip] >= clip_level);
+                const bool dc_bridge = (emission.right >= FFT_DC_SPIKE_START - 1)
+                    && (data[FFT_DC_SPIKE_START - 1] >= clip_level);
+                bool wall_right = dc_bridge && wall_left;
+                for (size_t i = FFT_DC_SPIKE_END; wall_right && i < upper_limit; ++i) {
+                    if (data[i] < clip_level) wall_right = false;
+                }
+                spans_window = wall_left && wall_right;
+            } else {
+                // Peak in the RIGHT sideband [136..upper-1]: mirrored.
+                const bool wall_right = (emission.right >= upper_limit - 1)
+                    && (data[upper_limit - 1] >= clip_level);
+                const bool dc_bridge = (emission.left <= FFT_DC_SPIKE_END)
+                    && (data[FFT_DC_SPIKE_END] >= clip_level);
+                bool wall_left = dc_bridge && wall_right;
+                for (size_t i = FFT_DC_SPIKE_START - 1; wall_left && i >= edge_skip;) {
+                    if (data[i] < clip_level) wall_left = false;
+                    else if (i == edge_skip) break;
+                    else --i;
+                }
+                spans_window = wall_right && wall_left;
+            }
+            if (spans_window) {
                 return false;  // spans the whole window — wider than any FPV
             }
         }
@@ -2609,6 +2661,12 @@ bool DroneScanner::apply_shape_filters(
     // peak/avg ratio becomes unreliable (same rationale as valley/flatness).
     // NOTE: the field floor is 50 (OFF sentinel), so `> 50` here means
     // "user actually set a sharpness filter". 50 itself disables.
+    // MATH DEAD-BAND (audit D5, documented in constants.hpp): avg_margin is
+    // computed over [left..right] which INCLUDES the peak bin, so
+    // avg_margin <= peak_margin and sharpness >= 100 for EVERY frame —
+    // thresholds 51..100 can never reject anything (100 is the documented
+    // no-op default); effective filtering starts at 101. No comparison
+    // change can fix this (the peak is the range maximum by construction).
     int32_t avg_margin = 0;
     if (config_.spectrum_peak_sharpness > 50 && !config_.sensitive_mode) {
         int32_t margin_sum = 0;
@@ -2737,6 +2795,13 @@ bool DroneScanner::apply_shape_filters(
         }
 
         if (!has_secondary_peak) {
+            // Boundary flanks (audit fix D8): a flank stopped by the window
+            // edge or the DC wall is an OBSERVATION GAP, not a measurement —
+            // the side contributes margin 0 (no veto) and is never read from
+            // rolloff/DC bins. Valley only REJECTS elevated flanks, so an
+            // unmeasurable side can never cause a false reject; both sides
+            // unmeasurable = filter has no evidence (wideband spanning the
+            // window is owned by Step 6c/MaxW, not by valley).
             uint8_t left_valley_margin = 0;
             uint8_t right_valley_margin = 0;
 
@@ -2804,10 +2869,20 @@ bool DroneScanner::apply_shape_filters(
             const uint8_t high_power_threshold = raw_peak * 9 / 10;
             size_t high_power_count = 0;
 
-            for (size_t i = peak_idx; i > left && i > edge_skip; --i) {
-                if (has_dc_gap && i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-                if (data[i] >= high_power_threshold) ++high_power_count;
-                else break;
+            // FIX (audit D7 — off-by-one): the old left loop ran (left, peak]:
+            // bin `left` was never counted, and when peak_idx == left the loop
+            // body never executed at all, so the peak itself was skipped too
+            // (the right loop starts at peak+1). flatness was systematically
+            // UNDER-measured (up to 1/width — 20% at width 5), making this
+            // filter softer than configured. Count [left..peak] inclusive on
+            // the left and [peak+1..right] on the right: together exactly
+            // [left..right], mirroring the denominator.
+            for (size_t i = peak_idx;; --i) {
+                if (!(has_dc_gap && i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END)) {
+                    if (data[i] >= high_power_threshold) ++high_power_count;
+                    else break;
+                }
+                if (i == left) break;
             }
             for (size_t i = peak_idx + 1; i <= right && i < upper_limit; ++i) {
                 if (has_dc_gap && i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
@@ -2825,7 +2900,14 @@ bool DroneScanner::apply_shape_filters(
     // Step 11: Symmetry (V-shape must have similar left/right width)
     // Signal is real regardless of asymmetry at strong levels.
     // Sensitive mode: skip symmetry — asymmetric shapes are common in weak/multipath signals.
-    if (config_.spectrum_symmetry > 0 && signal_width > 1 && !very_strong && !config_.sensitive_mode) {
+    // Boundary skip (audit fix D8): a flank stopped by the window edge or the
+    // DC wall used to be counted as width 0 — sym_pct collapsed to 0% and ANY
+    // signal parked at a boundary (VTX drift, unlucky slice phase) was
+    // rejected for "asymmetry" that was actually a measurement artifact.
+    // No boundary → no verdict: BOTH flanks must be threshold-measured for
+    // symmetry to speak (left_clipped/right_clipped from the Step 4 walk).
+    if (config_.spectrum_symmetry > 0 && signal_width > 1 && !very_strong
+        && !config_.sensitive_mode && !left_clipped && !right_clipped) {
         const size_t left_width = peak_idx - left;
         const size_t right_width = right - peak_idx;
         const size_t max_side = (left_width > right_width) ? left_width : right_width;
@@ -3288,7 +3370,10 @@ void DroneScanner::process_spectrum_sweep(
         );
     } else {
         // Fixed-threshold: collect all bins above noise_floor + margin,
-        // sort by power descending, take top N.
+        // keep the strongest MAX_SWEEP_PEAKS*2 (top-K — audit fix D4: the old
+        // `cand_count < CAP` truncation kept the FIRST 16 bins by ascending
+        // index, so a busy left sideband with 16+ passing bins starved the
+        // right sideband entirely), sort by power descending, take top N.
         struct SimplePeak { size_t bin; uint8_t power; };
         SimplePeak candidates[MAX_SWEEP_PEAKS * 2]{};
         size_t cand_count = 0;
@@ -3296,15 +3381,15 @@ void DroneScanner::process_spectrum_sweep(
         for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_DC_SPIKE_START; ++i) {
             const int32_t bin_val = spectrum.db[i];
             const int32_t margin = bin_val - static_cast<int32_t>(noise_floor);
-            if (margin >= static_cast<int32_t>(cfg_margin) && cand_count < MAX_SWEEP_PEAKS * 2) {
-                candidates[cand_count++] = {i, spectrum.db[i]};
+            if (margin >= static_cast<int32_t>(cfg_margin)) {
+                keep_strongest(candidates, cand_count, SimplePeak{i, spectrum.db[i]});
             }
         }
         for (size_t i = FFT_DC_SPIKE_END; i < (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW); ++i) {
             const int32_t bin_val = spectrum.db[i];
             const int32_t margin = bin_val - static_cast<int32_t>(noise_floor);
-            if (margin >= static_cast<int32_t>(cfg_margin) && cand_count < MAX_SWEEP_PEAKS * 2) {
-                candidates[cand_count++] = {i, spectrum.db[i]};
+            if (margin >= static_cast<int32_t>(cfg_margin)) {
+                keep_strongest(candidates, cand_count, SimplePeak{i, spectrum.db[i]});
             }
         }
 
@@ -3432,8 +3517,10 @@ void DroneScanner::process_spectrum_sweep(
         // reject_edge_clipped=true: sweep-only Step 6c, BOTH-EDGES rule —
         // only an emission spanning the ENTIRE usable window (WiFi 20-40+
         // MHz at every sweep position) is a clipped fragment; a single-edge
-        // touch (fat FPV at an unlucky fixed slice phase) passes. DB scan
-        // keeps false (VTX drift to the DB window edge is by design).
+        // touch (fat FPV at an unlucky fixed slice phase) passes. The rule
+        // bridges the DC gap wall-to-wall (audit fix D1 — a DC-bounded single
+        // extent could never touch both walls). DB scan keeps false (VTX
+        // drift to the DB window edge is by design).
         int32_t shape_rssi = RSSI_MIN_DBM;
         if (bypass_shape) {
             // RSSI-only path: same dBm conversion as the shape path's RSSI

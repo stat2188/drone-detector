@@ -692,7 +692,7 @@ constexpr size_t FFT_DC_SPIKE_END = 136;
 
 /**
  * @brief Edge skip for filter rolloff (standard: skip bins 0-9 and 246-255)
- * @note Used by extract_rssi() and analyze_spectrum_shape()
+ * @note Used by extract_rssi() and analyze_spectrum_shape_multi()
  */
 constexpr size_t FFT_EDGE_SKIP = 10;
 
@@ -999,12 +999,14 @@ constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 2;
  * @note 255 (PERMISSIVE DEFAULT — "pass narrow AND wide"): no width cap.
  *       In the current raw-FFT chain (has_dc_gap=true everywhere) the Step-4
  *       walk and emission_extent() are DC-gap bounded — the measurable
- *       extent can NEVER exceed 114 bins (bins 6..119 / 136..249) — so any
- *       value >= 114 is behaviorally identical; 255 makes "no cap" explicit
- *       instead of implying the old 15.6 MHz ceiling. Wideband (WiFi
- *       20-40 MHz) rejection in sweep is owned by the Step 6c BOTH-EDGES
- *       rule (an emission spanning the ENTIRE usable window is wider than
- *       any FPV channel); DB-scan flat-top rejection is owned by the
+ *       extent can NEVER exceed 110 bins in DB (10..119 / 136..245) or 114
+ *       in sweep (6..119 / 136..249) — so any value >= 114 is
+ *       behaviorally identical; 255 makes "no cap" explicit instead of
+ *       implying the old 15.6 MHz ceiling. Wideband (WiFi 20-40 MHz)
+ *       rejection in sweep is owned by the Step 6c BOTH-EDGES rule (an
+ *       emission holding half power wall-to-wall across BOTH sidebands —
+ *       the rule bridges the DC gap, see scanner.cpp Step 6c — is wider
+ *       than any FPV channel); DB-scan flat-top rejection is owned by the
  *       tracking post-filters (neighbor margin, Mahalanobis, RSSI variance)
  *       and by Flat when the user re-enables it.
  * @note 200 bins ≈ 15.6 MHz (previous default) — inert under the DC-gap cap
@@ -1021,6 +1023,11 @@ constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 255;
  * @note sharpness = (peak_margin * 100) / avg_margin
  * @note Inverted-V peaks have sharpness > 200; flat U/I shapes have sharpness ~ 100
  * @note 50 = no sharpness filtering (accept all shapes)
+ * @note 51..100 is a MATHEMATICAL NO-OP dead-band (audit D5): avg_margin is
+ *       measured over [left..right] which INCLUDES the peak bin, so
+ *       avg_margin <= peak_margin and sharpness >= 100 on EVERY frame —
+ *       only thresholds >= 101 can ever reject. 50, 75 and 100 behave
+ *       identically; the effective filtering range is 101..250.
  * @note 100 (PERMISSIVE DEFAULT — "detect what fits the bands"): analog FM
  *       video is a quasi-flat block with a dominant carrier peak, measured
  *       sharpness ≈ 100-130 at medium range (the width walk runs at

@@ -790,12 +790,15 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
 
   Step 6: Maximum Width
     signal_width (Step-4 fragment) AND the WHOLE emission extent (Step 6b,
-    hysteresis segmentation at the HALF-POWER level: peak − 6 dB, floored at
-    noise + margin/3) must both be below spectrum_max_width
+    hysteresis walk at the QUARTER-POWER level max(margin/4, gate/3) — kept
+    BELOW the fragment bar (margin/3) so the extent can genuinely exceed the
+    fragment — with a HALF-POWER trim of outer noise-shelf shoulders) must
+    both be below spectrum_max_width
     (default 255 bins = NO CAP — «проходят и узкие, и широкие»)
     → NOTE: in the raw-FFT chain the walk is DC-gap bounded, so the extent
-      can never exceed 114 bins — any value >= 114 is behaviorally
-      identical. Wideband (WiFi) rejection is owned by Step 6c (sweep)
+      can never exceed 110 bins in DB (10..119 / 136..245) or 114 in sweep
+      (6..119 / 136..249) — any value >= 114 is behaviorally identical in
+      BOTH modes. Wideband (WiFi) rejection is owned by Step 6c (sweep)
       instead of MaxW.
     CAUTION: values below ~100 bins (7.8 MHz) reject analog FPV video
     carriers (8-18 MHz) — the emission extent measures the FULL video band,
@@ -804,8 +807,19 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
   Step 6c: Edge-Clip Guard (SWEEP only, always ON — no setting)
     ПРАВИЛО «ОБА КРАЯ»: extent отклоняется ТОЛЬКО если он упёрся в ОБА края
     окна слайса, и оба краевых бина ещё выше порога «половина мощности»
-    (peak − 6 dB, floored at noise + margin/3) — излучение перекрывает ВСЁ
+    (peak − 6 dB, floored at noise + gate/3 = shape_gate_margin()/3 — как в emission_extent()) — излучение перекрывает ВСЁ
     usable-окно (≥ ~17.8 МГц) и продолжается за ОБЕ стороны → REJECT.
+    → FIX (мост через DC, аудит-D1): ходы Step 4/extent ограничены DC-гэпом,
+      поэтому ОДИН extent физически не может коснуться ОБОИХ краёв окна
+      (левый полуполос упирается в бин 119, правый начинается с 136) —
+      старое правило `clip_left && clip_right` на одном extent было
+      МЁРТВЫМ КОДОМ и не отклоняло ни одного сигнала, хотя документация
+      называла его «главным WiFi-gate свипа». Проверка теперь сквозная:
+      emission дошёл до ДАЛЬНЕГО края своего полуполоса + его DC-пограничный
+      бин (119 или 136) держит half-power + ВЕСЬ противоположный полуполос
+      идёт на half-power до СВОЕГО края — одна непрерывная «стена-в-стену»
+      эмиссия через DC-дыру. Одиночное касание края (жирный FPV) мост не
+      проходит → ПРОХОДИТ (FPV-релакс сохранён).
     → WiFi (20-40+ МГц) перекрывает usable-окно в КАЖДОМ положении свипа
       (касается обоих краёв всегда) — режется этим guard'ом всегда.
     → ЖИРНЫЙ аналоговый FPV (8-15 МГц, слегка притуплённый верх) касается

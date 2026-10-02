@@ -91,9 +91,26 @@ public:
         for (size_t i = start; i < end; ++i) {
             if (i >= dc_start && i < dc_end) continue;
             const int32_t diff_x8 = static_cast<int32_t>(spectrum[i] * 8) - static_cast<int32_t>(mean_x8);
-            const int32_t diff = diff_x8 / 8;  // Back to original scale, ≈ -64..+64
-            const int32_t diff2 = diff * diff;  // ≈ 4096
-            const int32_t diff4 = diff2 * diff2; // Max ≈ 16M (fits int32)
+            // AUDIT FIX: implement the DOCUMENTED (power - mean) / 4 scaling —
+            // the old `diff_x8 / 8` returned the UNSCALED (power - mean) in
+            // [-255, +255] despite the design notes above (/4 -> ±64).
+            // Consequences on strong-signal frames (before this fix):
+            //   - diff2 * diff2 was int32*int32: signed OVERFLOW (UB) at
+            //     |diff| >= 216 (e.g. peak 255 with mean <= 39 — a common
+            //     spiky spectrum);
+            //   - kurt_sum (uint32) wrapped at Σ diff^4 > 4.29e9;
+            //   - skew_sum (int32) wrapped at Σ diff^3 > 2.1e9;
+            // producing garbage Step-12 verdicts whenever kurtosis_enabled.
+            // Overflow budget at /4: |diff| <= 63 (diff_x8 <= 2040),
+            // diff4 <= 15.75e6 (int32-safe), Σ diff4 <= 228 * 15.75e6 =
+            // 3.59e9 < UINT32_MAX, Σ |diff^3| <= 228 * 250047 = 5.7e7
+            // < INT32_MAX, Σ diff2 <= 228 * 3969 = 905k.
+            // Kurtosis/skewness are scale-invariant (c^4/c^4, c^3/c^3), so
+            // the kurtosis_min_x10 threshold semantics are UNCHANGED.
+            // Stack: 0. SRAM: 0. Flash: 0 (same instruction count).
+            const int32_t diff = diff_x8 / 32;  // (power - mean) / 4, ≈ -63..+63
+            const int32_t diff2 = diff * diff;  // <= 3969
+            const int32_t diff4 = diff2 * diff2; // <= 15.75e6, fits int32
 
             var_sum += static_cast<uint32_t>(diff2);
             skew_sum += diff2 * diff;  // Signed accumulation — correct for negative skew
