@@ -2694,9 +2694,11 @@ bool DroneScanner::apply_shape_filters(
     }
 
     // Step 9: Valley depth (deep valleys flanking peak = V-shape)
-    // Skip for dual-peak signals (FPV video + audio subcarrier): the valley
-    // between two legitimate peaks is NOT a rejection criterion. Detect by
-    // checking if any bin within the signal width exceeds half peak power.
+    // Skip for dual-/multi-peak signals (FPV video + audio subcarrier): the
+    // valley between two legitimate peaks is NOT a rejection criterion.
+    // Detection counts ridges above the half-peak level (FIX B5 below) — the
+    // legacy "any bin above half-peak" test was satisfied by a WiFi flat-top
+    // by construction and was replaced.
     // Very strong signal bypass: flanking bins ARE the signal at close range.
     // Sensitive mode bypass: valley depth is unreliable for weak signals.
     if (config_.spectrum_valley_depth > 0 && !very_strong && !config_.sensitive_mode) {
@@ -2716,14 +2718,28 @@ bool DroneScanner::apply_shape_filters(
             static_cast<uint16_t>(peak_margin / 2);
         const uint8_t secondary_threshold =
             (secondary_sum > 255) ? 255 : static_cast<uint8_t>(secondary_sum);
-        // Integer-only dip floor: margin/4, but never below 2 units — a 1-unit
-        // dip at margin=5 sits inside the ~2-unit FFT noise sigma and would let
-        // a rippled flat-top claim "dual peak". (margin >= 5 here via Step 3,
-        // so no division by zero.) Edge-transition bins (level/3..level/2) are
-        // shallower than margin/6 < required_dip, so only a true inter-ridge
-        // null can satisfy this.
+        // Integer-only dip floor — REACHABILITY FIX (audit D-1): every bin
+        // inside [left..right] is >= noise_floor + peak_margin/3 by the Step-4
+        // walk invariant, so a dip measured from secondary_threshold
+        // (= noise + peak_margin/2) can never exceed
+        // floor(m/2) - floor(m/3) ~= m/6. The old margin/4 floor was therefore
+        // UNSATISFIABLE for peak_margin >= 15 — the dual-peak skip was inert in
+        // every normal configuration, including the margin >= 213 regime where
+        // the README recommends arming Vly (70-80). margin/6 is the MAXIMALLY
+        // STRICT reachable threshold: it fires only when the inter-lobe null
+        // bottoms out at the walk bar (within 0..2 units of quantization slack,
+        // by m mod 6) — the deepest two-lobe evidence the fragment can carry —
+        // which minimizes false "dual peak" claims by rippled WiFi tops.
+        // Floor 2 (~1x the ~2-unit FFT noise sigma): below margin ~12 the
+        // criterion stays effectively disabled, so noise dither cannot claim
+        // dual-peak at ultra-low SNR. Reachable for every margin >= 10 (and
+        // 8); dead corners {5,6,7,9} cap the dip at 1 unit = noise anyway.
+        // (margin >= 5 here via Step 3, so no division by zero.) B5 guards
+        // unchanged: flat-top => extra_runs == 0, ripple-top =>
+        // extra_runs >= 2 — neither reaches this check. Default Vly = 0 =>
+        // the block never executes (byte-identical at defaults).
         const uint8_t required_dip =
-            (peak_margin / 4u >= 2u) ? static_cast<uint8_t>(peak_margin / 4u) : 2u;
+            (peak_margin / 6u >= 2u) ? static_cast<uint8_t>(peak_margin / 6u) : 2u;
         {
             // FIX MEDIUM-3: size_t counters — [left,right] spans up to ~236
             // bins; uint8_t counters were one refactor away from wraparound.
@@ -2775,7 +2791,9 @@ bool DroneScanner::apply_shape_filters(
                     }
                     // Valley floor: deepest below-threshold bin once ridges
                     // exist. Leading edge-transition bins are excluded by
-                    // ridge_seen; trailing ones are shallower than margin/6.
+                    // ridge_seen; trailing ones count only when they bottom out
+                    // near the walk bar (dip >= required_dip — the reachable
+                    // margin/6 criterion documented above).
                     if (ridge_seen) {
                         const uint8_t dip = static_cast<uint8_t>(secondary_threshold - data[i]);
                         if (dip > deepest_dip) deepest_dip = dip;

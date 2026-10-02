@@ -861,6 +861,15 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
       at margin >= 3*(D+1): 70-80 = overload guard only (>= 213) that
       also cuts saturated close-range FPV; <= 55 cuts mid-range FPV.
       Ordinary WiFi never reaches 213 — valley cannot fight it.
+    → Dual-peak skip (runs INSIDE the armed block): valley abstains for a
+      dual-lobe emission — the ridge scan over [left..right] counts runs above
+      noise+margin/2; exactly ONE extra ridge <= 6 bins (DUAL_PEAK_MAX_RUN_BINS)
+      with an inter-lobe dip >= max(margin/6, 2) skips the flank veto. The dip
+      criterion is the MAXIMALLY STRICT reachable threshold: the Step-4 walk
+      invariant caps any in-fragment dip at floor(m/2)-floor(m/3) ~= margin/6
+      (the old margin/4 was inert for margin >= 15 — audit D-1 fix). Flat-top
+      (0 extra runs) and ripple-top (2+ runs) never skip; SPLIT emissions
+      (null below the bar) are invisible to the scan — their flank IS the null.
 
   Step 10: Flatness
     flatness_pct = (high_power_bins * 100) / signal_width
