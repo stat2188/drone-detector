@@ -840,8 +840,16 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         // wideband signals may appear narrower (false accept). Compute
         // independently from the current frame's raw FFT data to guarantee
         // a correct noise floor regardless of shape analysis outcome.
-        // Stack: 256 bytes (usable bins buffer). Well within 512B limit.
-        uint8_t tbd_usable[FFT_BIN_COUNT];
+        // Stack: 0 bytes — REUSES spectrum_sort_buf_ (256 B class member)
+        // instead of a 256-byte local (the largest stack frame in the DB
+        // path). The shape chain that also uses this scratch (Step 1
+        // quickselect + Step 12 kurtosis) has fully completed before this
+        // block runs — sequential, same scanner thread, no overlap.
+        // @pre This TBD block must never interleave with
+        //      analyze_spectrum_shape_multi()/apply_shape_filters() (true by
+        //      construction: it runs strictly AFTER them in
+        //      process_spectrum_message).
+        uint8_t* tbd_usable = spectrum_sort_buf_;
         size_t tbd_usable_count = 0;
         for (size_t i = FFT_EDGE_SKIP; i < FFT_DC_SPIKE_START; ++i) {
             tbd_usable[tbd_usable_count++] = spectrum.db[i];
@@ -2235,8 +2243,9 @@ bool DroneScanner::analyze_spectrum_shape_multi(
         // is_crest_bin() — a plateau/slope now occupies ONE top-K slot
         // instead of K, so a weaker distinct emitter can no longer be
         // evicted before sort + NMS run (uniform gate ⇒ lossless: the run's
-        // apex always enters top-K). Stack: candidates[12]×8 B = 96 B
-        // (ARM32), same array size as before — well within the 512 B budget.
+        // apex always enters top-K). Stack: candidates[12] × sizeof(SimplePeak)
+        // = 12 × 12 B = 144 B on ARM32 (size_t 4 + uint8 + 3 pad) — well
+        // within the 512 B frame budget.
         struct SimplePeak { size_t bin; uint8_t power; };
         SimplePeak candidates[MAX_SHAPE_DETECTIONS * 2];
         size_t cand_count = 0;
@@ -2415,6 +2424,18 @@ bool DroneScanner::apply_shape_filters(
     // edge_skip). Legit constants: FFT_EDGE_SKIP=10, FFT_EDGE_SKIP_NARROW=6 —
     // all far below FFT_BIN_COUNT/2=128 and COMPOSITE_SIZE/2=120.
     if (peak_idx >= data_size || edge_skip >= data_size / 2) return false;
+
+    // FAIL-CLOSED GUARD (choke point): a DC-spike peak carries ADC offset
+    // energy, not signal. Every current caller already excludes DC bins
+    // (CFARDetector::find_peaks hard-codes the skip; both fixed-threshold
+    // loops skip it; process_spectrum_sweep skips defensively) — enforcing
+    // it HERE gives ONE defense instead of per-caller discipline. Without
+    // it, the Step-4 walk from a DC peak degenerates (both flanks walled by
+    // the gap → width 1) and Steps 7-11 would measure "shape" inside the
+    // DC hole. Stack: 0 bytes. Flash: ~16 bytes.
+    if (has_dc_gap && peak_idx >= FFT_DC_SPIKE_START && peak_idx < FFT_DC_SPIKE_END) {
+        return false;
+    }
 
     // Step 6b/6c + extreme-bypass accumulate into this LOCAL extent; it is
     // published to out_extent ONLY at the success exit (audit LOW-4 / F3),
@@ -2674,7 +2695,20 @@ bool DroneScanner::apply_shape_filters(
         // F3: staged for publication at the success exit — Steps 7-12 below
         // may still reject, and a rejected verdict must not leave a written
         // extent behind (contract: out_extent is valid iff return == true).
-        final_extent = emission;
+        // UNION (dedup fix): publish fragment ∪ emission, NOT the trimmed
+        // emission alone. The half-power trim can cut INSIDE the Step-4
+        // fragment — start_level = noise + max(gate, margin/2) sits ABOVE
+        // the fragment bar (noise + margin/3) whenever margin > 2·gate — so
+        // a shoulder crest that Step 4 measured as part of THIS emission
+        // could fall outside the published extent, escape dedup, and spawn
+        // a duplicate detection of the same emitter. The union is a
+        // superset of BOTH width measurements (each already checked ≤
+        // MaxW by Steps 6/6b before this line) and restores the dedup
+        // contract: "bin inside extent ⇒ same emission".
+        // Stack: +8 bytes (two register min/max). Flash: ~32 bytes.
+        final_extent = SignalExtent{
+            (emission.left < left) ? emission.left : left,
+            (emission.right > right) ? emission.right : right};
     }
 
     // Step 7: Peak sharpness (enforce inverted-V shape)
@@ -2982,7 +3016,8 @@ bool DroneScanner::apply_shape_filters(
     // Very strong bypass: kurtosis is unreliable when signal fills >50% of bins.
     // Sensitive mode: skip kurtosis — unreliable for weak signals with low SNR.
     if (config_.kurtosis_enabled && peak_margin >= FLATNESS_MIN_PEAK_MARGIN && !very_strong && !config_.sensitive_mode) {
-        const size_t data_size = has_dc_gap ? FFT_BIN_COUNT : COMPOSITE_SIZE;
+        // (no local data_size — the function-scope data_size above has the
+        // identical value; the old redeclaration here only shadowed it.)
         const auto kurt_result = SpectralKurtosis::compute(
             data, edge_skip, data_size - edge_skip,
             spectrum_sort_buf_, SPECTRUM_SORT_BUF_SIZE,

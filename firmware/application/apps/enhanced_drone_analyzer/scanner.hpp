@@ -1998,8 +1998,10 @@ private:
      * @param out_rssi Output: RSSI in dBm if signal detected
      * @param edge_skip Number of edge bins to skip (FFT_EDGE_SKIP=10 for normal, FFT_EDGE_SKIP_NARROW=6 for sweep)
      * @param out_extent Optional. When non-null and the call returns true,
-     *        receives the SignalExtent of the whole emission around the peak
-     *        (Step 6b). Callers use it for emission dedup (sweep mode).
+     *        receives the dedup extent: the UNION of the Step-4 fragment
+     *        and the Step-6b emission extent (⊇ both, so every bin Step 4
+     *        measured for this emission is covered). Callers use it for
+     *        emission dedup (sweep + DB multi-peak).
      * @param reject_edge_clipped When true, Step 6c applies the BOTH-EDGES
      *        rule: an emission is rejected only when it spans the ENTIRE
      *        usable window (>= ~17.8 MHz) — walls on both window boundaries
@@ -2176,10 +2178,13 @@ private:
      *                     buffer with or without a DC region.
      * @param total_gain   Current hardware gain for RSSI conversion
      * @param out_extent   Optional. When non-null and the function returns true,
-     *                     receives the SignalExtent of the WHOLE emission around
-     *                     the peak (Step 6b). Callers use it for emission dedup:
-     *                     multiple crests of one wideband emitter must yield ONE
-     *                     detection, not N. When the extreme-signal bypass skips
+     *                     receives the dedup extent: the UNION of the Step-4
+     *                     fragment and the Step-6b emission extent (⊇ both —
+     *                     the half-power trim can otherwise cut inside the
+     *                     fragment and let a shoulder crest escape dedup).
+     *                     Callers use it for emission dedup: multiple crests
+     *                     of one wideband emitter must yield ONE detection,
+     *                     not N. When the extreme-signal bypass skips
      *                     Step 6/6b, a degenerate peak-only extent is written
      *                     instead (dedup must not over-suppress bypassed signals).
      * @return true if signal passes all shape filters
@@ -2481,7 +2486,9 @@ private:
 
     // Sort buffer (mutable: used as scratch pad in const methods)
     // Used by analyze_spectrum_shape_multi() for the noise floor and
-    // apply_shape_filters() Step 12 for kurtosis.
+    // apply_shape_filters() Step 12 for kurtosis — plus the DB TBD block's
+    // noise-floor computation (process_spectrum_message), strictly AFTER
+    // the shape chain has finished reading it (same thread, sequential).
     static constexpr size_t SPECTRUM_SORT_BUF_SIZE = 256;
     mutable uint8_t spectrum_sort_buf_[SPECTRUM_SORT_BUF_SIZE];
 
