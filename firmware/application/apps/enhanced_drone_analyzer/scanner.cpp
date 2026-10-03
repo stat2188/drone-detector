@@ -960,14 +960,37 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
 
         // Neighbor margin check (if enabled): center freq must dominate neighbors
         // This eliminates wideband noise false positives (WiFi, BT, microwave)
-        // SKIPPED for shape-validated detections: the shape filters already
-        // reject wideband noise, and the margin check would wrongly reject the
-        // weaker peak of a dual-carrier emitter (FPV video + audio subcarrier
-        // scanned as separate DB channels) whenever the other carrier is
-        // stronger. The check still guards RSSI-only and TBD detections.
+        // The check guards RSSI-only and TBD detections unconditionally.
+        // SKIPPED for shape-validated detections ONLY when the shape chain is
+        // effectively ARMED — then the chain owns the wideband verdict and the
+        // margin check would wrongly reject the weaker peak of a dual-carrier
+        // emitter (FPV video + audio subcarrier scanned as separate DB
+        // channels) whenever the other carrier is stronger.
+        // FIX (audit D-B — DISARMED-CHAIN GAP): at PERMISSIVE defaults
+        // (MaxW >= 114 = no measurable cap, Sharp <= 100 = math dead-band,
+        // Flat = 0) a WiFi/BT flat-top passes Steps 3-12 trivially, so the
+        // old unconditional skip left DB scan with NO wideband gate at all
+        // (Step 6c is sweep-only; Mahalanobis / RSSI-variance default OFF),
+        // while constants.hpp promises DB flat-top rejection to exactly this
+        // post-filter. When the chain is DISARMED the check now also runs for
+        // shape-validated verdicts; arming Flat/MaxW/Sharp restores the
+        // legacy skip.
+        // Stack: ~12 bytes (bools + locals, registers). SRAM: 0. Flash: ~64 B.
         const bool shape_validated = has_shape_result;
+        // Armed = a setting that can actually reject a wideband flat top:
+        //   MaxW below the DC-gap extent cap (>= 114 bins ≡ no cap — see
+        //   DEFAULT_SPECTRUM_MAX_WIDTH), sharpness above the documented
+        //   dead-band (51..100 can never reject — audit D5), or Flat ON.
+        // Valley/Symmetry are NOT wideband gates (README §14: Step 6c/MaxW/
+        //   Flat own wideband) and deliberately do not count here.
+        constexpr uint8_t MAXW_NO_CAP_BINS = 114;
+        constexpr uint8_t SHARPNESS_NO_OP_MAX = 100;
+        const bool shape_chain_armed =
+            (config_.spectrum_max_width < MAXW_NO_CAP_BINS)
+            || (config_.spectrum_peak_sharpness > SHARPNESS_NO_OP_MAX)
+            || (config_.spectrum_flatness > 0);
         // Step 13 (README §14 chain): Neighbor-margin tracking post-filter.
-        if (config_.neighbor_margin_db > 0 && !shape_validated) {
+        if (config_.neighbor_margin_db > 0 && (!shape_validated || !shape_chain_armed)) {
             neighbor_margin_checker_.add(frequency, effective_rssi);
             if (!neighbor_margin_checker_.check_margin(frequency, effective_rssi, config_.neighbor_margin_db)) {
                 // Current frequency not stronger than neighbors — wideband noise
@@ -2960,25 +2983,22 @@ bool DroneScanner::apply_shape_filters(
                 (hp_sum > 255) ? 255 : static_cast<uint8_t>(hp_sum);
             size_t high_power_count = 0;
 
-            // FIX (audit D7 — off-by-one): the old left loop ran (left, peak]:
-            // bin `left` was never counted, and when peak_idx == left the loop
-            // body never executed at all, so the peak itself was skipped too
-            // (the right loop starts at peak+1). flatness was systematically
-            // UNDER-measured (up to 1/width — 20% at width 5), making this
-            // filter softer than configured. Count [left..peak] inclusive on
-            // the left and [peak+1..right] on the right: together exactly
-            // [left..right], mirroring the denominator.
-            for (size_t i = peak_idx;; --i) {
-                if (!(has_dc_gap && i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END)) {
-                    if (data[i] >= high_power_threshold) ++high_power_count;
-                    else break;
-                }
-                if (i == left) break;
-            }
-            for (size_t i = peak_idx + 1; i <= right && i < upper_limit; ++i) {
+            // FIX (audit D7 → D-D — COUNT vs RANGE): the numerator counts
+            // EVERY bin of the measured band [left..right] at/above the 90%
+            // bar — exactly the denominator's range (README/constants contract:
+            // "share of bins WITHIN the band that carry >= 90% of the
+            // peak-above-noise"). The previous pair of loops walked outward
+            // from the peak and BROKE at the first sub-threshold bin: a dip
+            // below 90% inside the band hid every bin beyond it, so a dual-lobe
+            // flat top under-scored and escaped Flat (implementation was more
+            // permissive than documented). The left loop also historically
+            // skipped bin `left`/peak entirely (audit D7 — up to 1/width soft).
+            // DC-gap bins cannot occur inside [left..right] (the Step-4 walk
+            // stops before the gap) — the check below is defensive parity with
+            // Step 7. Stack: ~8 bytes (index + counter, registers).
+            for (size_t i = left; i <= right; ++i) {
                 if (has_dc_gap && i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
                 if (data[i] >= high_power_threshold) ++high_power_count;
-                else break;
             }
 
             if (effective_width > 0) {
@@ -3015,17 +3035,30 @@ bool DroneScanner::apply_shape_filters(
     // Only runs when explicitly enabled (opt-in, default OFF).
     // Very strong bypass: kurtosis is unreliable when signal fills >50% of bins.
     // Sensitive mode: skip kurtosis — unreliable for weak signals with low SNR.
+    // FIX (audit D-A — SEGMENT SCOPE): computed over THIS emission's Step-4
+    // fragment [left..right], NOT the whole frame. Steps 7-11 all measure the
+    // same segment; the old whole-frame range let a SECOND emitter in the same
+    // 20 MHz frame (the exact multi-peak scenario this chain exists for) change
+    // peak A's verdict — a per-peak gate fed by a cross-emission measurement.
+    // [left..right] contains no DC-gap bins (the Step-4 walk breaks before the
+    // gap), so the dc_start/dc_end parameters below are defensive parity only.
+    // MIN-SAMPLE ABSTAIN: SpectralKurtosis::compute early-outs below 4 samples
+    // with a zeroed result (kurtosis_x10 = 0) — running it on a narrow burst
+    // (MinW default 2) would REJECT on an undefined statistic. Same 4-bin floor
+    // FLATNESS_MIN_SIGNAL_WIDTH uses for the same reason. Stack: ~4 bytes
+    // (register locals). SRAM: 0 (spectrum_sort_buf_ scratch, sequential use).
     if (config_.kurtosis_enabled && peak_margin >= FLATNESS_MIN_PEAK_MARGIN && !very_strong && !config_.sensitive_mode) {
-        // (no local data_size — the function-scope data_size above has the
-        // identical value; the old redeclaration here only shadowed it.)
-        const auto kurt_result = SpectralKurtosis::compute(
-            data, edge_skip, data_size - edge_skip,
-            spectrum_sort_buf_, SPECTRUM_SORT_BUF_SIZE,
-            has_dc_gap ? FFT_DC_SPIKE_START : 0,
-            has_dc_gap ? FFT_DC_SPIKE_END : 0
-        );
-        if (kurt_result.kurtosis_x10 < config_.kurtosis_min_x10) {
-            return false;
+        constexpr uint8_t KURTOSIS_MIN_SEGMENT_BINS = 4;
+        if (signal_width >= KURTOSIS_MIN_SEGMENT_BINS) {
+            const auto kurt_result = SpectralKurtosis::compute(
+                data, left, right + 1,
+                spectrum_sort_buf_, SPECTRUM_SORT_BUF_SIZE,
+                has_dc_gap ? FFT_DC_SPIKE_START : 0,
+                has_dc_gap ? FFT_DC_SPIKE_END : 0
+            );
+            if (kurt_result.kurtosis_x10 < config_.kurtosis_min_x10) {
+                return false;
+            }
         }
     }
 
@@ -3447,11 +3480,20 @@ void DroneScanner::process_spectrum_sweep(
         // Multi-peak CFAR: finds ALL peaks passing the adaptive threshold.
         // Critical for detecting dual-peak FPV (video + audio subcarrier)
         // or multiple drones in the same 20 MHz window.
+        // FIX (audit D-C — ADAPTIVE PARITY with DB): the DB path
+        // (analyze_spectrum_shape_multi) substitutes the self-tuning
+        // AdaptiveThreshold when adaptive_cfar_enabled — sweep previously
+        // ignored it, making the file-only setting silently mode-dependent.
+        // Adaptive takes precedence (DB parity: no sensitive delta on top).
         // Sensitive mode: reduce CFAR threshold by 1.0 unit (~0.2 dB) for max sensitivity.
-        const uint8_t effective_cfar_threshold = config_.sensitive_mode
-            ? ((config_.cfar_threshold_x10 > CFAR_THRESHOLD_MIN_X10 + 10)
-                ? (config_.cfar_threshold_x10 - 10) : CFAR_THRESHOLD_MIN_X10)
-            : config_.cfar_threshold_x10;
+        uint8_t effective_cfar_threshold = config_.cfar_threshold_x10;
+        if (config_.adaptive_cfar_enabled) {
+            effective_cfar_threshold = adaptive_threshold_.get_optimal_threshold();
+        } else if (config_.sensitive_mode) {
+            effective_cfar_threshold = (config_.cfar_threshold_x10 > CFAR_THRESHOLD_MIN_X10 + 10)
+                ? static_cast<uint8_t>(config_.cfar_threshold_x10 - 10)
+                : static_cast<uint8_t>(CFAR_THRESHOLD_MIN_X10);
+        }
         peak_count = CFARDetector::find_peaks(
             spectrum.db.data(),
             FFT_BIN_COUNT,
@@ -3468,6 +3510,28 @@ void DroneScanner::process_spectrum_sweep(
             config_.os_cfar_k_percent,
             config_.vi_cfar_threshold_x10
         );
+        // Feed the adaptive loop (DB parity, audit D-C): same dBm domain as
+        // process_spectrum_message's calls; noise_floor / frame_total_gain are
+        // frame-cached above this branch. Unlike the DB path there is NO
+        // early-return on peak_count == 0 (TBD below still needs its vote),
+        // so both feed branches run here. Thread: UI drain thread — the same
+        // thread that runs process_spectrum_message; scanner thread never
+        // touches adaptive_threshold_.
+        if (config_.adaptive_cfar_enabled) {
+            const int32_t floor_dBm = spectrum_value_to_dbm(noise_floor, frame_total_gain);
+            if (peak_count > 0) {
+                adaptive_threshold_.update(
+                    true,
+                    spectrum_value_to_dbm(cfar_peaks[0].power, frame_total_gain),
+                    floor_dBm,
+                    config_.cfar_threshold_x10);
+            } else {
+                adaptive_threshold_.update(
+                    false, RSSI_MIN_DBM,
+                    floor_dBm,
+                    config_.cfar_threshold_x10);
+            }
+        }
     } else {
         // Fixed-threshold: collect all CREST bins above noise_floor + margin,
         // keep the strongest MAX_SWEEP_PEAKS*2 (top-K — audit fix D4: the old

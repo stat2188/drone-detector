@@ -894,6 +894,11 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
       [F2] Порог = noise_floor + 0.9 × peak_margin (noise-relative);
            раньше был 0.9 × raw_peak (абсолютный) — verdict «плывёл»
            с ростем gain/шумовой полки (65%→50% margin при noise 100→160).
+      [D-D] Числитель считает ВСЕ бины полосы [left..right] ≥ порога —
+           ровно диапазон знаменателя. Раньше обход от пика обрывался на
+           первом бине <90%: впадина внутри полосы прятала дальней бины,
+           двугорбый плоский верх недооценивался и уходил от Flat
+           (код был МЯГЧЕ документированного контракта).
 
       ПЛОСКИЙ ВЕРХ (WiFi/BT): мощность размазана ровно по всей полосе,
       почти все бины ≥90% пика → flatness высокий (50-80%) → REJECT.
@@ -914,12 +919,22 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
     kurtosis_x10 must exceed kurtosis_min_x10 (default 20 = 2.0)
     → Rejects Gaussian noise (kurtosis ≈ 0), accepts drone peaks (> 3)
     → Default OFF (opt-in); skipped for very-strong / Sensitive / margin < 40
+    → [D-A] Scope: computed over THIS emission's Step-4 segment [left..right],
+      NOT the whole frame — a second emitter in the same 20 MHz frame can no
+      longer flip peak A's verdict (segment contract shared with Steps 7-11).
+      Abstains (skips) when signal_width < 4 bins — the statistic is
+      undefined there (compute() would return a zeroed result).
 
   ==== Tracking-layer post-filters — run AT TRACKING TIME, i.e. only after
   ==== the in-frame verdict (shape-passed Steps 1-12 OR TBD-confirmed) ====
 
   Step 13: Neighbor Margin (DB mode only; SKIPPED for shape-validated
-           detections — guards RSSI-only and TBD paths)
+           detections ONLY WHEN THE CHAIN IS ARMED — MaxW < 114, or
+           Sharp > 100, or Flat > 0. Guards RSSI-only and TBD paths
+           unconditionally; with PERMISSIVE defaults it also guards
+           shape-validated verdicts [audit D-B]: otherwise DB scan has
+           NO wideband gate at defaults, since Step 6c is sweep-only and
+           Mahalanobis / RSSI-variance default OFF)
     center freq must exceed strongest neighbor within 10 MHz by
     neighbor_margin_db (default 2 dB)
     → Rejects wideband noise (WiFi, BT, microwave)

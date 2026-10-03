@@ -1113,6 +1113,12 @@ constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 0;
  *       formerly 90% of the ABSOLUTE raw_peak, which drifted with gain:
  *       the effective share shrank from 65% to 50% of margin as the noise
  *       floor rose from 100 to 160 units for the same shape)
+ * @note COUNT (audit fix D-D): EVERY bin of the measured band [left..right]
+ *       at/above the bar counts — the numerator mirrors the denominator's
+ *       range exactly. An earlier walk-out loop broke at the first sub-90%
+ *       bin, so a dip inside the band hid the bins beyond it (dual-lobe
+ *       flat top under-scored → escaped Flat; code was more permissive
+ *       than this doc's "share of bins within the band" contract).
  * @note WiFi/BT flat-top: flatness ~ 50-80% (many bins near peak)
  * @note Fat analog FPV block with a BLUNT top: flatness ~ 40-70% — this is
  *       NOT separable from WiFi by this metric at close/mid range.
@@ -1481,6 +1487,15 @@ constexpr int32_t MAHALANOBIS_RSSI_MAX_DBM = -20;
  *       accepting real analog FM with its natural flat-top profile.
  * @note Previous default was 3; lowered to 2 for FPV wide-signal acceptance
  * @note Eliminates wideband noise false positives (WiFi, BT, microwave)
+ * @note DB WIDEBAND GATE (audit fix D-B): in DB scan this check runs for
+ *       shape-validated verdicts TOO whenever the shape chain is DISARMED
+ *       (MaxW >= 114 = no cap, Sharp <= 100 = dead-band, Flat = 0 — see
+ *       DEFAULT_SPECTRUM_MAX_WIDTH / DEFAULT_SPECTRUM_PEAK_SHARPNESS). With
+ *       permissive defaults the chain passes flat-tops trivially and Step 6c
+ *       is sweep-only, so the old unconditional skip left DB scan with NO
+ *       wideband gate while this note promised exactly that defense. When
+ *       the chain is ARMED the legacy skip is preserved (dual-carrier FPV
+ *       protection: the chain owns the wideband verdict then).
  */
 constexpr int32_t DEFAULT_NEIGHBOR_MARGIN_DB = 2;
 
