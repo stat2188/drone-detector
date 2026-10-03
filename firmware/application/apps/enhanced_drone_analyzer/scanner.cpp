@@ -2225,13 +2225,18 @@ bool DroneScanner::analyze_spectrum_shape_multi(
         // function's raison d'être (multiple FPV transmitters in one 20 MHz
         // frame) was dead in the default configuration; the probes could also
         // land below FFT_EDGE_SKIP (max_bin in [10..14]) in the rolloff zone
-        // excluded from floor/RSSI. Now: collect EVERY bin at/above the
+        // excluded from floor/RSSI. Now: collect every CREST bin at/above the
         // full Step-3 gate (shape_gate_margin) within the usable region
         // (edge policy + DC gap — the SAME cell set as Step 1 / extract_rssi /
         // Step 4), keep the strongest MAX_SHAPE_DETECTIONS*2 in place (top-K —
         // no buffer growth), sort strongest-first, NMS by
-        // CFAR_MIN_PEAK_SEPARATION. Stack: candidates[12]×8 B = 96 B (ARM32),
-        // same array size as before — well within the 512 B frame budget.
+        // CFAR_MIN_PEAK_SEPARATION.
+        // FIX (audit HIGH-1 / F1): collection is crest-filtered via
+        // is_crest_bin() — a plateau/slope now occupies ONE top-K slot
+        // instead of K, so a weaker distinct emitter can no longer be
+        // evicted before sort + NMS run (uniform gate ⇒ lossless: the run's
+        // apex always enters top-K). Stack: candidates[12]×8 B = 96 B
+        // (ARM32), same array size as before — well within the 512 B budget.
         struct SimplePeak { size_t bin; uint8_t power; };
         SimplePeak candidates[MAX_SHAPE_DETECTIONS * 2];
         size_t cand_count = 0;
@@ -2244,6 +2249,16 @@ bool DroneScanner::analyze_spectrum_shape_multi(
             // margin > 0 preserves the old "max_val <= noise_floor → nothing"
             // semantics even if a pathological gate==0 config ever exists.
             if (margin > 0 && margin >= static_cast<int32_t>(gate)) {
+                // F1 crest pre-filter (audit HIGH-1): sideband-local bounds —
+                // the DC gap already excluded i above, so the run can only
+                // span within one sideband.
+                const bool left_side = (i < FFT_DC_SPIKE_START);
+                const size_t lo = left_side ? static_cast<size_t>(FFT_EDGE_SKIP)
+                                            : static_cast<size_t>(FFT_DC_SPIKE_END);
+                const size_t hi = left_side
+                    ? static_cast<size_t>(FFT_DC_SPIKE_START - 1)
+                    : static_cast<size_t>(FFT_BIN_COUNT - FFT_EDGE_SKIP - 1);
+                if (!is_crest_bin(spectrum.db.data(), i, lo, hi)) continue;
                 keep_strongest(candidates, cand_count, SimplePeak{i, spectrum.db[i]});
             }
         }
@@ -2401,6 +2416,13 @@ bool DroneScanner::apply_shape_filters(
     // all far below FFT_BIN_COUNT/2=128 and COMPOSITE_SIZE/2=120.
     if (peak_idx >= data_size || edge_skip >= data_size / 2) return false;
 
+    // Step 6b/6c + extreme-bypass accumulate into this LOCAL extent; it is
+    // published to out_extent ONLY at the success exit (audit LOW-4 / F3),
+    // so a false return can never leave an "accepted" emission behind for a
+    // future consumer. Default = degenerate peak-only (width()==1).
+    // Stack: +8 bytes (SignalExtent, register-allocatable). SRAM: 0.
+    SignalExtent final_extent{peak_idx, peak_idx};
+
     const uint8_t peak_margin = static_cast<uint8_t>(raw_peak - noise_floor);
 
     // VERY STRONG SIGNAL BYPASS (opt-in via config_.shape_bypass_enabled):
@@ -2529,12 +2551,10 @@ bool DroneScanner::apply_shape_filters(
     // enforced whenever the bypass flag is OFF, regardless of strength
     // (the /2 elevated threshold keeps the measurement trustworthy).
     if (config_.shape_bypass_enabled && peak_margin > EXTREME_SIGNAL_MARGIN) {
-        if (out_extent != nullptr) {
-            // Extreme-signal bypass: width checks skipped by explicit user opt-in.
-            // Degenerate peak-only extent — dedup consumers must not
-            // over-suppress bypassed signals.
-            *out_extent = SignalExtent{peak_idx, peak_idx};
-        }
+        // Extreme-signal bypass: width checks skipped by explicit user opt-in.
+        // Degenerate peak-only extent — dedup consumers must not
+        // over-suppress bypassed signals. Published at the success exit (F3).
+        final_extent = SignalExtent{peak_idx, peak_idx};
     } else {
         if (signal_width > config_.spectrum_max_width) return false;
 
@@ -2651,9 +2671,10 @@ bool DroneScanner::apply_shape_filters(
             }
         }
 
-        if (out_extent != nullptr) {
-            *out_extent = emission;
-        }
+        // F3: staged for publication at the success exit — Steps 7-12 below
+        // may still reject, and a rejected verdict must not leave a written
+        // extent behind (contract: out_extent is valid iff return == true).
+        final_extent = emission;
     }
 
     // Step 7: Peak sharpness (enforce inverted-V shape)
@@ -2884,7 +2905,25 @@ bool DroneScanner::apply_shape_filters(
         // spectrum_min_width=2 unreachable at moderate+ SNR. WiFi/BT
         // flat-tops span dozens of bins and are unaffected by this guard.
         if (effective_width > FLATNESS_MIN_SIGNAL_WIDTH) {
-            const uint8_t high_power_threshold = raw_peak * 9 / 10;
+            // AUDIT MEDIUM-1 (fix F2): the old `raw_peak * 9 / 10` measured
+            // 90% of the ABSOLUTE dB-compressed value, so the effective
+            // elevation above the shelf shrank as the noise floor rose
+            // (share = 0.9 - 0.1 * noise / peak_margin: 65% of margin at
+            // noise=100 but only 50% at noise=160 for the SAME shape) —
+            // flatness verdicts drifted with gain while every other chain
+            // step is noise-relative. New threshold = noise_floor + 0.9 *
+            // peak_margin = a stable 90% of the peak-above-noise.
+            // Deliberate TIGHTENING vs. the old behavior (0.9 > 0.5..0.65) —
+            // documented in constants.hpp @ DEFAULT_SPECTRUM_FLATNESS.
+            // uint16 math: noise + 0.9*margin <= noise + 0.9*(255-noise)
+            // = 0.9*255 + 0.1*noise <= 255; saturate is defense-in-depth.
+            // Stack: +4 bytes (uint16 temp, register). Flash: ~16 bytes.
+            const uint16_t hp_sum =
+                static_cast<uint16_t>(noise_floor) +
+                static_cast<uint16_t>(
+                    (static_cast<uint16_t>(peak_margin) * 9u) / 10u);
+            const uint8_t high_power_threshold =
+                (hp_sum > 255) ? 255 : static_cast<uint8_t>(hp_sum);
             size_t high_power_count = 0;
 
             // FIX (audit D7 — off-by-one): the old left loop ran (left, peak]:
@@ -2955,6 +2994,14 @@ bool DroneScanner::apply_shape_filters(
         }
     }
 
+    // F3 (audit LOW-4): the ONLY publication point of final_extent —
+    // invariant "out_extent written iff returns true" now holds by
+    // construction for every caller (analyze_spectrum_shape_impl,
+    // the DB CFAR/fixed branches and the sweep loop all read it under
+    // `if (apply_shape_filters(...))`).
+    if (out_extent != nullptr) {
+        *out_extent = final_extent;
+    }
     out_rssi = spectrum_value_to_dbm(raw_peak, total_gain);
     return true;
 }
@@ -3387,11 +3434,14 @@ void DroneScanner::process_spectrum_sweep(
             config_.vi_cfar_threshold_x10
         );
     } else {
-        // Fixed-threshold: collect all bins above noise_floor + margin,
+        // Fixed-threshold: collect all CREST bins above noise_floor + margin,
         // keep the strongest MAX_SWEEP_PEAKS*2 (top-K — audit fix D4: the old
         // `cand_count < CAP` truncation kept the FIRST 16 bins by ascending
         // index, so a busy left sideband with 16+ passing bins starved the
         // right sideband entirely), sort by power descending, take top N.
+        // Audit HIGH-1 / F1: is_crest_bin() pre-filter (parity with the DB
+        // path) — each plateau/slope run costs ONE top-K slot, so the
+        // remaining slots stay free for distinct weaker emitters.
         struct SimplePeak { size_t bin; uint8_t power; };
         SimplePeak candidates[MAX_SWEEP_PEAKS * 2]{};
         size_t cand_count = 0;
@@ -3400,6 +3450,11 @@ void DroneScanner::process_spectrum_sweep(
             const int32_t bin_val = spectrum.db[i];
             const int32_t margin = bin_val - static_cast<int32_t>(noise_floor);
             if (margin >= static_cast<int32_t>(cfg_margin)) {
+                if (!is_crest_bin(spectrum.db.data(), i,
+                                  FFT_EDGE_SKIP_NARROW,
+                                  FFT_DC_SPIKE_START - 1)) {
+                    continue;
+                }
                 keep_strongest(candidates, cand_count, SimplePeak{i, spectrum.db[i]});
             }
         }
@@ -3407,6 +3462,11 @@ void DroneScanner::process_spectrum_sweep(
             const int32_t bin_val = spectrum.db[i];
             const int32_t margin = bin_val - static_cast<int32_t>(noise_floor);
             if (margin >= static_cast<int32_t>(cfg_margin)) {
+                if (!is_crest_bin(spectrum.db.data(), i,
+                                  FFT_DC_SPIKE_END,
+                                  FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW - 1)) {
+                    continue;
+                }
                 keep_strongest(candidates, cand_count, SimplePeak{i, spectrum.db[i]});
             }
         }

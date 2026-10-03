@@ -346,6 +346,49 @@ void keep_strongest(PeakT (&peaks)[K], size_t& count, const PeakT& cand) noexcep
 }
 
 /**
+ * @brief True iff bin `i` is the representative crest of its gate-passing run.
+ * @details Called ONLY from FIXED-THRESHOLD candidate collection (DB
+ *           analyze_spectrum_shape_multi and process_spectrum_sweep), where
+ *           the acceptance gate is UNIFORM across the frame: every
+ *           non-crest passing bin has a stronger passing neighbour by
+ *           construction, so dropping non-crest bins cannot lose an
+ *           emission — the run's apex still enters top-K. This is the
+ *           audit HIGH-1 fix (F1): a flat plateau or monotone slope
+ *           previously filled ALL top-K slots with bins of ONE emission,
+ *           evicting a weaker distinct emitter from the other sideband
+ *           BEFORE Phase-2 sort + Phase-3 NMS could collapse the plateau.
+ *           Now each gate-passing run costs exactly ONE slot.
+ * @param p  Raw power buffer (spectrum.db.data()) — not retained
+ * @param i  Bin index; must lie inside [lo, hi]
+ * @param lo First usable bin of the sideband containing `i` (inclusive)
+ * @param hi Last usable bin of the sideband containing `i` (inclusive)
+ * @return true for exactly one bin per run: `p[i] >= p[i-1] && p[i] > p[i+1]`
+ *         with boundary-inclusive rules at the sideband edges (window edge
+ *         and DC wall), so monotone runs ending on a wall still qualify.
+ * @note NOT applied to the CFAR path: its per-CUT threshold is non-uniform
+ *       (CA/GO/SO/OS/VI), so the uniform-gate losslessness proof does not
+ *       hold there; CFAR keeps top-K + the equal-power tie in
+ *       keep_strongest (default CFARMode::OFF limits exposure).
+ * @note Residual edge case (accepted): a needle whose BOTH neighbours sit
+ *       below `noise + margin/3` (fails Step 5 MinW) atop a strictly
+ *       ascending ramp admits only the needle as crest — if the needle is
+ *       MinW-rejected, the ramp's chain probe (which the old free-for-all
+ *       collection allowed incidentally) no longer runs. The emission apex
+ *       remains the authority for its own MinW verdict by design.
+ * @note Stack: ~8 bytes (registers). Flash: ~48 bytes (inlined). No FP.
+ */
+[[nodiscard]] inline bool is_crest_bin(
+    const uint8_t* p,
+    size_t i,
+    size_t lo,
+    size_t hi) noexcept {
+    if (p == nullptr || i < lo || i > hi) return false;
+    const bool ge_left = (i == lo) || (p[i] >= p[i - 1]);
+    const bool gt_right = (i == hi) || (p[i] > p[i + 1]);
+    return ge_left && gt_right;
+}
+
+/**
  * @brief CFAR (Constant False Alarm Rate) detector
  * @note Adapts detection threshold to local noise level
  * @note Supports CA-CFAR, GO-CFAR, SO-CFAR, and Hybrid modes

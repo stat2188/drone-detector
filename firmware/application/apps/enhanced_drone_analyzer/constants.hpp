@@ -702,6 +702,20 @@ constexpr size_t FFT_EDGE_SKIP = 10;
  */
 constexpr size_t FFT_EDGE_SKIP_NARROW = 6;
 
+// ============================================================================
+// AUDIT MEDIUM-2 (F4 — documentation only; do NOT "fix" by changing values):
+// bin-size parity between DB and sweep is enforced by static_assert
+// (DB_CAPTURE_RATE_HZ == SWEEP_SLICE_BW), but the ROLLOFF EXCLUSION is NOT
+// parity: DB skips 10 bins (0.78 MHz) per edge, sweep skips 6 (0.47 MHz).
+// If the capture chain's rolloff reaches beyond 6 bins, sweep's p25 noise
+// shelf is biased upward by contaminated edge bins and edge-adjacent margins
+// differ from DB for the same physical spectrum. Field tuning expressed in
+// bins carries over 1:1 ONLY for the central region; treat bins within
+// [edge_skip, edge_skip+4) of any window edge as approximate in sweep mode.
+// Changing FFT_EDGE_SKIP_NARROW here would also move the sweep display
+// mapping (SweepProcessor true-position painter) — change both together.
+// ============================================================================
+
 /**
  * @brief Focused bin window: lower sideband start
  * @note Bins 100-119 cover ±200 kHz around tuned frequency
@@ -1094,7 +1108,11 @@ constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 0;
 /**
  * @brief Default peak flatness threshold (0-100, percentage)
  * @note flatness = (high_power_bins * 100) / signal_width
- * @note Measures how many bins are at 90%+ of peak power
+ * @note Measures how many bins are at 90%+ of the peak-above-noise
+ *       (noise_floor + 0.9 * peak_margin — noise-relative, audit fix F2;
+ *       formerly 90% of the ABSOLUTE raw_peak, which drifted with gain:
+ *       the effective share shrank from 65% to 50% of margin as the noise
+ *       floor rose from 100 to 160 units for the same shape)
  * @note WiFi/BT flat-top: flatness ~ 50-80% (many bins near peak)
  * @note Fat analog FPV block with a BLUNT top: flatness ~ 40-70% — this is
  *       NOT separable from WiFi by this metric at close/mid range.
@@ -1118,7 +1136,8 @@ constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 0;
  *       NOT measure width and does NOT suppress it — MinW/MaxW own width
  *       (Steps 5/6). Flatness runs AFTER the band is measured and classifies
  *       its PROFILE: the share of bins within the measured band that carry
- *       >= 90% of peak power. A flat top (WiFi/BT) scores 50-80% (REJECT),
+ *       >= 90% of the peak-above-noise (noise-relative threshold, F2 — see
+ *       the formula note above). A flat top (WiFi/BT) scores 50-80% (REJECT),
  *       a sharp peak (drone/FM) scores <30% (PASS). Two signals of the SAME
  *       width can invert the verdict — the shape decides, which is exactly
  *       why flatness works where MaxW cannot (when the user turns it on).
