@@ -1,0 +1,146 @@
+diff --git a/firmware/application/apps/enhanced_drone_analyzer/constants.hpp b/firmware/application/apps/enhanced_drone_analyzer/constants.hpp
+index 4c79754c..54920d18 100644
+--- a/firmware/application/apps/enhanced_drone_analyzer/constants.hpp
++++ b/firmware/application/apps/enhanced_drone_analyzer/constants.hpp
+@@ -692,7 +692,7 @@ constexpr size_t FFT_DC_SPIKE_END = 136;
+ 
+ /**
+  * @brief Edge skip for filter rolloff (standard: skip bins 0-9 and 246-255)
+- * @note Used by extract_rssi() and analyze_spectrum_shape()
++ * @note Used by extract_rssi() and analyze_spectrum_shape_multi()
+  */
+ constexpr size_t FFT_EDGE_SKIP = 10;
+ 
+@@ -702,6 +702,20 @@ constexpr size_t FFT_EDGE_SKIP = 10;
+  */
+ constexpr size_t FFT_EDGE_SKIP_NARROW = 6;
+ 
++// ============================================================================
++// AUDIT MEDIUM-2 (F4 — documentation only; do NOT "fix" by changing values):
++// bin-size parity between DB and sweep is enforced by static_assert
++// (DB_CAPTURE_RATE_HZ == SWEEP_SLICE_BW), but the ROLLOFF EXCLUSION is NOT
++// parity: DB skips 10 bins (0.78 MHz) per edge, sweep skips 6 (0.47 MHz).
++// If the capture chain's rolloff reaches beyond 6 bins, sweep's p25 noise
++// shelf is biased upward by contaminated edge bins and edge-adjacent margins
++// differ from DB for the same physical spectrum. Field tuning expressed in
++// bins carries over 1:1 ONLY for the central region; treat bins within
++// [edge_skip, edge_skip+4) of any window edge as approximate in sweep mode.
++// Changing FFT_EDGE_SKIP_NARROW here would also move the sweep display
++// mapping (SweepProcessor true-position painter) — change both together.
++// ============================================================================
++
+ /**
+  * @brief Focused bin window: lower sideband start
+  * @note Bins 100-119 cover ±200 kHz around tuned frequency
+@@ -999,12 +1013,14 @@ constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 2;
+  * @note 255 (PERMISSIVE DEFAULT — "pass narrow AND wide"): no width cap.
+  *       In the current raw-FFT chain (has_dc_gap=true everywhere) the Step-4
+  *       walk and emission_extent() are DC-gap bounded — the measurable
+- *       extent can NEVER exceed 114 bins (bins 6..119 / 136..249) — so any
+- *       value >= 114 is behaviorally identical; 255 makes "no cap" explicit
+- *       instead of implying the old 15.6 MHz ceiling. Wideband (WiFi
+- *       20-40 MHz) rejection in sweep is owned by the Step 6c BOTH-EDGES
+- *       rule (an emission spanning the ENTIRE usable window is wider than
+- *       any FPV channel); DB-scan flat-top rejection is owned by the
++ *       extent can NEVER exceed 110 bins in DB (10..119 / 136..245) or 114
++ *       in sweep (6..119 / 136..249) — so any value >= 114 is
++ *       behaviorally identical; 255 makes "no cap" explicit instead of
++ *       implying the old 15.6 MHz ceiling. Wideband (WiFi 20-40 MHz)
++ *       rejection in sweep is owned by the Step 6c BOTH-EDGES rule (an
++ *       emission holding half power wall-to-wall across BOTH sidebands —
++ *       the rule bridges the DC gap, see scanner.cpp Step 6c — is wider
++ *       than any FPV channel); DB-scan flat-top rejection is owned by the
+  *       tracking post-filters (neighbor margin, Mahalanobis, RSSI variance)
+  *       and by Flat when the user re-enables it.
+  * @note 200 bins ≈ 15.6 MHz (previous default) — inert under the DC-gap cap
+@@ -1021,6 +1037,11 @@ constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 255;
+  * @note sharpness = (peak_margin * 100) / avg_margin
+  * @note Inverted-V peaks have sharpness > 200; flat U/I shapes have sharpness ~ 100
+  * @note 50 = no sharpness filtering (accept all shapes)
++ * @note 51..100 is a MATHEMATICAL NO-OP dead-band (audit D5): avg_margin is
++ *       measured over [left..right] which INCLUDES the peak bin, so
++ *       avg_margin <= peak_margin and sharpness >= 100 on EVERY frame —
++ *       only thresholds >= 101 can ever reject. 50, 75 and 100 behave
++ *       identically; the effective filtering range is 101..250.
+  * @note 100 (PERMISSIVE DEFAULT — "detect what fits the bands"): analog FM
+  *       video is a quasi-flat block with a dominant carrier peak, measured
+  *       sharpness ≈ 100-130 at medium range (the width walk runs at
+@@ -1087,7 +1108,17 @@ constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 0;
+ /**
+  * @brief Default peak flatness threshold (0-100, percentage)
+  * @note flatness = (high_power_bins * 100) / signal_width
+- * @note Measures how many bins are at 90%+ of peak power
++ * @note Measures how many bins are at 90%+ of the peak-above-noise
++ *       (noise_floor + 0.9 * peak_margin — noise-relative, audit fix F2;
++ *       formerly 90% of the ABSOLUTE raw_peak, which drifted with gain:
++ *       the effective share shrank from 65% to 50% of margin as the noise
++ *       floor rose from 100 to 160 units for the same shape)
++ * @note COUNT (audit fix D-D): EVERY bin of the measured band [left..right]
++ *       at/above the bar counts — the numerator mirrors the denominator's
++ *       range exactly. An earlier walk-out loop broke at the first sub-90%
++ *       bin, so a dip inside the band hid the bins beyond it (dual-lobe
++ *       flat top under-scored → escaped Flat; code was more permissive
++ *       than this doc's "share of bins within the band" contract).
+  * @note WiFi/BT flat-top: flatness ~ 50-80% (many bins near peak)
+  * @note Fat analog FPV block with a BLUNT top: flatness ~ 40-70% — this is
+  *       NOT separable from WiFi by this metric at close/mid range.
+@@ -1111,7 +1142,8 @@ constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 0;
+  *       NOT measure width and does NOT suppress it — MinW/MaxW own width
+  *       (Steps 5/6). Flatness runs AFTER the band is measured and classifies
+  *       its PROFILE: the share of bins within the measured band that carry
+- *       >= 90% of peak power. A flat top (WiFi/BT) scores 50-80% (REJECT),
++ *       >= 90% of the peak-above-noise (noise-relative threshold, F2 — see
++ *       the formula note above). A flat top (WiFi/BT) scores 50-80% (REJECT),
+  *       a sharp peak (drone/FM) scores <30% (PASS). Two signals of the SAME
+  *       width can invert the verdict — the shape decides, which is exactly
+  *       why flatness works where MaxW cannot (when the user turns it on).
+@@ -1455,6 +1487,15 @@ constexpr int32_t MAHALANOBIS_RSSI_MAX_DBM = -20;
+  *       accepting real analog FM with its natural flat-top profile.
+  * @note Previous default was 3; lowered to 2 for FPV wide-signal acceptance
+  * @note Eliminates wideband noise false positives (WiFi, BT, microwave)
++ * @note DB WIDEBAND GATE (audit fix D-B): in DB scan this check runs for
++ *       shape-validated verdicts TOO whenever the shape chain is DISARMED
++ *       (MaxW >= 114 = no cap, Sharp <= 100 = dead-band, Flat = 0 — see
++ *       DEFAULT_SPECTRUM_MAX_WIDTH / DEFAULT_SPECTRUM_PEAK_SHARPNESS). With
++ *       permissive defaults the chain passes flat-tops trivially and Step 6c
++ *       is sweep-only, so the old unconditional skip left DB scan with NO
++ *       wideband gate while this note promised exactly that defense. When
++ *       the chain is ARMED the legacy skip is preserved (dual-carrier FPV
++ *       protection: the chain owns the wideband verdict then).
+  */
+ constexpr int32_t DEFAULT_NEIGHBOR_MARGIN_DB = 2;
+ 
+diff --git a/firmware/application/apps/enhanced_drone_analyzer/spectral_kurtosis.hpp b/firmware/application/apps/enhanced_drone_analyzer/spectral_kurtosis.hpp
+index 7d133b58..5f6060fc 100644
+--- a/firmware/application/apps/enhanced_drone_analyzer/spectral_kurtosis.hpp
++++ b/firmware/application/apps/enhanced_drone_analyzer/spectral_kurtosis.hpp
+@@ -91,9 +91,26 @@ public:
+         for (size_t i = start; i < end; ++i) {
+             if (i >= dc_start && i < dc_end) continue;
+             const int32_t diff_x8 = static_cast<int32_t>(spectrum[i] * 8) - static_cast<int32_t>(mean_x8);
+-            const int32_t diff = diff_x8 / 8;  // Back to original scale, ≈ -64..+64
+-            const int32_t diff2 = diff * diff;  // ≈ 4096
+-            const int32_t diff4 = diff2 * diff2; // Max ≈ 16M (fits int32)
++            // AUDIT FIX: implement the DOCUMENTED (power - mean) / 4 scaling —
++            // the old `diff_x8 / 8` returned the UNSCALED (power - mean) in
++            // [-255, +255] despite the design notes above (/4 -> ±64).
++            // Consequences on strong-signal frames (before this fix):
++            //   - diff2 * diff2 was int32*int32: signed OVERFLOW (UB) at
++            //     |diff| >= 216 (e.g. peak 255 with mean <= 39 — a common
++            //     spiky spectrum);
++            //   - kurt_sum (uint32) wrapped at Σ diff^4 > 4.29e9;
++            //   - skew_sum (int32) wrapped at Σ diff^3 > 2.1e9;
++            // producing garbage Step-12 verdicts whenever kurtosis_enabled.
++            // Overflow budget at /4: |diff| <= 63 (diff_x8 <= 2040),
++            // diff4 <= 15.75e6 (int32-safe), Σ diff4 <= 228 * 15.75e6 =
++            // 3.59e9 < UINT32_MAX, Σ |diff^3| <= 228 * 250047 = 5.7e7
++            // < INT32_MAX, Σ diff2 <= 228 * 3969 = 905k.
++            // Kurtosis/skewness are scale-invariant (c^4/c^4, c^3/c^3), so
++            // the kurtosis_min_x10 threshold semantics are UNCHANGED.
++            // Stack: 0. SRAM: 0. Flash: 0 (same instruction count).
++            const int32_t diff = diff_x8 / 32;  // (power - mean) / 4, ≈ -63..+63
++            const int32_t diff2 = diff * diff;  // <= 3969
++            const int32_t diff4 = diff2 * diff2; // <= 15.75e6, fits int32
+ 
+             var_sum += static_cast<uint32_t>(diff2);
+             skew_sum += diff2 * diff;  // Signed accumulation — correct for negative skew

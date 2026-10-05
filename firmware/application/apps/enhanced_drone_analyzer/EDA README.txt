@@ -990,7 +990,7 @@ CFARDetector (scanner.hpp):
   OS-CFAR (Ordered Statistic):
     Sort reference cells, pick k-th order statistic
     k = (N_ref × os_k_percent) / 100 (default 75%)
-    Uses histogram-based selection (O(256) instead of O(n²) sort)
+    Uses insertion sort over cells[128] (O(n²), n ≤ 128 - typical 64 cells ≈ 2k ops)
     Best for: multi-target environments (FPV swarm)
 
   VI-CFAR (Variability Index):
@@ -1006,6 +1006,15 @@ Parameters:
   cfar_ref_cells     — reference window size (4-64, default 32)
   cfar_guard_cells   — guard cells (0-8, default 3)
   cfar_threshold_x10 — threshold offset ×10 (10-100, default 60)
+
+  Edge policy (audit M-1): reference windows observe the SAME cell set as
+  Step 1 / extract_rssi - cells outside [skip_start, bin_count-skip_end)
+  (filter-rolloff zone) are never read. When one whole window falls outside
+  the usable band (band edge) or is emptied by the DC skip, the estimate
+  degrades to the remaining side (CA = GO = SO collapse there); a CUT
+  outside the usable band fails closed. The first/last guard+1 bins stay
+  detectable via that one-sided fallback - the sweep retune grid is
+  fixed-phase, so a target could park at the same slice edge every pass.
 
 Multi-Target Detection (find_peaks):
   - Collects all CFAR-passing bins
@@ -1098,7 +1107,7 @@ Key BSS Structures:
 
 Stack-Heavy Functions (monitored):
   CFARDetector::find_peaks()   — ~32 bytes (candidates[16])
-  OS-CFAR detect()             — ~256 bytes (histogram)
+  OS-CFAR detect()             - ~152 bytes (cells[128] + locals)
   SpectralKurtosis::compute()  — ~32 bytes (accumulators)
   absorb_from()                — ~128 bytes (merged[12])
   refresh_ui()                 — uses BSS for refresh_drones_[]

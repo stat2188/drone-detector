@@ -407,6 +407,17 @@ public:
      * @param ref_cells Number of reference cells (N_ref)
      * @param guard_cells Number of guard cells
      * @param threshold_x10 Threshold offset ×10 in spectrum.db units (e.g., 50 = 5.0 units ≈ 1 dB above noise)
+     * @param usable_lo    First usable bin of the analysis band (inclusive).
+     *                     Reference windows are clipped to
+     *                     [usable_lo, usable_hi): the filter-rolloff zone
+     *                     ([0..skip_start) and [bin_count-skip_end..)) has
+     *                     artificially low power and would drag the noise
+     *                     estimate down near band edges (audit M-1) -
+     *                     same cell policy as Step 1 / extract_rssi.
+     * @param usable_hi    One-past-last usable bin (exclusive) - mirrors
+     *                     find_peaks' `limit = bin_count - skip_end`.
+     *                     Clamped to bin_count. The CUT itself must lie in
+     *                     [usable_lo, usable_hi) or the call fails closed.
      * @param alpha CA weight for hybrid mode ×100
      * @param beta GO weight for hybrid mode ×100
      * @param gamma SO weight for hybrid mode ×100
@@ -422,6 +433,8 @@ public:
         uint8_t ref_cells,
         uint8_t guard_cells,
         uint8_t threshold_x10,
+        size_t usable_lo,                 // M-1: first usable bin (inclusive)
+        size_t usable_hi,                 // M-1: one-past last usable bin (exclusive)
         uint8_t alpha = 50,
         uint8_t beta = 30,
         uint8_t gamma = 20,
@@ -430,7 +443,17 @@ public:
     ) noexcept {
         if (mode == CFARMode::OFF) return false;
         if (spectrum == nullptr || bin_count == 0) return false;
-        if (cbin >= bin_count) return false;
+
+        // M-1 ROLLOFF BOUND (audit): reference windows observe the SAME cell
+        // policy as Step 1 / extract_rssi / the phase-1 scan - cells outside
+        // [usable_lo, usable_hi) belong to the filter-rolloff zone and would
+        // bias the noise estimate down near band edges. Fail-closed: a CUT
+        // outside the usable band is never evaluated.
+        if (usable_hi > bin_count) usable_hi = bin_count;
+        if (usable_lo >= usable_hi) return false;
+        if (cbin < usable_lo || cbin >= usable_hi) return false;
+        const int32_t lo = static_cast<int32_t>(usable_lo);
+        const int32_t hi = static_cast<int32_t>(usable_hi);
 
         // Guard: ref_cells must be reasonable
         if (ref_cells < CFAR_REF_CELLS_MIN) ref_cells = CFAR_REF_CELLS_MIN;
@@ -447,7 +470,7 @@ public:
         int32_t left_count = 0;
         for (int32_t k = static_cast<int32_t>(cbin) - total_span; 
              k < static_cast<int32_t>(cbin) - static_cast<int32_t>(guard_cells); ++k) {
-            if (k >= 0 && k < static_cast<int32_t>(bin_count)) {
+            if (k >= lo && k < hi) {
                 // Skip DC spike region
                 if (k >= static_cast<int32_t>(FFT_DC_SPIKE_START) && 
                     k < static_cast<int32_t>(FFT_DC_SPIKE_END)) continue;
@@ -461,7 +484,7 @@ public:
         int32_t right_count = 0;
         for (int32_t k = static_cast<int32_t>(cbin) + static_cast<int32_t>(guard_cells) + 1;
              k <= static_cast<int32_t>(cbin) + total_span; ++k) {
-            if (k >= 0 && k < static_cast<int32_t>(bin_count)) {
+            if (k >= lo && k < hi) {
                 // Skip DC spike region
                 if (k >= static_cast<int32_t>(FFT_DC_SPIKE_START) && 
                     k < static_cast<int32_t>(FFT_DC_SPIKE_END)) continue;
@@ -470,20 +493,34 @@ public:
             }
         }
 
-        // Need at least one reference cell on each side
-        if (left_count == 0 || right_count == 0) return false;
+        // ONE-SIDED FALLBACK (audit M-1 follow-up): with the rolloff bound in
+        // place, a whole window can fall outside the usable band near the band
+        // edges (the first/last guard+1 CUTs), and with small ref/guard a window
+        // can lose every cell to the DC skip. Failing the CUT here - the old
+        // 'either side empty -> false' - would blind CFAR to exactly those bins,
+        // and the sweep retune grid is FIXED-phase, so a target could park there
+        // on EVERY pass. Degrade to whichever side(s) remain; when both sides are
+        // present the arithmetic below is bit-identical to the original formulas.
+        const bool have_left = (left_count > 0);
+        const bool have_right = (right_count > 0);
+        if (!have_left && !have_right) return false;  // fully walled off - fail closed
 
         // Compute noise estimates for each CFAR mode
-        // CA-CFAR: average of both windows
+        // CA-CFAR: average of all available reference cells (>= 1 by the guard above)
         const int32_t ca_noise = (left_sum + right_sum) / (left_count + right_count);
 
-        // GO-CFAR: maximum of the two window averages
-        const int32_t left_avg = (left_count > 0) ? left_sum / left_count : 0;
-        const int32_t right_avg = (right_count > 0) ? right_sum / right_count : 0;
-        const int32_t go_noise = (left_avg > right_avg) ? left_avg : right_avg;
+        // GO-CFAR: greatest of the available window averages
+        const int32_t left_avg = have_left ? left_sum / left_count : 0;
+        const int32_t right_avg = have_right ? right_sum / right_count : 0;
+        const int32_t go_noise = (have_left && have_right)
+            ? ((left_avg > right_avg) ? left_avg : right_avg)
+            : (have_left ? left_avg : right_avg);
 
-        // SO-CFAR: minimum of the two window averages
-        const int32_t so_noise = (left_avg < right_avg) ? left_avg : right_avg;
+        // SO-CFAR: smallest of the available window averages (a missing side
+        // has no opinion - the available side IS the answer)
+        const int32_t so_noise = (have_left && have_right)
+            ? ((left_avg < right_avg) ? left_avg : right_avg)
+            : (have_left ? left_avg : right_avg);
 
         // Compute final noise estimate based on mode
         int32_t noise_estimate = 0;
@@ -521,7 +558,7 @@ public:
                 for (int32_t k = static_cast<int32_t>(cbin) - total_span;
                      k < static_cast<int32_t>(cbin) - static_cast<int32_t>(guard_cells) &&
                      ref_idx < CFAR_REF_CELLS_MAX * 2; ++k) {
-                    if (k >= 0 && k < static_cast<int32_t>(bin_count)) {
+                    if (k >= lo && k < hi) {
                         if (k >= static_cast<int32_t>(FFT_DC_SPIKE_START) &&
                             k < static_cast<int32_t>(FFT_DC_SPIKE_END)) continue;
                         cells[ref_idx++] = spectrum[k];
@@ -531,7 +568,7 @@ public:
                 for (int32_t k = static_cast<int32_t>(cbin) + static_cast<int32_t>(guard_cells) + 1;
                      k <= static_cast<int32_t>(cbin) + total_span &&
                      ref_idx < CFAR_REF_CELLS_MAX * 2; ++k) {
-                    if (k >= 0 && k < static_cast<int32_t>(bin_count)) {
+                    if (k >= lo && k < hi) {
                         if (k >= static_cast<int32_t>(FFT_DC_SPIKE_START) &&
                             k < static_cast<int32_t>(FFT_DC_SPIKE_END)) continue;
                         cells[ref_idx++] = spectrum[k];
@@ -563,6 +600,10 @@ public:
                 // VI = variance / mean^2 measures clutter homogeneity
                 // Low VI → homogeneous → CA-CFAR (best noise estimate)
                 // High VI → clutter edge → GO-CFAR (robust at edges) or SO-CFAR (in clutter)
+                // M-1: when only ONE side is usable (band edge / DC wall),
+                // ca_noise == go_noise == so_noise - all three collapse to
+                // the available side's average - so the selection below is
+                // side-count invariant; no special case needed here.
 
                 // Compute mean and variance for left window
                 int32_t left_mean = (left_count > 0) ? left_sum / left_count : 0;
@@ -570,7 +611,7 @@ public:
                 if (left_count > 1) {
                     for (int32_t k = static_cast<int32_t>(cbin) - total_span;
                          k < static_cast<int32_t>(cbin) - static_cast<int32_t>(guard_cells); ++k) {
-                        if (k >= 0 && k < static_cast<int32_t>(bin_count)) {
+                        if (k >= lo && k < hi) {
                             if (k >= static_cast<int32_t>(FFT_DC_SPIKE_START) &&
                                 k < static_cast<int32_t>(FFT_DC_SPIKE_END)) continue;
                             const int32_t diff = static_cast<int32_t>(spectrum[k]) - left_mean;
@@ -586,7 +627,7 @@ public:
                 if (right_count > 1) {
                     for (int32_t k = static_cast<int32_t>(cbin) + static_cast<int32_t>(guard_cells) + 1;
                          k <= static_cast<int32_t>(cbin) + total_span; ++k) {
-                        if (k >= 0 && k < static_cast<int32_t>(bin_count)) {
+                        if (k >= lo && k < hi) {
                             if (k >= static_cast<int32_t>(FFT_DC_SPIKE_START) &&
                                 k < static_cast<int32_t>(FFT_DC_SPIKE_END)) continue;
                             const int32_t diff = static_cast<int32_t>(spectrum[k]) - right_mean;
@@ -694,7 +735,8 @@ public:
             if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
 
             if (detect(spectrum, bin_count, i, mode, ref_cells, guard_cells,
-                       threshold_x10, alpha, beta, gamma, os_k_percent, vi_threshold_x10)) {
+                       threshold_x10, skip_start, limit,
+                       alpha, beta, gamma, os_k_percent, vi_threshold_x10)) {
                 // TOP-K collection (audit fix D4): keep the strongest
                 // candidates in place instead of the first ones encountered —
                 // a busy left sideband (wideband plateau = 16+ passing bins)

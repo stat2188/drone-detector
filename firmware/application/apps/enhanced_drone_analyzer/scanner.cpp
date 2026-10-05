@@ -1728,7 +1728,21 @@ bool DroneScanner::is_scanning() const noexcept {
 }
 
 void DroneScanner::get_config(ScanConfig& out) const noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    // M-2 FIX (audit): was a BLOCKING MutexLock - every UI-thread call site
+    // (settings/SWP/Mode buttons, enter/exit sweep) could stall up to one full
+    // scan cycle (SPI tune + DB walk holding DATA_MUTEX) inside the 60 Hz
+    // event loop. All other UI readers here use MutexTryLock fail-open;
+    // get_config now joins them instead of being the one blocking outlier.
+    // Copy-below-is-safe proof (single writer): config_ is written ONLY by
+    // set_config() - all of whose call sites run on this same UI/event thread
+    // (drone_scanner_ui / drone_settings / drone_sweep_view) - and by the
+    // constructor before threads start; set_median_filter_enabled() (the other
+    // writer) has ZERO callers. On TryLock failure the holder is a
+    // scanner-thread READER under DATA_MUTEX, so this copy races
+    // read-against-read: no writer -> no torn field, no mixed old/new snapshot
+    // (aligned scalar loads are atomic on Cortex-M4). Callers always get a
+    // fully initialized, freshest snapshot instead of blocking.
+    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
     out = config_;
 }
 
@@ -2267,7 +2281,7 @@ bool DroneScanner::analyze_spectrum_shape_multi(
         // instead of K, so a weaker distinct emitter can no longer be
         // evicted before sort + NMS run (uniform gate ⇒ lossless: the run's
         // apex always enters top-K). Stack: candidates[12] × sizeof(SimplePeak)
-        // = 12 × 12 B = 144 B on ARM32 (size_t 4 + uint8 + 3 pad) — well
+        // = 12 × 8 B = 96 B on ARM32 (size_t 4 + uint8 1 + 3 pad → 8) — well
         // within the 512 B frame budget.
         struct SimplePeak { size_t bin; uint8_t power; };
         SimplePeak candidates[MAX_SHAPE_DETECTIONS * 2];
