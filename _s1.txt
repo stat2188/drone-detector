@@ -1,0 +1,6 @@
+992:constexpr uint8_t DEFAULT_SPECTRUM_MARGIN = 20;
+1257: * @note MUST stay BELOW DEFAULT_SPECTRUM_MARGIN / 2 (12 units = 2.4 dB): the
+1273:// 2 × TBD_MIN_ELEVATION_UNITS <= DEFAULT_SPECTRUM_MARGIN keeps the floor at
+1278:        static_cast<uint16_t>(DEFAULT_SPECTRUM_MARGIN),
+1279:    "TBD_MIN_ELEVATION_UNITS must stay <= DEFAULT_SPECTRUM_MARGIN / 2: the "
+1342:constexpr uint8_t DEFAULT_CFAR_THRESHOLD_X10 = 60;  // 6.0 units (≈1.2 dB offset above noise)
