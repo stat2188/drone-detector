@@ -675,9 +675,17 @@ ErrorCode DroneScanner::update_tracked_drones(
         return ErrorCode::INVALID_PARAMETER;
     }
 
-    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
-
-    return update_tracked_drone_internal(frequency, rssi, timestamp);
+    ErrorCode result = ErrorCode::SUCCESS;
+    {
+        MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+        result = update_tracked_drone_internal(frequency, rssi, timestamp);
+    }
+    // ALERT DEFER (audit D-ALERT-LOCK): fire the staged threat alert AFTER
+    // DATA_MUTEX is released — the audio callback may busy-wait on a full
+    // baseband queue and would otherwise extend the lock hold (blocking the
+    // UI thread's setters and the frame TryLock). Stack: 0 bytes.
+    deliver_pending_alert();
+    return result;
 }
 
 FreqHz DroneScanner::get_spectrum_frequency() noexcept {
@@ -1340,7 +1348,7 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
         // record it matched — in sweep mode update_rssi() classifies from the
         // direct new_rssi (history is cross-frequency contaminated), so one
         // fade sample would drop CRITICAL→LOW and the next strong frame would
-        // re-raise it with a fresh trigger_alert() — the "beep restarts, list
+        // re-raise it with a fresh raise_alert() — the "beep restarts, list
         // flickers" symptom. Threat may only RISE on an in-radius update
         // (escalation); DOWNGRADES happen exclusively via apply_rssi_decay()
         // after CYC missed cycles. This extends the old merge-only guard to
@@ -1352,7 +1360,7 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
         }
         
         if (new_threat > old_threat) {
-            trigger_alert(new_threat);
+            raise_alert(new_threat);  // staged — drained after unlock (D-ALERT-LOCK)
             // Real signal confirmed — clear noise blacklist for this frequency
             reset_noise_count(frequency);
         }
@@ -1381,7 +1389,7 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
         // Alert for newly added drone's actual threat level
         ThreatLevel new_threat = tracked_drones_[new_index].get_threat();
         if (new_threat > ThreatLevel::NONE) {
-            trigger_alert(new_threat);
+            raise_alert(new_threat);  // staged — drained after unlock (D-ALERT-LOCK)
         }
     }
 
@@ -2095,10 +2103,34 @@ void DroneScanner::trigger_alert(ThreatLevel threat_level) noexcept {
         return;  // Already in progress
     }
 
-    // Invoke callback outside any lock
+    // Invoke callback outside any lock — producers on the DB path must go
+    // through raise_alert()/deliver_pending_alert() so this never runs while
+    // DATA_MUTEX is held (audit D-ALERT-LOCK).
     local_callback(threat_level);
 
     alert_callback_in_progress_.clear();
+}
+
+void DroneScanner::raise_alert(ThreatLevel threat_level) noexcept {
+    // STAGE, do not fire: called from update_tracked_drone_internal(), which
+    // the DB path invokes WITH DATA_MUTEX held. The audio callback
+    // (baseband beep request) may busy-wait on a full baseband queue —
+    // firing it here would extend the lock hold and make the UI thread's
+    // MutexTryLock in process_spectrum_message() fail (dropped FFT frames).
+    // Strongest level wins; plain byte write, UI thread only. Stack: ~4 B.
+    if (threat_level > pending_alert_) {
+        pending_alert_ = threat_level;
+    }
+}
+
+void DroneScanner::deliver_pending_alert() noexcept {
+    // Lock-free drain — MUST be called with DATA_MUTEX NOT held.
+    const ThreatLevel level = pending_alert_;
+    if (level == ThreatLevel::NONE) {
+        return;
+    }
+    pending_alert_ = ThreatLevel::NONE;  // clear BEFORE firing (re-entrancy)
+    trigger_alert(level);                // Stack: ~8 bytes total
 }
 
 void DroneScanner::set_median_filter_enabled(bool enabled) noexcept {
@@ -2165,9 +2197,20 @@ bool DroneScanner::analyze_spectrum_shape_multi(
         // Zero-initialized: find_peaks() fills only the first peak_count
         // entries; {} removes the uninitialized-read hazard on refactor.
         CFARPeak cfar_peaks[MAX_SHAPE_DETECTIONS]{};
-        const uint8_t effective_threshold = config_.adaptive_cfar_enabled
-            ? adaptive_threshold_.get_optimal_threshold()
-            : config_.cfar_threshold_x10;
+        // SENSITIVE PARITY with process_spectrum_sweep (audit D-CFAR-ASYM):
+        // sweep lowers the CFAR offset by 1.0 unit (×10) in sensitive mode —
+        // DB previously ignored the setting, making it silently mode-
+        // dependent. Adaptive takes precedence in BOTH paths (no sensitive
+        // delta on top of the self-tuning threshold). Floor:
+        // CFAR_THRESHOLD_MIN_X10, same expression as the sweep branch.
+        uint8_t effective_threshold = config_.cfar_threshold_x10;
+        if (config_.adaptive_cfar_enabled) {
+            effective_threshold = adaptive_threshold_.get_optimal_threshold();
+        } else if (config_.sensitive_mode) {
+            effective_threshold = (config_.cfar_threshold_x10 > CFAR_THRESHOLD_MIN_X10 + 10)
+                ? static_cast<uint8_t>(config_.cfar_threshold_x10 - 10)
+                : static_cast<uint8_t>(CFAR_THRESHOLD_MIN_X10);
+        }
 
         const size_t peak_count = CFARDetector::find_peaks(
             spectrum.db.data(), FFT_BIN_COUNT,
@@ -2912,21 +2955,58 @@ bool DroneScanner::apply_shape_filters(
             // unmeasurable side can never cause a false reject; both sides
             // unmeasurable = filter has no evidence (wideband spanning the
             // window is owned by Step 6c/MaxW, not by valley).
+            //
+            // WINDOWED PROBE (audit D-VALLEY-PROBE): each side reads up to
+            // VALLEY_PROBE_MAX_BINS usable bins OUTSIDE the fragment and
+            // takes the maximum margin. The old 1-bin probe read only the
+            // first bin below the walk bar, so a 1-bin notch at the fragment
+            // edge masked an elevated continuation (plateau/second lobe) one
+            // bin further out — valley under-measured and passed emissions
+            // with no valley at all. For a SMOOTH monotone flank the first
+            // bin is the maximum of the walk (it only descends past it), so
+            // the measured value — and the documented ceiling
+            // floor((margin-1)/3) — are IDENTICAL to the old behavior; only
+            // terrain that RISES beyond an edge dip now counts. Window (6) <
+            // NMS separation (10): a distinct neighbour respecting
+            // CFAR_MIN_PEAK_SEPARATION stays outside the window whenever
+            // this emission ends at a real null. Stops are guarded: window
+            // end, edge_skip rolloff zone, DC wall (never bridges, never
+            // underflows size_t).
+            // Stack: ~10 bytes (two margins + loop indices, registers).
+            // Flash: ~160 bytes. No FP, no division, worst case 12 compares.
             uint8_t left_valley_margin = 0;
             uint8_t right_valley_margin = 0;
 
             if (left > edge_skip) {
                 const size_t lv = left - 1;
                 const bool dc_blocked = has_dc_gap && lv >= FFT_DC_SPIKE_START && lv < FFT_DC_SPIKE_END;
-                if (!dc_blocked && data[lv] > noise_floor) {
-                    left_valley_margin = data[lv] - noise_floor;
+                if (!dc_blocked) {
+                    size_t i = lv;
+                    for (uint8_t n = 0; n < VALLEY_PROBE_MAX_BINS; ++n) {
+                        if (has_dc_gap && i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) break;
+                        if (data[i] > noise_floor) {
+                            const uint8_t m = static_cast<uint8_t>(data[i] - noise_floor);
+                            if (m > left_valley_margin) left_valley_margin = m;
+                        }
+                        if (i <= edge_skip) break;
+                        --i;
+                    }
                 }
             }
             if (right < upper_limit - 1) {
                 const size_t rv = right + 1;
                 const bool dc_blocked = has_dc_gap && rv >= FFT_DC_SPIKE_START && rv < FFT_DC_SPIKE_END;
-                if (!dc_blocked && data[rv] > noise_floor) {
-                    right_valley_margin = data[rv] - noise_floor;
+                if (!dc_blocked) {
+                    size_t i = rv;
+                    for (uint8_t n = 0; n < VALLEY_PROBE_MAX_BINS; ++n) {
+                        if (has_dc_gap && i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) break;
+                        if (data[i] > noise_floor) {
+                            const uint8_t m = static_cast<uint8_t>(data[i] - noise_floor);
+                            if (m > right_valley_margin) right_valley_margin = m;
+                        }
+                        if (i + 1 >= upper_limit) break;
+                        ++i;
+                    }
                 }
             }
 
@@ -3322,6 +3402,11 @@ void DroneScanner::apply_sweep_tracking(
             tracked_drones_[drone_idx].label_idx_ = det_label_idx;
         }
     }
+
+    // ALERT DEFER drain (audit D-ALERT-LOCK): update_tracked_drone_internal()
+    // staged its threat alert above; sweep holds no mutex here, but the same
+    // staging keeps ONE alert path for both scan modes. Stack: 0 bytes.
+    deliver_pending_alert();
 }
 
 void DroneScanner::process_spectrum_sweep(

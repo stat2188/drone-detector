@@ -1226,6 +1226,12 @@ void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexce
 
         (void)scanner_ptr_->process_spectrum_message(spectrum, freq);
 
+        // ALERT DEFER (audit D-ALERT-LOCK): the DB tracking path stages
+        // threat alerts instead of firing the audio callback under
+        // DATA_MUTEX (a full baseband queue can busy-wait and stall the
+        // lock holder). Drain right after the lock is released.
+        scanner_ptr_->deliver_pending_alert();
+
         // Auto gain control: analyze spectrum and adjust RF frontend
         apply_agc(spectrum.db.data());
 

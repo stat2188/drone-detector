@@ -997,8 +997,23 @@ public:
      * @return ErrorCode::SUCCESS if processed, error code otherwise
      * @note Acquires mutex (LockOrder::DATA_MUTEX)
      * @note Updates tracked drones if RSSI above threshold
+     * @note ALERT DEFER (audit D-ALERT-LOCK): threat alerts raised by the DB
+     *       tracking path are STAGED, not fired, while DATA_MUTEX is held —
+     *       the caller MUST invoke deliver_pending_alert() immediately after
+     *       this function returns (see drone_scanner_ui::on_channel_spectrum).
      */
     [[nodiscard]] ErrorCode process_spectrum_message(const ChannelSpectrum& spectrum, FreqHz frequency) noexcept;
+
+    /**
+     * @brief Fire the threat alert staged by raise_alert(), if any.
+     * @note Call AFTER releasing DATA_MUTEX (DB: right after
+     *       process_spectrum_message() returns; sweep: end of
+     *       apply_sweep_tracking()). The audio callback may busy-wait on a
+     *       full baseband queue — firing it under the lock extends the hold
+     *       and makes the UI thread's MutexTryLock fail (dropped FFT frames).
+     * @note No locks taken. Stack: ~8 bytes (one local). SRAM: 0.
+     */
+    void deliver_pending_alert() noexcept;
 
     /**
      * @brief Get current frequency for spectrum association (thread-safe)
@@ -2381,10 +2396,27 @@ private:
      * @brief Internal: Trigger alert callback if set
      * @param threat_level Threat level to report
      * @note Re-entrant safe via AtomicFlag guard
-     * @note May be called with DATA_MUTEX held — callback MUST be lock-free
-     *       (no mutex acquisition, no ChibiOS API calls that block)
+     * @note Fire ONLY with no lock held (sweep path) or from
+     *       deliver_pending_alert() after the lock is released. DB-path
+     *       producers must call raise_alert() instead of this function.
+     *       The callback (baseband beep request) may busy-wait on a full
+     *       queue — doing that under DATA_MUTEX would stall the UI frame.
      */
     void trigger_alert(ThreatLevel threat_level) noexcept;
+
+    /**
+     * @brief Stage a threat alert for later delivery (lock-safe path).
+     * @param threat_level Threat level to report; strongest level wins
+     * @note Called from update_tracked_drone_internal() on BOTH paths: DB
+     *       (DATA_MUTEX held) and sweep (no lock). Staging is a plain byte
+     *       write — all producers and the consumer run on the UI thread, so
+     *       no atomics are required (single-core M4F, no SMP).
+     * @note Drained by deliver_pending_alert(): DB after
+     *       process_spectrum_message(), sweep at the end of
+     *       apply_sweep_tracking(), update_tracked_drones() after unlock.
+     * Stack: ~4 bytes (one compare + one store).
+     */
+    void raise_alert(ThreatLevel threat_level) noexcept;
 
     // References to dependencies
     DatabaseManager& database_;
@@ -2449,6 +2481,17 @@ private:
     // with a dip) still does.
     static constexpr uint8_t DUAL_PEAK_MAX_RUN_BINS = 6;
 
+    // Valley flank probe window (audit D-VALLEY-PROBE): Step 9 reads up to
+    // this many usable bins OUTSIDE the Step-4 fragment on each side and
+    // takes the maximum margin (the old probe read ONE bin, so a 1-bin dip
+    // at the fragment edge masked an elevated continuation one bin further
+    // out — valley passed signals with no valley at all). Window (6) is
+    // smaller than CFAR_MIN_PEAK_SEPARATION (10), so a distinct neighbour
+    // whose peak respects NMS stays outside the window when this emission
+    // ends at a real null. Smooth monotone flanks measure IDENTICALLY to
+    // the 1-bin probe (the edge bin is the walk's maximum).
+    static constexpr uint8_t VALLEY_PROBE_MAX_BINS = 6;
+
     // RSSI hysteresis state (Schmitt trigger: 2 dB to turn ON, 2 dB easier to stay ON)
     // NORMAL-mode keys — owned by process_spectrum_message(). Sweep mode has
     // its own per-window keys below and MUST NOT touch these (see C2 block).
@@ -2499,6 +2542,12 @@ private:
 
     // Alert callback
     ThreatAlertCallback alert_callback_;
+
+    // Staged threat alert (audit D-ALERT-LOCK): raise_alert() records the
+    // strongest level here while DATA_MUTEX may be held; deliver_pending_alert()
+    // fires it after unlock. UI-thread-only read/write — plain byte, no atomics.
+    // SRAM: 1 byte.
+    ThreatLevel pending_alert_{ThreatLevel::NONE};
 
     // Mutex for thread safety (LockOrder::DATA_MUTEX)
     mutable Mutex mutex_;

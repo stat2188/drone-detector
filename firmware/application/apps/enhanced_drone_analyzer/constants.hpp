@@ -1083,14 +1083,23 @@ constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 0;
  *       including the O(width) dual-peak ridge scan, is skipped outright).
  * @note FPV DEFAULT = 0 (OFF) — the shipped 90 was mathematically INERT.
  *       Proof: Step 4 stops the width walk at the first bin below
- *       elevated = noise + peak_margin/3, so the flank bin Step 9 measures is
- *       always < peak_margin/3, i.e. <= (255-1)/3 = 84 units in EVERY mode
- *       (the elevated_sum clamp is unreachable: peak <= 255 forces
+ *       elevated = noise + peak_margin/3, so the FIRST flank bin Step 9
+ *       measures is always < peak_margin/3, i.e. <= (255-1)/3 = 84 units in
+ *       EVERY mode (the elevated_sum clamp is unreachable: peak <= 255 forces
  *       noise + margin/3 <= 255). A threshold of 90 could therefore never
  *       reject anything — while still paying the dual-peak ridge scan for
  *       every peak of every frame. 0 = byte-identical accept/reject
  *       behavior, honest alignment with the PERMISSIVE SET (Flat/Sym/Ratio
  *       are 0 too).
+ * @note FLANK PROBE = 6-bin window (audit D-VALLEY-PROBE): Step 9 now reads
+ *       up to VALLEY_PROBE_MAX_BINS (6) usable bins BEYOND the fragment edge
+ *       per side and takes the MAXIMUM margin. For a smooth monotone skirt
+ *       the edge bin is the maximum of the walk, so the measurement — and
+ *       the 3*(D+1) arming rule below — are IDENTICAL to the old 1-bin
+ *       probe; what changes is a 1-bin dip at the edge no longer masks an
+ *       elevated continuation further out (a plateau/second lobe within
+ *       6 bins counts at its own level). Keep D >= 6 so single-unit noise
+ *       dither beyond a deep valley cannot fire the filter.
  * @note To ARM the filter: threshold D fires only on flank >= D, which
  *       requires peak_margin >= 3*(D+1) — D=70..80 bites only near-saturation
  *       events (margin >= 213): receiver OVERLOAD (README section 24,

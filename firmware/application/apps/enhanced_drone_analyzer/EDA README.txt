@@ -853,14 +853,23 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
   Step 9: Valley Depth
     max_valley_margin = max margin of bins flanking the signal band
     Must stay below spectrum_valley_depth (default 0 = OFF)
-    → Mechanics: the flank bin sits below the Step-4 walk threshold
-      (noise + margin/3), so it measures <= floor((margin-1)/3) <= 84 —
-      the old default 90 could NEVER fire (provably inert) while still
-      paying the O(width) dual-peak scan per peak per frame. Default 0
-      skips the block with byte-identical behavior. Arming D fires only
-      at margin >= 3*(D+1): 70-80 = overload guard only (>= 213) that
+    → Mechanics (audit D-VALLEY-PROBE): each flank reads up to
+      VALLEY_PROBE_MAX_BINS (6) usable bins OUTSIDE the Step-4 fragment
+      (window end / edge_skip rolloff / DC wall stop the walk) and takes
+      the MAXIMUM margin. The FIRST bin sits below the Step-4 walk
+      threshold (noise + margin/3), so a smooth monotone skirt measures
+      <= floor((margin-1)/3) <= 84 exactly as the old 1-bin probe did —
+      what the window adds is catching terrain that RISES beyond a 1-bin
+      dip at the edge (a plateau/second lobe no longer hides behind the
+      notch). The old default 90 could NEVER fire on smooth flanks
+      (provably inert) while still paying the O(width) dual-peak scan
+      per peak per frame. Default 0 skips the block with byte-identical
+      behavior. Arming D fires on smooth flanks only at
+      margin >= 3*(D+1): 70-80 = overload guard only (>= 213) that
       also cuts saturated close-range FPV; <= 55 cuts mid-range FPV.
-      Ordinary WiFi never reaches 213 — valley cannot fight it.
+      Ordinary WiFi never reaches 213 — on smooth flanks valley cannot
+      fight it; keep D >= 6 so single-unit noise dither beyond a deep
+      valley never fires the filter.
     → Dual-peak skip (runs INSIDE the armed block): valley abstains for a
       dual-lobe emission — the ridge scan over [left..right] counts runs above
       noise+margin/2; exactly ONE extra ridge <= 6 bins (DUAL_PEAK_MAX_RUN_BINS)
