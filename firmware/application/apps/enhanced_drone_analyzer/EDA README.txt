@@ -774,7 +774,12 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
       normal mode, Sens <= 75: gate = spectrum_margin (default 20 ≈ 4 dB)
       normal mode, Sens > 75:  gate = spectrum_margin + (Sens-75)/2
                                (fresh default Sens=85 → gate = 25)
-      Sensitive mode:          gate = spectrum_margin - 2, NO Sens scaling
+      Sensitive ("Sens") mode: gate = clamp(3σ_IQR, 10, spectrum_margin - 2)
+                               — NOISE-ADAPTIVE (SHAPE_ADAPT_*): 3σ of the
+                               usable-bin IQR measured per frame; opens in
+                               clean noise (floor 10 = 2 dB), capped by
+                               Mar-2 so it is never STRICTER than the user
+                               asked (±5..10 on Mar cannot cliff-kill)
     → Rejects sub-CFAR noise spikes
 
   Step 4: Width Measurement (walk — MEASURES, never rejects)
@@ -927,7 +932,8 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
            apply_shape_filters; runs BEFORE Steps 13-15)
     kurtosis_x10 must exceed kurtosis_min_x10 (default 20 = 2.0)
     → Rejects Gaussian noise (kurtosis ≈ 0), accepts drone peaks (> 3)
-    → Default OFF (opt-in); skipped for very-strong / Sensitive / margin < 40
+    → Default OFF (opt-in); skipped for very-strong / margin < 40
+      (Sensitive eases the limit with w² instead of skipping — SHAPE_ADAPT_*)
     → [D-A] Scope: computed over THIS emission's Step-4 segment [left..right],
       NOT the whole frame — a second emitter in the same 20 MHz frame can no
       longer flip peak A's verdict (segment contract shared with Steps 7-11).
@@ -964,15 +970,28 @@ default OFF; with it OFF every gate below runs at ANY signal strength):
   When ON and peak_margin > 80 (~16 dB): skip valley/symmetry/kurtosis,
     width walk uses /2 instead of /3 (narrower measurement)
   When ON and peak_margin > 96 (~19 dB): additionally skip max_width
-  Flatness stays ON for very-strong peaks in Sensitive mode (only the
-  weak-peak flatness guard is skipped there)
+  Flatness in Sensitive mode stays ON for all peaks above the flatness
+  margin gate — its limit eases with w² (full stringency at strong peaks,
+  ≈100 = abstain near the gate), so close-range WiFi still faces Flat
   → Handles close-range wideband FPV signals
 
-Sensitive Mode:
-  When ON: effective gate = spectrum_margin - 2 (NO Sens scaling), skips
-  sharpness/valley/symmetry/kurtosis AND flatness for weak peaks
-  (flatness kept only for very-strong peaks when Bypass is ON)
-  → For weak/long-range signals
+Sensitive ("Sens") Mode — ADAPTIVE shape (self-tuning, SHAPE_ADAPT_*):
+  When ON the shape chain NEVER skips a step — instead:
+  1) the Step-3 gate becomes noise-adaptive: clamp(3σ_IQR, 10, Mar-2)
+     (opens in clean noise, capped by the user value — Sens is never
+     stricter than the user asked);
+  2) Steps 5-12 ease their thresholds with the stringency weight
+     w = min(100, (margin − gate)·100/20) and quadratic w² easing:
+       MinW → up to −10 bins (floor 2), MaxW → up to ×1.5,
+       Sharp → 100 + (user−100)·w²/10000, Ratio → user·w²/10000,
+       Valley → user + (ceil−user)·(1 − w²/10000), Flat → toward 100,
+       Sym/Kurt → user·w²/10000.
+     A marginal peak (just above the gate) is judged gently; a strong one
+     (gate + 4 dB → w = 100) faces the EXACT user thresholds — so Sharp/
+     Valley/Flat/Sym/Kurt still hold the line against WiFi in Sens mode.
+  When OFF: w = 100 forces every formula to the user value — the legacy
+  strict chain, byte-identical.
+  → For weak/long-range signals WITHOUT giving up the filter chain
 
 ================================================================================
 15. CFAR DETECTION (All 7 Modes)
@@ -1461,9 +1480,12 @@ WiFi — ШИРОКОПОЛОСНЫЙ сигнал (20-40+ МГц), а окно 
      пикам (peak_margin < FLATNESS_MIN_PEAK_MARGIN ≈ 8 дБ) — слабый FPV
      проходит мимо flatness, а сильный близкий WiFi (у которого margin
      большой) flatness режет. Это ровно то разделение, которое нужно.
-  3) НЕ включайте Sensitive mode на WiFi-плотных местах: он отключает
-     sharpness и valley — два фильтра, которые держат WiFi. Sensitive —
-     для чистого поля, когда дрон слабый и в эфире никого нет.
+  3) Sensitive mode НЕ отключает фильтры (адаптивная переделка): sharpness,
+     valley, flatness, симметрия и эксцесс продолжают работать — их пороги
+     смягчаются пропорционально SNR (w²), а на сильных пиках действуют в
+     полную силу. На WiFi-плотных местах Sensitive теперь допустим, но
+     осторожный: открытый гейт (3σ, пол 10) пускает больше кандидатов —
+     держите CFAR/neighbor включёнными и не задирайте Mar.
   4) valley_depth (Vly): дефолт 0 (выкл). Старый порог 90 был математически
      недостижим (фланк хода всегда < margin/3 ≤ 84) и не защищал ни от чего.
      Включать 70-80 стоит только против перегрузки приёмника (сценарий 5):

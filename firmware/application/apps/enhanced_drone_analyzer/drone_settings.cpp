@@ -385,7 +385,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     // "Mar" is the BASE of the Step-3 gate (README §14). The scanner applies
     // shape_gate_margin(): normal mode + Sens>75 → Mar + (Sens-75)/2
     // (fresh default Sens 85 → effective gate = Mar+5, so Mar=20 gates at 25);
-    // Sensitive mode → Mar-2 with NO scaling. Single source of truth:
+    // Sensitive ("Sens") mode → Mar acts as a CAP on the NOISE-ADAPTIVE gate
+    // clamp(3σ_IQR, 10, Mar-2) — in clean noise the gate opens below Mar, so
+    // ±5..10 here cannot cliff-kill a target the measured noise justifies
+    // (constants.hpp SHAPE_ADAPT_*). Single source of truth:
     // DroneScanner::shape_gate_margin().
     field_spectrum_margin_.on_change = [this](int32_t v) {
         settings_.spectrum_margin = static_cast<uint8_t>(v);

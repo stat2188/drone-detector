@@ -108,6 +108,26 @@ static uint8_t quickselect_percentile(uint8_t* buf, size_t count, uint8_t percen
     return buf[k_safe];
 }
 
+/**
+ * @brief SENS adaptive stringency weight (0..100) for one peak (SHAPE_ADAPT_*).
+ * @param peak_margin Peak elevation above the noise shelf (units)
+ * @param gate Effective Step-3 gate this frame (shape_gate_margin())
+ * @return 0 at/under the gate, ramping linearly to 100 at
+ *         gate + SHAPE_ADAPT_SLACK_UNITS (+4 dB). Consumers apply w² easing
+ *         (w2/10000), so thresholds sit near their permissive floor at small
+ *         w and converge quadratically to the exact user value at w = 100.
+ * @note apply_shape_filters forces w = 100 when sensitive_mode is OFF —
+ *       every eased formula then collapses to the legacy behavior.
+ * Stack: ~8 bytes (registers). Flash: ~40 bytes. No FP; division is by
+ *       SHAPE_ADAPT_SLACK_UNITS, static_asserted > 0.
+ */
+static uint8_t shape_adapt_weight(uint8_t peak_margin, uint8_t gate) noexcept {
+    if (peak_margin <= gate) return 0;
+    const uint32_t above = static_cast<uint32_t>(peak_margin - gate);
+    const uint32_t w = (above * 100u) / static_cast<uint32_t>(SHAPE_ADAPT_SLACK_UNITS);
+    return static_cast<uint8_t>((w > 100u) ? 100u : w);
+}
+
 // ============================================================================
 // ScanConfig Implementation
 // ============================================================================
@@ -1802,6 +1822,17 @@ uint8_t DroneScanner::shape_gate_margin_try() const noexcept {
     } else if (config_.sensitive_mode) {
         base = 1;
     }
+    // SENS ADAPTIVE GATE mirror (SHAPE_ADAPT_*): the same value the
+    // detector uses this frame — the last frame's measurement, written on
+    // this same UI drain thread by update_auto_gate() (never the scanner
+    // thread). Sentinel 0 (no measurement yet) falls back to base exactly
+    // like shape_gate_margin(). A one-frame-stale gate here can only affect
+    // the UI-side half-gate prefilter, whose weak frames are still offered
+    // to TBD via sweep_tbd_frame_reachable() — the "UI test is a strict
+    // subset of the detector test" invariant is preserved.
+    if (config_.sensitive_mode) {
+        return (auto_gate_ != 0) ? auto_gate_ : base;
+    }
     const int32_t rssi_sens = -(config_.rssi_threshold_dbm + 95);
     if (!config_.sensitive_mode && rssi_sens > 0) {
         const uint16_t scaled = static_cast<uint16_t>(base) +
@@ -2190,6 +2221,13 @@ bool DroneScanner::analyze_spectrum_shape_multi(
         : 0;
     out_result.noise_floor = noise_floor;
 
+    // SENS ADAPTIVE GATE (SHAPE_ADAPT_*): measure this frame's noise-driven
+    // Step-3 gate BEFORE any consumer (CFAR veto, fixed-branch collection,
+    // the chain itself) reads shape_gate_margin(). Reuses spectrum_sort_buf_
+    // (the p25 quickselect above destroyed it) — sequential, same thread;
+    // Step 12 kurtosis re-fills it later as before.
+    update_auto_gate(spectrum, FFT_EDGE_SKIP, noise_floor);
+
     const int32_t total_gain = get_current_total_gain();
 
     if (config_.cfar_mode != CFARMode::OFF) {
@@ -2462,6 +2500,14 @@ uint8_t DroneScanner::shape_gate_margin() const noexcept {
     // (up to ~15) cannot exceed 215 today, but keep the sum in uint16 and
     // clamp so a future clamp change cannot reintroduce uint8 wraparound.
     const uint8_t base = effective_spectrum_margin();
+    // SENS ADAPTIVE GATE (constants.hpp SHAPE_ADAPT_* contract #1): in Sens
+    // mode the gate is the per-frame noise measurement (3σ of the usable-
+    // bin IQR), clamped in update_auto_gate() to [FLOOR, base] — it OPENS
+    // in clean noise and can never exceed the user's value. Sentinel 0 =
+    // no measurement yet (first frame / chain off) → user base fallback.
+    if (config_.sensitive_mode) {
+        return (auto_gate_ != 0) ? auto_gate_ : base;
+    }
     const int32_t rssi_sens = -(config_.rssi_threshold_dbm + 95);
     if (!config_.sensitive_mode && rssi_sens > 0) {
         const uint16_t scaled =
@@ -2470,6 +2516,65 @@ uint8_t DroneScanner::shape_gate_margin() const noexcept {
         return (scaled > 255) ? 255 : static_cast<uint8_t>(scaled);
     }
     return base;
+}
+
+void DroneScanner::update_auto_gate(
+    const ChannelSpectrum& spectrum,
+    size_t edge_skip,
+    uint8_t noise_floor
+) noexcept {
+    // SENS ADAPTIVE GATE measurement (constants.hpp SHAPE_ADAPT_* contract #1):
+    // estimate σ from the usable-bin IQR (p75 − p25; σ ≈ IQR/1.349) and
+    // store the 3σ gate clamped to [SHAPE_ADAPT_GATE_FLOOR, user base]:
+    //   clean spectrum → 3σ under the floor → floor (2 dB ≈ 5σ at σ ≈ 2 —
+    //                      a single-bin noise excursion reaches it with
+    //                      p ≈ 3e-7, so the opened gate stays quiet);
+    //   noisy spectrum → 3σ rises but the user base CAPS it, so Sens mode
+    //                      is never stricter than the user asked;
+    //   base < floor (user tightened Mar below 10) → base wins — explicit
+    //                      tightening is always respected.
+    // Refills spectrum_sort_buf_ (the Step-1 p25 quickselect destroyed it)
+    // over the SAME cell set (edge_skip..end minus the DC spike); Step 12
+    // kurtosis re-fills the scratch later — sequential, one thread.
+    // @pre Called right after Step 1 extracted noise_floor, before any
+    //      shape_gate_margin() read of this frame (DB: analyze at the top;
+    //      sweep: before cfg_margin below).
+    // Stack: ~20 bytes (counters + uint16 temps, registers). SRAM: 1 byte
+    //        (auto_gate_, class member). Flash: ~150 bytes. No FP, no locks.
+    if (!config_.sensitive_mode) {
+        auto_gate_ = 0;  // keep the sentinel exact while the mode is off
+        return;
+    }
+    uint8_t* buf = spectrum_sort_buf_;
+    size_t count = 0;
+    for (size_t i = edge_skip; i < FFT_BIN_COUNT - edge_skip; ++i) {
+        if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+        buf[count++] = spectrum.db[i];
+    }
+    if (count == 0) {
+        auto_gate_ = 0;
+        return;
+    }
+    const uint8_t p75 = quickselect_percentile(buf, count, 75);
+    const uint8_t iqr = (p75 > noise_floor)
+        ? static_cast<uint8_t>(p75 - noise_floor)
+        : static_cast<uint8_t>(0);
+    // 3σ ≈ IQR × 3/1.349 ≈ IQR × 2.22 → (IQR × 22 + 5) / 10 (round-half).
+    // uint16 holds 255 × 22 + 5 = 5615 — no overflow; the value is clamped
+    // below BEFORE any uint8 narrowing.
+    const uint16_t sigma3 = static_cast<uint16_t>(
+        (static_cast<uint32_t>(iqr) * SHAPE_ADAPT_SIGMA3_NUM +
+         SHAPE_ADAPT_SIGMA3_DEN / 2u) / SHAPE_ADAPT_SIGMA3_DEN);
+    const uint8_t base_cap = effective_spectrum_margin();
+    if (sigma3 > base_cap) {
+        auto_gate_ = base_cap;                 // user cap wins
+    } else if (sigma3 < SHAPE_ADAPT_GATE_FLOOR) {
+        auto_gate_ = (base_cap < SHAPE_ADAPT_GATE_FLOOR)
+            ? base_cap                          // user tightened below the floor
+            : SHAPE_ADAPT_GATE_FLOOR;           // floor keeps noise out
+    } else {
+        auto_gate_ = static_cast<uint8_t>(sigma3);
+    }
 }
 
 bool DroneScanner::apply_shape_filters(
@@ -2562,13 +2667,31 @@ bool DroneScanner::apply_shape_filters(
     // nullified here (this step re-checked the full config margin), so peaks
     // with margin 3-4 passed CFAR and were then rejected — the sensitive
     // relaxation was dead code.
-    // At sens=75 (default): gate = spectrum_margin (no change).
+    // At sens=75: gate = spectrum_margin (no change).
     // At sens=87 (rssi_sens=12): gate = spectrum_margin + 6.
-    // In sensitive mode the scaling is NOT applied — the user explicitly opts
-    // for maximum weak-signal sensitivity, and the scaling would partially
-    // cancel the relaxation.
+    // In sensitive mode the scaling is NOT applied — and the gate itself is
+    // the NOISE-ADAPTIVE measurement (auto_gate_, SHAPE_ADAPT_*): the user
+    // explicitly opts for maximum weak-signal sensitivity, and the scaling
+    // would partially cancel the relaxation.
     const uint8_t effective_margin = shape_gate_margin();
     if (peak_margin < effective_margin) return false;
+
+    // SENS ADAPTIVE STRINGENCY WEIGHT (SHAPE_ADAPT_* contract #2) — the
+    // heart of "Sens = self-tuning shape": w = how far the peak sits above
+    // the entry gate, 0..100 with full stringency at gate + SLACK (+4 dB).
+    // sensitive_mode OFF forces w = 100 → w2 = 10000 → every eased formula
+    // in Steps 5-12 collapses to the exact user value (legacy byte-identity
+    // by construction). All steps stay ACTIVE in Sens mode; thresholds ease
+    // QUADRATICALLY (w2/10000) so a marginal peak is judged gently while a
+    // strong one still faces the full user thresholds. At w == 0 (peak
+    // exactly at the gate) the shape verdicts abstain — the peak only just
+    // cleared the minimum bar and its geometry is noise-dominated.
+    // Stack: +4 bytes (two register locals). SRAM: 0. Flash: ~60 bytes.
+    const uint8_t adapt_w = config_.sensitive_mode
+        ? shape_adapt_weight(peak_margin, effective_margin)
+        : 100;
+    const uint16_t w2 =
+        static_cast<uint16_t>(adapt_w) * static_cast<uint16_t>(adapt_w);
 
     // Step 4: Count elevated bins around peak (signal width)
     // /3 instead of /4: for weak signals (peak_margin=20), /4 gives 5 units above
@@ -2634,7 +2757,26 @@ bool DroneScanner::apply_shape_filters(
         || (has_dc_gap && peak_idx < FFT_DC_SPIKE_START && right == FFT_DC_SPIKE_START - 1);
 
     // Step 5: Minimum width
-    if (signal_width < config_.spectrum_min_width) return false;
+    // SENS ADAPTIVE: near the gate the walk bar (noise + margin/3) sits in
+    // the noise band and quantization scatters the measured width — ease
+    // MinW toward the noise-spike floor (DEFAULT_SPECTRUM_MIN_WIDTH = 2) at
+    // small w so a ±1 click MinW change cannot cliff-kill a marginal narrow
+    // target (ELRS/burst). w = 100 → relax = 0 → exact user MinW (OFF path
+    // byte-identical); the floor never drops below the spike guard, even
+    // when the user set MinW = 1 (Sens can only relax TO the floor, never
+    // below it). Stack: +4 bytes (register). Flash: ~48 bytes.
+    const uint8_t minw_relax = static_cast<uint8_t>(
+        (static_cast<uint32_t>(SHAPE_ADAPT_MIN_WIDTH_RELAX) * (10000u - w2)) / 10000u);
+    uint8_t minw_eff = (config_.spectrum_min_width > minw_relax)
+        ? static_cast<uint8_t>(config_.spectrum_min_width - minw_relax)
+        : DEFAULT_SPECTRUM_MIN_WIDTH;
+    // Spike-floor guard applies ONLY while actually relaxing (relax > 0):
+    // at relax == 0 (OFF, or w = 100 in Sens) the user's exact MinW — even
+    // MinW = 1 — is honored byte-identically.
+    if (minw_relax > 0 && minw_eff < DEFAULT_SPECTRUM_MIN_WIDTH) {
+        minw_eff = DEFAULT_SPECTRUM_MIN_WIDTH;
+    }
+    if (signal_width < minw_eff) return false;
 
     // Step 6: Maximum width
     // Opt-in bypass only (shape_bypass_enabled): at peak_margin > 96 (~19 dB),
@@ -2651,13 +2793,24 @@ bool DroneScanner::apply_shape_filters(
     // flat-tops then had NO width-domain filter at all. Below MaxW is
     // enforced whenever the bypass flag is OFF, regardless of strength
     // (the /2 elevated threshold keeps the measurement trustworthy).
+    // SENS ADAPTIVE (SHAPE_ADAPT_*): the MEASURED width inflates near the
+    // gate (walk bar inside the noise band) — ease MaxW up to ×1.5 at w = 0,
+    // exact user MaxW at w = 100 (OFF path byte-identical). The DC-gap cap
+    // (≤110/114 measurable bins) and Step 6c (sweep) still bound the result,
+    // so the relaxation cannot open a wideband hole beyond the window.
     if (config_.shape_bypass_enabled && peak_margin > EXTREME_SIGNAL_MARGIN) {
         // Extreme-signal bypass: width checks skipped by explicit user opt-in.
         // Degenerate peak-only extent — dedup consumers must not
         // over-suppress bypassed signals. Published at the success exit (F3).
         final_extent = SignalExtent{peak_idx, peak_idx};
     } else {
-        if (signal_width > config_.spectrum_max_width) return false;
+        // ≤ 1.5x MaxW at w = 0 (uint16: 255 + 127 = 382 — the >255 range is
+        // the documented "no cap" regime anyway). Exact user MaxW at w = 100.
+        const uint16_t maxw_eff = static_cast<uint16_t>(config_.spectrum_max_width) +
+            static_cast<uint16_t>(
+                (static_cast<uint32_t>(config_.spectrum_max_width) *
+                 (10000u - w2)) / 20000u);
+        if (signal_width > maxw_eff) return false;
 
         // Step 6b: EMISSION EXTENT (the real MaxW semantics).
         // signal_width (Step 4) is the FRAGMENT above the peak-relative /3
@@ -2676,7 +2829,7 @@ bool DroneScanner::apply_shape_filters(
         const SignalExtent emission = emission_extent(
             [data](size_t i) noexcept { return data[i]; },
             peak_idx, data_size, noise_floor, peak_margin, edge_skip, has_dc_gap);
-        if (emission.width() > config_.spectrum_max_width) return false;
+        if (emission.width() > maxw_eff) return false;
 
         // Step 6c: EDGE-CLIP GUARD (sweep-only; reject_edge_clipped=true).
         // BOTH-EDGES RULE (FPV-relaxed): an emission is a clipped fragment
@@ -2792,8 +2945,10 @@ bool DroneScanner::apply_shape_filters(
     }
 
     // Step 7: Peak sharpness (enforce inverted-V shape)
-    // Sensitive mode: skip — at low SNR noise bins inflate avg_margin and the
-    // peak/avg ratio becomes unreliable (same rationale as valley/flatness).
+    // SENS ADAPTIVE (was: skipped in sensitive mode — now stays ACTIVE):
+    // at low SNR noise bins inflate avg_margin, so the LIMIT eases with w²
+    // toward the documented no-op (100) instead of switching the step off —
+    // marginal peaks keep a gentle shape check, strong peaks the full value.
     // NOTE: the field floor is 50 (OFF sentinel), so `> 50` here means
     // "user actually set a sharpness filter". 50 itself disables.
     // MATH DEAD-BAND (audit D5, documented in constants.hpp): avg_margin is
@@ -2803,7 +2958,7 @@ bool DroneScanner::apply_shape_filters(
     // no-op default); effective filtering starts at 101. No comparison
     // change can fix this (the peak is the range maximum by construction).
     int32_t avg_margin = 0;
-    if (config_.spectrum_peak_sharpness > 50 && !config_.sensitive_mode) {
+    if (config_.spectrum_peak_sharpness > 50 && (!config_.sensitive_mode || adapt_w > 0)) {
         int32_t margin_sum = 0;
         size_t count = 0;
         for (size_t i = left; i <= right; ++i) {
@@ -2819,13 +2974,27 @@ bool DroneScanner::apply_shape_filters(
 
         if (avg_margin <= 0) return false;
         const int32_t sharpness = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
-        if (sharpness < config_.spectrum_peak_sharpness) return false;
+        // SENS eased limit: 100 + (user − 100)·w²/10000. w = 100 → exact
+        // user value (OFF byte-identical); w < 100 slides the limit toward
+        // the no-op 100 — the documented dead-band (S ≤ 100 never rejects,
+        // sharpness ≥ 100 by construction) keeps its meaning at every w.
+        const int32_t sharpness_limit = 100 +
+            ((static_cast<int32_t>(config_.spectrum_peak_sharpness) - 100) *
+             static_cast<int32_t>(w2)) / 10000;
+        if (sharpness < sharpness_limit) return false;
     }
 
     // Step 8: Peak ratio (tall+narrow = inverted-V)
+    // SENS ADAPTIVE: limit = user·w²/10000 — w = 100 → exact user R,
+    // small w → 0 (abstain: a near-gate peak's ratio is noise-dominated).
     if (config_.spectrum_peak_ratio > 0) {
-        const int32_t ratio = (static_cast<int32_t>(peak_margin) * 10) / static_cast<int32_t>(signal_width);
-        if (ratio < config_.spectrum_peak_ratio) return false;
+        const int32_t ratio_limit =
+            (static_cast<int32_t>(config_.spectrum_peak_ratio) *
+             static_cast<int32_t>(w2)) / 10000;
+        if (ratio_limit > 0) {
+            const int32_t ratio = (static_cast<int32_t>(peak_margin) * 10) / static_cast<int32_t>(signal_width);
+            if (ratio < ratio_limit) return false;
+        }
     }
 
     // Step 9: Valley depth (deep valleys flanking peak = V-shape)
@@ -2835,8 +3004,13 @@ bool DroneScanner::apply_shape_filters(
     // legacy "any bin above half-peak" test was satisfied by a WiFi flat-top
     // by construction and was replaced.
     // Very strong signal bypass: flanking bins ARE the signal at close range.
-    // Sensitive mode bypass: valley depth is unreliable for weak signals.
-    if (config_.spectrum_valley_depth > 0 && !very_strong && !config_.sensitive_mode) {
+    // SENS ADAPTIVE (was: skipped in sensitive mode — now stays ACTIVE):
+    // the allowed flank eases with w² toward the smooth-flank ceiling
+    // (margin/3 + 1) — near the gate valley effectively abstains, at full
+    // stringency it is exactly the user D — weak-signal geometry stays
+    // protected without a binary bypass.
+    if (config_.spectrum_valley_depth > 0 && !very_strong &&
+        (!config_.sensitive_mode || adapt_w > 0)) {
         // FIX B5 (narrow dual-peak skip): the old "any bin above half-peak"
         // test was satisfied by dozens of bins of a WiFi flat-top, so valley
         // NEVER rejected flat-tops while claiming to. Count ridges above the
@@ -3012,7 +3186,16 @@ bool DroneScanner::apply_shape_filters(
 
             const uint8_t max_valley = (left_valley_margin > right_valley_margin)
                 ? left_valley_margin : right_valley_margin;
-            if (max_valley >= config_.spectrum_valley_depth) return false;
+            // SENS eased limit (max-polarity): D + (margin/3 + 1)·
+            // (10000 − w²)/10000 — at w = 0 the limit sits above every
+            // measurable flank (abstain), at w = 100 it is exactly the user
+            // D (OFF byte-identical). uint16: D ≤ 200 + ceiling ≤ 86 → 286.
+            const uint16_t valley_limit =
+                static_cast<uint16_t>(config_.spectrum_valley_depth) +
+                static_cast<uint16_t>(
+                    (static_cast<uint32_t>(peak_margin / 3u + 1u) *
+                     (10000u - w2)) / 10000u);
+            if (max_valley >= valley_limit) return false;
         }
     }
 
@@ -3028,10 +3211,12 @@ bool DroneScanner::apply_shape_filters(
             ? (FLATNESS_MIN_PEAK_MARGIN - rssi_sens)
             : 15)
         : FLATNESS_MIN_PEAK_MARGIN;
-    // Sensitive mode skips flatness for WEAK signals (#1 cause of missed weak
-    // FPV) but KEEPS it for very_strong peaks: with max_width/valley/symmetry
-    // all bypassed at very_strong, disabling flatness too would let a
-    // close-range WiFi/BT flat-top pass unfiltered.
+    // SENS ADAPTIVE (was: skipped flatness for WEAK peaks in sensitive mode
+    // — now stays ACTIVE): the limit eases with w² toward 100 (pct > 100
+    // can never fire ⇒ near-gate weak peaks pass — the original intent),
+    // while strong peaks keep the full user Flat. The original protection
+    // goal survives: a close-range WiFi/BT flat-top has a large margin
+    // (w = 100) and still faces Flat unfiltered.
     // NOTE (audit update): default spectrum_flatness is now 0 (DISABLED) —
     // a fat blunt-topped FPV peak measured 45-70% and was rejected here on
     // nearly every pass (this step only engages above ~8 dB margin, i.e.
@@ -3040,7 +3225,7 @@ bool DroneScanner::apply_shape_filters(
     // peaks (peak_margin < effective_flatness_min) and, in sensitive mode,
     // ALL non-very-strong peaks — far-field FPV is unaffected either way.
     if (config_.spectrum_flatness > 0 && peak_margin >= effective_flatness_min
-        && (!config_.sensitive_mode || very_strong)) {
+        && (!config_.sensitive_mode || adapt_w > 0)) {
         // Denominator: signal width excluding DC spike bins (if present)
         size_t effective_width = right - left + 1;
         if (has_dc_gap && left < FFT_DC_SPIKE_END && right >= FFT_DC_SPIKE_START) {
@@ -3097,14 +3282,24 @@ bool DroneScanner::apply_shape_filters(
 
             if (effective_width > 0) {
                 const uint8_t flatness_pct = static_cast<uint8_t>((high_power_count * 100) / effective_width);
-                if (flatness_pct > config_.spectrum_flatness) return false;
+                // SENS eased limit (max-polarity): F + (100−F)·(10000−w²)/10000
+                // ≤ 100 — at w = 0 the limit is 100 (abstain), at w = 100 the
+                // exact user F (OFF byte-identical). uint16 intermediate.
+                const uint8_t flatness_limit = static_cast<uint8_t>(
+                    static_cast<uint16_t>(config_.spectrum_flatness) +
+                    static_cast<uint16_t>(
+                        ((100u - static_cast<uint16_t>(config_.spectrum_flatness)) *
+                         (10000u - w2)) / 10000u));
+                if (flatness_pct > flatness_limit) return false;
             }
         }
     }
 
     // Step 11: Symmetry (V-shape must have similar left/right width)
     // Signal is real regardless of asymmetry at strong levels.
-    // Sensitive mode: skip symmetry — asymmetric shapes are common in weak/multipath signals.
+    // SENS ADAPTIVE (was: skipped in sensitive mode — now stays ACTIVE):
+    // the required symmetry eases as user·w²/10000 — weak/multipath peaks
+    // face a near-zero bar (abstain-like), strong peaks the full user Y.
     // Boundary skip (audit fix D8): a flank stopped by the window edge or the
     // DC wall used to be counted as width 0 — sym_pct collapsed to 0% and ANY
     // signal parked at a boundary (VTX drift, unlucky slice phase) was
@@ -3112,14 +3307,19 @@ bool DroneScanner::apply_shape_filters(
     // No boundary → no verdict: BOTH flanks must be threshold-measured for
     // symmetry to speak (left_clipped/right_clipped from the Step 4 walk).
     if (config_.spectrum_symmetry > 0 && signal_width > 1 && !very_strong
-        && !config_.sensitive_mode && !left_clipped && !right_clipped) {
+        && (!config_.sensitive_mode || adapt_w > 0) && !left_clipped && !right_clipped) {
         const size_t left_width = peak_idx - left;
         const size_t right_width = right - peak_idx;
         const size_t max_side = (left_width > right_width) ? left_width : right_width;
         const size_t min_side = (left_width < right_width) ? left_width : right_width;
         if (max_side > 0) {
             const uint8_t sym_pct = static_cast<uint8_t>((min_side * 100) / max_side);
-            if (sym_pct < config_.spectrum_symmetry) return false;
+            // SENS eased limit (min-polarity): user·w²/10000 ≤ user —
+            // w = 100 → exact user Y (OFF byte-identical); small w → 0 and
+            // `sym_pct < 0` can never fire ⇒ abstain-like.
+            const uint8_t sym_limit = static_cast<uint8_t>(
+                (static_cast<uint32_t>(config_.spectrum_symmetry) * w2) / 10000u);
+            if (sym_pct < sym_limit) return false;
         }
     }
 
@@ -3128,7 +3328,10 @@ bool DroneScanner::apply_shape_filters(
     // (kurtosis > 3, leptokurtic). WiFi flat-top has kurtosis < 0 (platykurtic).
     // Only runs when explicitly enabled (opt-in, default OFF).
     // Very strong bypass: kurtosis is unreliable when signal fills >50% of bins.
-    // Sensitive mode: skip kurtosis — unreliable for weak signals with low SNR.
+    // SENS ADAPTIVE (was: skipped in sensitive mode — now stays ACTIVE):
+    // required kurtosis eases as user·w²/10000 — at small w only clearly
+    // platykurtic (WiFi-like, kurt < 0) profiles still fail; at w = 100
+    // the exact user K.
     // FIX (audit D-A — SEGMENT SCOPE): computed over THIS emission's Step-4
     // fragment [left..right], NOT the whole frame. Steps 7-11 all measure the
     // same segment; the old whole-frame range let a SECOND emitter in the same
@@ -3141,7 +3344,8 @@ bool DroneScanner::apply_shape_filters(
     // (MinW default 2) would REJECT on an undefined statistic. Same 4-bin floor
     // FLATNESS_MIN_SIGNAL_WIDTH uses for the same reason. Stack: ~4 bytes
     // (register locals). SRAM: 0 (spectrum_sort_buf_ scratch, sequential use).
-    if (config_.kurtosis_enabled && peak_margin >= FLATNESS_MIN_PEAK_MARGIN && !very_strong && !config_.sensitive_mode) {
+    if (config_.kurtosis_enabled && peak_margin >= FLATNESS_MIN_PEAK_MARGIN && !very_strong
+        && (!config_.sensitive_mode || adapt_w > 0)) {
         constexpr uint8_t KURTOSIS_MIN_SEGMENT_BINS = 4;
         if (signal_width >= KURTOSIS_MIN_SEGMENT_BINS) {
             const auto kurt_result = SpectralKurtosis::compute(
@@ -3150,7 +3354,13 @@ bool DroneScanner::apply_shape_filters(
                 has_dc_gap ? FFT_DC_SPIKE_START : 0,
                 has_dc_gap ? FFT_DC_SPIKE_END : 0
             );
-            if (kurt_result.kurtosis_x10 < config_.kurtosis_min_x10) {
+            // SENS eased limit: user·w²/10000 (int32 — min_x10 is int16 ≥ 0
+            // per settings clamp; w2 ≤ 10000 → no overflow). w = 100 → exact
+            // user K (OFF byte-identical).
+            const int32_t kurt_limit =
+                (static_cast<int32_t>(config_.kurtosis_min_x10) *
+                 static_cast<int32_t>(w2)) / 10000;
+            if (kurt_result.kurtosis_x10 < kurt_limit) {
                 return false;
             }
         }
@@ -3480,14 +3690,9 @@ void DroneScanner::process_spectrum_sweep(
     // apply_shape_filters Step 3 in BOTH scan modes. Single source of truth —
     // no candidate is collected that Step 3 would only reject, and every peak
     // the gate admits is guaranteed the same Step 4 width threshold.
-    // Default margin=20 (~4 dB above noise); sensitive: 18 (~3.6 dB).
-    // P0-2: hoist the gain read out of the per-peak loop — the LNA/VGA/RF
-    // state is stable inside one frame, so one cached total_gain replaces
-    // the repeated get_current_total_gain() calls below (each of which
-    // re-reads receiver_model).
-    const uint8_t cfg_margin = shape_gate_margin();
-    const int32_t frame_total_gain = get_current_total_gain();
-
+    // Default margin=20 (~4 dB above noise); SENS mode: the NOISE-ADAPTIVE
+    // gate clamp(3σ_IQR, 10, Mar-2) measured in update_auto_gate() below
+    // (SHAPE_ADAPT_*), never stricter than Mar-2.
     // Step 1: Compute noise floor (25th percentile of usable bins).
     // Shared for all peaks in this frame — computed once.
     // FRAME-LEVEL MEDIAN FEED (FIX): track the raw frame peak in the SAME
@@ -3510,6 +3715,20 @@ void DroneScanner::process_spectrum_sweep(
     }
     if (idx == 0) return;
     const uint8_t noise_floor = quickselect_percentile(usable, idx, 25);
+
+    // SENS ADAPTIVE GATE (SHAPE_ADAPT_*): measure this frame's noise-driven
+    // Step-3 gate NOW — cfg_margin below and every later shape_gate_margin()
+    // read of this frame must see the fresh value (reading it before Step 1
+    // would return the previous frame's measurement / the 0 sentinel).
+    update_auto_gate(spectrum, FFT_EDGE_SKIP_NARROW, noise_floor);
+
+    // P0-2: hoist the gain read out of the per-peak loop — the LNA/VGA/RF
+    // state is stable inside one frame, so one cached total_gain replaces
+    // the repeated get_current_total_gain() calls below (each of which
+    // re-reads receiver_model). Defined after Step 1 on purpose: cfg_margin
+    // depends on the fresh SENS gate measurement above.
+    const uint8_t cfg_margin = shape_gate_margin();
+    const int32_t frame_total_gain = get_current_total_gain();
 
     // Frame-level median feed (Md+): once per frame, BEFORE any accept/reject
     // decision. Reset-per-step semantics unchanged (frequency-change gate at

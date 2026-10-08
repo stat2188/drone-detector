@@ -136,15 +136,21 @@ struct ScanConfig {
     bool waterfall_enabled{true};        // Default ON — reserved gate; currently
                                          // NOT read anywhere (TBD/Doppler run
                                          // unconditionally). Not persisted.
-    // Sensitive mode — relaxes shape filters for weak/long-range signals
-    // When ON: reduces spectrum_margin by 2 (min 1) in BOTH scan modes via
-    //          effective_spectrum_margin(); skips sharpness, valley_depth,
-    //          symmetry and kurtosis checks; skips flatness for WEAK peaks
-    //          only (very_strong peaks keep flatness, so a close-range
-    //          WiFi/BT flat-top cannot slip through with every other
-    //          filter bypassed).
-    // When OFF (default): full 12-step shape filter chain active.
-    bool sensitive_mode{false};          // Default OFF — opt-in for max sensitivity
+    // Sensitive ("Sens") mode — ADAPTIVE shape: the chain keeps RUNNING,
+    // its thresholds self-tune to the observed SNR (constants.hpp
+    // SHAPE_ADAPT_* contract). When ON:
+    //   - the Step-3 gate becomes noise-adaptive: clamp(3σ_IQR, 10,
+    //     spectrum_margin − 2) — opens in clean noise, capped by the user
+    //     value so Sens is never STRICTER than asked (±5..10 on "Mar"
+    //     cannot cliff-kill a marginal target);
+    //   - Steps 5-12 are NEVER skipped — each threshold eases with the
+    //     weight w (peak distance above the gate, quadratic w² easing):
+    //     marginal peaks are judged gently, strong peaks (gate + 4 dB) by
+    //     the full user thresholds. Sharp/Valley/Flat/Sym/Kurt therefore
+    //     still protect against WiFi in Sens mode — just proportionally.
+    // When OFF (default): w = 100 forces every eased formula to the exact
+    // user value — the legacy strict chain, byte-identical.
+    bool sensitive_mode{false};          // Default OFF — opt-in for adaptive shape
 
     // Very-strong signal shape-filter bypass (opt-in, default OFF)
     // When ON: peak_margin > 80 (~16 dB) narrows the width measurement
@@ -2018,11 +2024,11 @@ private:
     /**
      * @brief Spectrum margin with the sensitive-mode relaxation applied
      * @return spectrum_margin, reduced by 2 (min 1) when sensitive_mode is on
-     * @note Single source of truth for the sensitive-mode BASE margin. This is
-     *       the relaxation layer only — the full Step 3 gate (including the
-     *       high-sensitivity scaling) is shape_gate_margin(). Previously the
-     *       reduction existed only in the sweep candidate gate and was
-     *       nullified by Step 3, which re-checked the full margin.
+     * @note Single source of truth for the sensitive-mode BASE margin. In
+     *       Sens mode this value acts as the CAP of the noise-adaptive gate
+     *       (see shape_gate_margin / constants.hpp SHAPE_ADAPT_*), not the
+     *       gate itself. The full Step 3 gate (including the
+     *       high-sensitivity scaling) is shape_gate_margin().
      */
     [[nodiscard]] uint8_t effective_spectrum_margin() const noexcept;
 
@@ -2033,6 +2039,12 @@ private:
      *         default (high sensitivity): the RSSI gate is wide open there, so
      *         shape filters work harder. Sensitive mode opts out of scaling by
      *         design (the user explicitly chose max weak-signal sensitivity).
+     * @note SENS ADAPTIVE (sensitive_mode ON): returns the per-frame
+     *       noise-adaptive gate measured by update_auto_gate() —
+     *       clamp(3σ_IQR, SHAPE_ADAPT_GATE_FLOOR, effective_spectrum_margin())
+     *       — or effective_spectrum_margin() while no measurement exists yet
+     *       (auto_gate_ == 0 sentinel: first frame / chain disabled). Never
+     *       stricter than the user's value (SHAPE_ADAPT_* contract #1).
      * @note Shared by apply_shape_filters() Step 3, the normal-mode secondary
      *       candidate gate, the sweep fixed-threshold candidate gate, and the
      *       TBD narrowband guard's width elevation anchor. Keeping all four on
@@ -2042,6 +2054,31 @@ private:
      * @note Overflow-safe: base <= 200 (settings clamp), scaling <= +15.
      */
     [[nodiscard]] uint8_t shape_gate_margin() const noexcept;
+
+    /**
+     * @brief Measure this frame's noise-adaptive Step-3 gate (Sens mode).
+     * @param spectrum Raw 256-bin FFT frame (same data as Step 1)
+     * @param edge_skip Usable-cell edge skip: FFT_EDGE_SKIP (DB) /
+     *        FFT_EDGE_SKIP_NARROW (sweep) — SAME cell set as Step 1.
+     * @param noise_floor This frame's p25 shelf (Step 1 output)
+     * @note Refills spectrum_sort_buf_ (the p25 quickselect destroyed it),
+     *       takes p75 → IQR → 3σ, clamps to
+     *       [SHAPE_ADAPT_GATE_FLOOR, effective_spectrum_margin()] and stores
+     *       auto_gate_. Call immediately AFTER Step 1, i.e. strictly before
+     *       this frame's candidate gates / shape chain / TBD anchors read
+     *       shape_gate_margin(). sensitive_mode OFF → auto_gate_ = 0 (the
+     *       gate code path does not consume it then anyway).
+     * @invariant Writer: UI drain thread only (analyze_spectrum_shape_multi,
+     *            process_spectrum_sweep) — same thread as every reader,
+     *            including shape_gate_margin_try(); plain byte, no atomics.
+     * @post auto_gate_ == 0 ⇔ "no measurement" (fallback = user base)
+     * Stack: ~20 bytes. SRAM: +1 byte (auto_gate_). No heap, no FP, no locks.
+     */
+    void update_auto_gate(
+        const ChannelSpectrum& spectrum,
+        size_t edge_skip,
+        uint8_t noise_floor
+    ) noexcept;
 
     // Forward declaration — full definition in the EMISSION EXTENT section below.
     struct SignalExtent;
@@ -2548,6 +2585,13 @@ private:
     // fires it after unlock. UI-thread-only read/write — plain byte, no atomics.
     // SRAM: 1 byte.
     ThreatLevel pending_alert_{ThreatLevel::NONE};
+
+    // Noise-adaptive Step-3 gate cache (SENS mode, SHAPE_ADAPT_*): written
+    // once per frame by update_auto_gate() (UI drain thread), read by
+    // shape_gate_margin()/shape_gate_margin_try() on the SAME thread.
+    // 0 = no measurement yet (first frame / mode off) → user-base fallback.
+    // SRAM: 1 byte.
+    uint8_t auto_gate_{0};
 
     // Mutex for thread safety (LockOrder::DATA_MUTEX)
     mutable Mutex mutex_;

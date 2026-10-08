@@ -1281,6 +1281,47 @@ static_assert(
     "would cut frames before the weak-signal integrator can vote");
 
 // ============================================================================
+// SENS = ADAPTIVE SHAPE ("self-tuning" mode, sensitive_mode ON) — constants
+// ============================================================================
+// Design contract (implementations: DroneScanner::update_auto_gate,
+// shape_gate_margin and apply_shape_filters in scanner.cpp):
+//   1) The Step-3 entry gate becomes NOISE-ADAPTIVE:
+//        gate = clamp(3σ_IQR, SHAPE_ADAPT_GATE_FLOOR, user_base)
+//      where σ_IQR ≈ (p75 − p25) / 1.349 is estimated per frame from the
+//      same usable bins as the Step-1 noise floor. In a CLEAN spectrum 3σ
+//      sits BELOW the user value → the gate OPENS (weak targets enter).
+//      In a NOISY spectrum it rises but is capped by the user base — Sens
+//      mode is never STRICTER than the user asked, so ±5..10 clicks on
+//      "Mar" cannot cliff-kill a marginal peak the measured noise already
+//      justifies (the old failure mode: a hard gate cliff every marginal
+//      peak above it died on).
+//   2) Every downstream shape step (5-12) stays ACTIVE in Sens mode — NO
+//      more skipping — but its threshold eases with the stringency weight
+//      w ∈ [0..100] computed AFTER Step 3:
+//          w = min(100, (peak_margin − gate) × 100 / SHAPE_ADAPT_SLACK_UNITS)
+//      full user stringency only at gate + SLACK (+4 dB) and above;
+//      marginal peaks are judged by eased thresholds (quadratic w² easing:
+//      nearly abstain right at the gate, converging fast to user values).
+//      sensitive_mode OFF forces w = 100 → every eased formula collapses
+//      to the exact user value (the legacy chain is byte-identical).
+// Defense in depth under the opened gate (w ≈ 0 targets must still clear):
+// the absolute RSSI gate (Sens + hysteresis), neighbor-margin (2 dB),
+// confirm_count, NMS and the TBD resurrection veto are all unchanged.
+constexpr uint8_t SHAPE_ADAPT_GATE_FLOOR = 10;      // auto-gate floor (units): 2 dB ≈ 5σ at σ≈2
+constexpr uint8_t SHAPE_ADAPT_SLACK_UNITS = 20;     // w ramp width above the gate (4 dB)
+constexpr uint8_t SHAPE_ADAPT_MIN_WIDTH_RELAX = 10; // max MinW relaxation at w = 0 (bins)
+constexpr uint8_t SHAPE_ADAPT_SIGMA3_NUM = 22;      // 3σ ≈ IQR × 22/10 (σ ≈ IQR/1.349)
+constexpr uint8_t SHAPE_ADAPT_SIGMA3_DEN = 10;
+
+// The floor must stay below the default SENS base (Mar 20 − 2 = 18) —
+// otherwise it would bind before the auto-gate can open in clean noise and
+// the "gate follows the noise" contract would never trigger at defaults.
+static_assert(SHAPE_ADAPT_GATE_FLOOR <= (DEFAULT_SPECTRUM_MARGIN - 2),
+    "SHAPE_ADAPT_GATE_FLOOR must sit below the default sensitive base margin");
+static_assert(SHAPE_ADAPT_SLACK_UNITS > 0,
+    "SHAPE_ADAPT_SLACK_UNITS must be non-zero (weight division)");
+
+// ============================================================================
 // CFAR Detection Constants (Constant False Alarm Rate)
 // ============================================================================
 // CFAR adapts threshold to local noise level, reducing false alarms
