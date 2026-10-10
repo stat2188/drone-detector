@@ -542,12 +542,26 @@ public:
                 break;
             case CFARMode::HYBRID: {
                 // Hybrid: w_hybrid = α*w_CA + β*w_GO + γ*w_SO
-                // Weights are ×100, so divide by 100 at the end
+                // Weights are ×100 (documented Σ = 100 contract); divisor is
+                // the ACTUAL weight sum — see the WEIGHT-SUM DOMAIN note below
                 const int32_t weighted = 
                     static_cast<int32_t>(alpha) * ca_noise +
                     static_cast<int32_t>(beta) * go_noise +
                     static_cast<int32_t>(gamma) * so_noise;
-                noise_estimate = (weighted > 0) ? (weighted / 100) : ca_noise;
+                // WEIGHT-SUM DOMAIN (audit L2): the ×100 divisor presumes
+                // α+β+γ = 100, but the settings parser clamps each weight
+                // individually (0..100) and never checks the SUM — a hand-
+                // edited .ini with Σ≠100 silently scaled the whole noise
+                // estimate by Σ/100 (Σ=300 → threshold ≈3× → CFAR blind;
+                // Σ=50 → −50% → false-alarm storm). Divide by the ACTUAL
+                // sum so HYBRID is the weighted average its doc claims:
+                // Σ=100 takes the exact legacy path (bit-identical for every
+                // shipped config), Σ=0 falls back to CA exactly as before
+                // (weighted is then 0 too, so the fallback is unchanged).
+                // Stack: +4 B (wsum, register). Flash: ~20 B. No FP.
+                const int32_t wsum = static_cast<int32_t>(alpha) +
+                    static_cast<int32_t>(beta) + static_cast<int32_t>(gamma);
+                noise_estimate = (wsum > 0) ? (weighted / wsum) : ca_noise;
                 break;
             }
             case CFARMode::OS: {
@@ -2035,8 +2049,9 @@ private:
     /**
      * @brief FULL apply_shape_filters Step 3 gate margin (single source of truth)
      * @return effective_spectrum_margin(), scaled UP by rssi_sens/2 when NOT in
-     *         sensitive mode and the RSSI threshold is above the -95 dBm
-     *         default (high sensitivity): the RSSI gate is wide open there, so
+     *         sensitive mode and the RSSI threshold sits BELOW the -95 dBm
+     *         anchor (RSSI_DETECTION_THRESHOLD_DBM, Sens > 75 — high
+     *         sensitivity): the RSSI gate is wide open there, so
      *         shape filters work harder. Sensitive mode opts out of scaling by
      *         design (the user explicitly chose max weak-signal sensitivity).
      * @note SENS ADAPTIVE (sensitive_mode ON): returns the per-frame
@@ -2523,24 +2538,33 @@ private:
     // takes the maximum margin (the old probe read ONE bin, so a 1-bin dip
     // at the fragment edge masked an elevated continuation one bin further
     // out — valley passed signals with no valley at all). Window (6) is
-    // smaller than CFAR_MIN_PEAK_SEPARATION (10), so a distinct neighbour
-    // whose peak respects NMS stays outside the window when this emission
-    // ends at a real null. Smooth monotone flanks measure IDENTICALLY to
-    // the 1-bin probe (the edge bin is the walk's maximum).
+    // smaller than CFAR_MIN_PEAK_SEPARATION (10): with the window anchored
+    // at the fragment EDGE (not at the peak), a distinct neighbour's PEAK
+    // stays outside only while the fragment reaches < 4 bins past its own
+    // peak (edge + 6 < peak + 10) — the exact bound and the accepted residue
+    // are stated on the audit-M1 assert below. Smooth monotone flanks measure
+    // IDENTICALLY to the 1-bin probe (the edge bin is the walk's maximum).
     static constexpr uint8_t VALLEY_PROBE_MAX_BINS = 6;
 
-    // INVARIANT LOCK (audit D-VALLEY-PROBE): the probe window must stay
-    // strictly smaller than the NMS separation, otherwise a distinct
-    // neighbouring emission whose peak respects CFAR_MIN_PEAK_SEPARATION
-    // could still fall INSIDE the probe window and be read as "flank of this
-    // emission" — valley would then reject a genuinely separate target.
-    // The relationship is currently only stated in the comment above; make
-    // the compiler enforce it so a future window/NMS tweak cannot silently
-    // break the argument. Stack: 0. SRAM: 0. Flash: 0.
+    // INVARIANT LOCK (audit D-VALLEY-PROBE; claim corrected by audit M1):
+    // keeping the probe window strictly shorter than the NMS separation is
+    // NECESSARY but NOT sufficient to keep a distinct neighbour's PEAK out of
+    // the window — the window is anchored at the fragment EDGE, so a
+    // neighbour at >= peak + CFAR_MIN_PEAK_SEPARATION lands inside it whenever
+    // the fragment reaches >= (SEPARATION - VALLEY_PROBE_MAX_BINS) = 4 bins
+    // past its own peak. That residue is bounded and accepted: the neighbour
+    // keeps its own candidate slot (NMS admitted it independently), only
+    // flank-height terrain within 6 bins of the edge can vote on THIS
+    // emission, Valley defaults to 0 (off), and the worst case is losing one
+    // emission of a very close pair — never a silent wideband pass (MaxW/
+    // Step 6c still own width). The assert locks the NECESSARY half so a
+    // future window/separation tweak cannot widen the probe past NMS at all.
+    // Stack: 0. SRAM: 0. Flash: 0.
     static_assert(VALLEY_PROBE_MAX_BINS < CFAR_MIN_PEAK_SEPARATION,
-        "VALLEY_PROBE_MAX_BINS must stay below CFAR_MIN_PEAK_SEPARATION so a "
-        "distinct NMS-separated neighbour can never be read as this "
-        "emission's flank");
+        "VALLEY_PROBE_MAX_BINS must stay below CFAR_MIN_PEAK_SEPARATION: the "
+        "probe window must be shorter than the NMS separation (necessary "
+        "condition; exact containment bound also needs fragment edge - peak "
+        "< SEPARATION - PROBE — see comment above)");
 
     // RSSI hysteresis state (Schmitt trigger: 2 dB to turn ON, 2 dB easier to stay ON)
     // NORMAL-mode keys — owned by process_spectrum_message(). Sweep mode has

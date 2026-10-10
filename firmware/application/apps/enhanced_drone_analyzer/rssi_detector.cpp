@@ -3,7 +3,7 @@
 namespace drone_analyzer {
 
 RSSIDetector::RSSIDetector() noexcept
-    : detection_threshold_(RSSI_DETECTION_THRESHOLD_DBM)
+    : detection_threshold_(DEFAULT_ALERT_RSSI_THRESHOLD_DBM)
     , threat_thresholds_{DEFAULT_THREAT_LOW_DBM, DEFAULT_THREAT_MEDIUM_DBM,
                           RSSI_HIGH_THREAT_THRESHOLD_DBM, RSSI_CRITICAL_THREAT_THRESHOLD_DBM}
     , rssi_history_{}

@@ -693,7 +693,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     // Stack budget: use shared statics to avoid ~728B peak on stack
     g_workspace_cfg = ScanConfig{};
     g_workspace_cfg.mode = scanning_mode_;
-    g_workspace_cfg.rssi_threshold_dbm = RSSI_DETECTION_THRESHOLD_DBM;
+    // rssi_threshold_dbm intentionally NOT overridden: fresh install must
+    // match SettingsStruct / DEFAULT button (Sens 85 -> -105 dBm).
     g_workspace_cfg.scan_interval_ms = SCAN_CYCLE_INTERVAL_MS;
 
     // Load all settings from SD card via centralized manager

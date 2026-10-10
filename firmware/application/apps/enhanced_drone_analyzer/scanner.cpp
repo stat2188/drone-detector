@@ -128,6 +128,119 @@ static uint8_t shape_adapt_weight(uint8_t peak_margin, uint8_t gate) noexcept {
     return static_cast<uint8_t>((w > 100u) ? 100u : w);
 }
 
+/**
+ * @brief Sensitivity stringency of the RSSI threshold vs the -95 dBm anchor.
+ * @param cfg ScanConfig whose rssi_threshold_dbm is measured
+ * @return RSSI_DETECTION_THRESHOLD_DBM - threshold: > 0 when the threshold
+ *         sits BELOW the -95 dBm anchor (Sens > 75, high sensitivity),
+ *         0 at the anchor (Sens 75), < 0 above it (Sens < 75, strict).
+ * @note SINGLE AUTHOR for the expression previously inlined at
+ *       shape_gate_margin(), shape_gate_margin_try() and
+ *       apply_shape_filters() — plus the Step-13 EFFECTIVE-ARMING flat
+ *       guard (audit M3 rev. 2), so all four consumers can never disagree.
+ * @note ANCHOR DEPENDENCY: the zero point is RSSI_DETECTION_THRESHOLD_DBM
+ *       (constants.hpp), never a bare literal — algebraically identical
+ *       (−95 − thr ≡ −(thr + 95)); the Sens mapping crosses zero there
+ *       (rssi_sens = Sens − 75 via threshold = −20 − Sens).
+ * Stack: ~4 bytes (register). SRAM: 0. Flash: ~24 bytes. No FP.
+ */
+static int32_t rssi_sens_units(const ScanConfig& cfg) noexcept {
+    return RSSI_DETECTION_THRESHOLD_DBM - cfg.rssi_threshold_dbm;
+}
+
+/**
+ * @brief Step-10 flatness entry guard floor (sensitivity easing stops here).
+ * @note Documented: sens=95 (rssi_sens=20) => guard = max(40-20, 15) = 20.
+ *       File-local: the value only exists inside flatness_min_peak_margin().
+ * Stack: 0. SRAM: 0. Flash: 0.
+ */
+constexpr uint8_t FLATNESS_MIN_MARGIN_FLOOR = 15;
+
+/**
+ * @brief Step-10 flatness entry guard: min peak margin for the step to run.
+ * @param rssi_sens rssi_sens_units() of the same config
+ * @return FLATNESS_MIN_PEAK_MARGIN (40) when rssi_sens <= 0 (threshold at
+ *         or above the -95 dBm anchor, Sens <= 75), eased down by rssi_sens
+ *         above the anchor, floored at FLATNESS_MIN_MARGIN_FLOOR.
+ * @note SINGLE AUTHOR shared by apply_shape_filters Step 10 (run guard) and
+ *       the Step-13 EFFECTIVE-ARMING flat term (audit M3 rev. 2): an armed
+ *       Flat verdict may only be granted when the step would actually RUN
+ *       for this peak. Byte-identical to the former inline expression —
+ *       including the uint8 cast of rssi_sens — safe because the Sens
+ *       range (0..100 ⇒ threshold -120..-20 dBm, RSSI_MIN_DBM floor)
+ *       bounds rssi_sens at 25 <= 255, so the cast never truncates.
+ * Stack: ~4 bytes. SRAM: 0. Flash: ~48 bytes. No FP.
+ */
+static uint8_t flatness_min_peak_margin(int32_t rssi_sens) noexcept {
+    if (rssi_sens <= 0) return FLATNESS_MIN_PEAK_MARGIN;
+    return (FLATNESS_MIN_PEAK_MARGIN > static_cast<uint8_t>(rssi_sens))
+        ? static_cast<uint8_t>(FLATNESS_MIN_PEAK_MARGIN - rssi_sens)
+        : FLATNESS_MIN_MARGIN_FLOOR;
+}
+
+/**
+ * @brief SENS eased MaxW limit — shared author of Step 6 and Step-13 arming.
+ * @param user_max_width Raw ScanConfig::spectrum_max_width (0..255)
+ * @param w2 adapt_w², 0..10000 (uint16: 100² fits exactly)
+ * @return ≤ 1.5× the user value at w2 = 0 (uint16: 255 + 127 = 382), the
+ *         exact user value at w2 = 10000 (Sens OFF byte-identical by algebra)
+ * @note Consumed by apply_shape_filters Step 6 (fragment + emission extent)
+ *       AND process_spectrum_message EFFECTIVE-ARMING (audit M3 rev. 2) —
+ *       one formula, so the arming test cannot drift from what the chain
+ *       runs. The DC-gap extent cap (≤110/114 measurable bins) bounds the
+ *       result outside this function.
+ * Stack: ~8 bytes. SRAM: 0. Flash: ~48 bytes. No FP.
+ */
+static uint16_t eased_maxw_bins(uint8_t user_max_width, uint16_t w2) noexcept {
+    return static_cast<uint16_t>(user_max_width) +
+        static_cast<uint16_t>(
+            (static_cast<uint32_t>(user_max_width) * (10000u - w2)) / 20000u);
+}
+
+/**
+ * @brief SENS eased sharpness limit — shared author of Step 7 and arming.
+ * @param user_sharpness Raw ScanConfig::spectrum_peak_sharpness (0..255)
+ * @param w2 adapt_w², 0..10000
+ * @return 100 + (user − 100)·w²/10000: the documented no-op (100) at
+ *         w2 = 0 — avg includes the peak, so sharpness ≥ 100 by
+ *         construction and a limit ≤ 100 can never reject (audit D5
+ *         dead-band 51..100); the exact user value at w2 = 10000.
+ * @note Consumed by apply_shape_filters Step 7 AND the Step-13
+ *       EFFECTIVE-ARMING test (audit M3 rev. 2).
+ * Stack: ~8 bytes. SRAM: 0. Flash: ~40 bytes. No FP.
+ */
+static int32_t eased_sharpness_limit(uint8_t user_sharpness, uint16_t w2) noexcept {
+    return 100 +
+        ((static_cast<int32_t>(user_sharpness) - 100) *
+         static_cast<int32_t>(w2)) / 10000;
+}
+
+/**
+ * @brief SENS eased flatness limit — shared author of Step 10 and arming.
+ * @param user_flatness Raw ScanConfig::spectrum_flatness (0..255)
+ * @param w2 adapt_w², 0..10000
+ * @return F + (100 − F)·(10000 − w²)/10000 after saturating F to
+ *         SPECTRUM_FLATNESS_PCT_MAX: ≤ 100 always (pct > 100 unreachable ⇒
+ *         100 is the abstain ceiling), exact user F at w2 = 10000.
+ * @note DOMAIN GUARD (audit D-CFG-RANGE) lives here: the `(100 − F)` term
+ *       is UNSIGNED — an F of 101..255 underflows it, the /10000 quotient
+ *       then overflows the narrowing cast and the limit comes out as
+ *       garbage. Shipped producers clamp 0..100 (settings_manager parse +
+ *       NumberField), but this chain eats a raw ScanConfig. Consumed by
+ *       apply_shape_filters Step 10 AND Step-13 EFFECTIVE-ARMING (M3 rev. 2).
+ * Stack: ~8 bytes. SRAM: 0. Flash: ~56 bytes. No FP.
+ */
+static uint16_t eased_flatness_limit(uint8_t user_flatness, uint16_t w2) noexcept {
+    const uint16_t flat_user =
+        (user_flatness > SPECTRUM_FLATNESS_PCT_MAX)
+            ? static_cast<uint16_t>(SPECTRUM_FLATNESS_PCT_MAX)
+            : static_cast<uint16_t>(user_flatness);
+    return static_cast<uint16_t>(flat_user +
+        static_cast<uint16_t>(
+            ((static_cast<uint32_t>(SPECTRUM_FLATNESS_PCT_MAX) - flat_user) *
+             (10000u - w2)) / 10000u));
+}
+
 // ============================================================================
 // ScanConfig Implementation
 // ============================================================================
@@ -265,7 +378,7 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     // Initialize mutex
     chMtxInit(&mutex_);
 
-    (void)rssi_detector_.initialize(RSSI_DETECTION_THRESHOLD_DBM);
+    (void)rssi_detector_.initialize(DEFAULT_ALERT_RSSI_THRESHOLD_DBM);
 }
 
 DroneScanner::~DroneScanner() noexcept {
@@ -1005,18 +1118,83 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         // legacy skip.
         // Stack: ~12 bytes (bools + locals, registers). SRAM: 0. Flash: ~64 B.
         const bool shape_validated = has_shape_result;
-        // Armed = a setting that can actually reject a wideband flat top:
-        //   MaxW below the DC-gap extent cap (>= 114 bins ≡ no cap — see
-        //   DEFAULT_SPECTRUM_MAX_WIDTH), sharpness above the documented
-        //   dead-band (51..100 can never reject — audit D5), or Flat ON.
-        // Valley/Symmetry are NOT wideband gates (README §14: Step 6c/MaxW/
-        //   Flat own wideband) and deliberately do not count here.
+        // Armed = the chain, AT ITS EFFECTIVE stringency, can still reject a
+        // wideband flat top: eased MaxW below the DC-gap extent cap (>= 114
+        // bins ≡ no cap — see DEFAULT_SPECTRUM_MAX_WIDTH), eased sharpness
+        // above the documented dead-band (51..100 can never reject — audit
+        // D5), or eased Flat below its 100% no-op ceiling (pct > 100 is
+        // unreachable, so Flat = 100 never rejected anything). Valley/
+        // Symmetry are NOT wideband gates (README §14: Step 6c/MaxW/Flat own
+        // wideband) and deliberately do not count here.
+        // SENS EASED (audit M3): the raw-config test delegated the
+        // wideband verdict to steps that SHAPE_ADAPT_* w-easing had
+        // simultaneously relaxed toward their permissive floors — in the
+        // gate..gate+SLACK band the chain was effectively DISARMED while
+        // Step 13 stayed skipped as "armed". REV. 2 (dependency audit):
+        // the three limits come from the SAME helpers apply_shape_filters
+        // Steps 6/7/10 consume (eased_maxw_bins / eased_sharpness_limit /
+        // eased_flatness_limit above) — one author, so the test and the
+        // chain cannot drift, instead of hand-copied formulas glued by
+        // comments. With Sens OFF (w = 100) they collapse to the raw
+        // config values. FLAT ARM MIRRORS THE THREE OUTER STEP-10 RUN
+        // GUARDS (the step's inner effective_width > 4 narrowband guard
+        // only ever ABSTAINS for narrow signals, never for the wideband
+        // flat-top threat Step 13 exists to protect):
+        // Flat > 0 (at F = 0 the step never RUNS), peak margin >=
+        // flatness_min_peak_margin(rssi_sens) (40 when rssi_sens <= 0,
+        // Sens <= 75 — below it Step 10 abstains, so a flat config alone
+        // cannot own the verdict), and adapt_w > 0 (w == 0 ⇒ abstain, D-W0).
+        // Corrections vs legacy: Flat = 100 counted as "armed" although pct > 100 is
+        // unreachable (no-op ⇒ now DISARMED); Flat = 0 stays DISARMED
+        // (audit D-B defaults); with Sens OFF + Flat > 0 + margin < 40
+        // legacy read "armed" while Step 10 never ran — this reads
+        // DISARMED (STRICTER, closes that D-B-shaped hole in the raw
+        // regime). Valley/Symmetry are NOT wideband gates and do not
+        // count here. Computed ONLY when shape_validated: otherwise Step 13
+        // is entered unconditionally via !shape_validated and every temp
+        // below would be dead weight (+32 B stack, ~96 B flash for a value
+        // nobody reads).
+        // Stack: +24 B (inner-scope temps, register-allocatable). SRAM: 0.
+        // Flash: ~120 B. No FP, no locks, same thread as the chain.
         constexpr uint8_t MAXW_NO_CAP_BINS = 114;
         constexpr uint8_t SHARPNESS_NO_OP_MAX = 100;
-        const bool shape_chain_armed =
-            (config_.spectrum_max_width < MAXW_NO_CAP_BINS)
-            || (config_.spectrum_peak_sharpness > SHARPNESS_NO_OP_MAX)
-            || (config_.spectrum_flatness > 0);
+        // ⇒ shape_validated by construction (set only inside the guard);
+        // the Step 13 predicate below still keeps its explicit
+        // !shape_validated term so a future refactor of this block can
+        // never silently re-open the RSSI-only/TBD paths (audit D-B).
+        bool shape_chain_armed = false;
+        if (shape_validated) {
+            const uint8_t armed_primary_margin =
+                (shape_result.count > 0 &&
+                 shape_result.detections[0].peak_power > shape_result.noise_floor)
+                    ? static_cast<uint8_t>(shape_result.detections[0].peak_power -
+                                           shape_result.noise_floor)
+                    : uint8_t{0};
+            const uint8_t armed_w = config_.sensitive_mode
+                ? shape_adapt_weight(armed_primary_margin, shape_gate_margin())
+                : uint8_t{100};
+            const uint16_t armed_w2 =
+                static_cast<uint16_t>(armed_w) * static_cast<uint16_t>(armed_w);
+            const uint16_t armed_maxw_eff =
+                eased_maxw_bins(config_.spectrum_max_width, armed_w2);
+            const int32_t armed_sharp_eff =
+                eased_sharpness_limit(config_.spectrum_peak_sharpness, armed_w2);
+            const uint16_t armed_flat_eff =
+                eased_flatness_limit(config_.spectrum_flatness, armed_w2);
+            // Step-10 run-guard parity (rev. 2): all three gates of the
+            // flat step, evaluated on THIS frame's primary peak — an armed
+            // Flat verdict requires the step to actually RUN for it.
+            const bool armed_flat_runs =
+                (config_.spectrum_flatness > 0) &&
+                (armed_primary_margin >=
+                 flatness_min_peak_margin(rssi_sens_units(config_))) &&
+                (!config_.sensitive_mode || armed_w > 0);
+            shape_chain_armed =
+                (armed_maxw_eff < MAXW_NO_CAP_BINS) ||
+                (armed_sharp_eff > SHARPNESS_NO_OP_MAX) ||
+                (armed_flat_runs &&
+                 (armed_flat_eff < SPECTRUM_FLATNESS_PCT_MAX));
+        }
         // Step 13 (README §14 chain): Neighbor-margin tracking post-filter.
         if (config_.neighbor_margin_db > 0 && (!shape_validated || !shape_chain_armed)) {
             neighbor_margin_checker_.add(frequency, effective_rssi);
@@ -1854,7 +2032,7 @@ uint8_t DroneScanner::shape_gate_margin_try() const noexcept {
             ? SHAPE_ADAPT_PREFILTER_CAP
             : sens_gate;
     }
-    const int32_t rssi_sens = -(config_.rssi_threshold_dbm + 95);
+    const int32_t rssi_sens = rssi_sens_units(config_);
     if (!config_.sensitive_mode && rssi_sens > 0) {
         const uint16_t scaled = static_cast<uint16_t>(base) +
             static_cast<uint16_t>(rssi_sens / 2);
@@ -2511,9 +2689,10 @@ uint8_t DroneScanner::effective_spectrum_margin() const noexcept {
 uint8_t DroneScanner::shape_gate_margin() const noexcept {
     // FULL apply_shape_filters Step 3 gate: sensitive-mode BASE margin
     // (effective_spectrum_margin) PLUS the sensitivity scaling Step 3 applies.
-    // rssi_sens > 0 only when the RSSI threshold sits above the -95 dBm
-    // default (high sensitivity): the RSSI gate is wide open there, so the
-    // shape gate scales UP (+1 unit per 2 sensitivity points) to compensate.
+    // rssi_sens > 0 only when the RSSI threshold sits BELOW the -95 dBm
+    // anchor (RSSI_DETECTION_THRESHOLD_DBM, Sens > 75 — high sensitivity):
+    // the RSSI gate is wide open there, so the shape gate scales UP
+    // (+1 unit per 2 sensitivity points) to compensate.
     // Sensitive mode opts out of scaling by design — the user explicitly
     // chose maximum weak-signal sensitivity, and scaling would partially
     // cancel the relaxation.
@@ -2529,7 +2708,7 @@ uint8_t DroneScanner::shape_gate_margin() const noexcept {
     if (config_.sensitive_mode) {
         return (auto_gate_ != 0) ? auto_gate_ : base;
     }
-    const int32_t rssi_sens = -(config_.rssi_threshold_dbm + 95);
+    const int32_t rssi_sens = rssi_sens_units(config_);
     if (!config_.sensitive_mode && rssi_sens > 0) {
         const uint16_t scaled =
             static_cast<uint16_t>(base) +
@@ -2673,10 +2852,12 @@ bool DroneScanner::apply_shape_filters(
     // Sensitivity-adaptive filter scaling:
     // At high sensitivity (low threshold), the RSSI gate is wide open and shape
     // filters must work harder to reject noise. We derive a sensitivity factor
-    // from the RSSI threshold: 0 at default (-95 dBm), positive at high sensitivity.
+    // from the RSSI threshold: 0 at the -95 dBm anchor
+    // (RSSI_DETECTION_THRESHOLD_DBM, Sens 75), positive when the threshold
+    // sits below it (Sens > 75, higher sensitivity).
     // At low sensitivity (strict threshold), the RSSI gate does most of the work
     // so shape filters stay at defaults (no loosening).
-    const int32_t rssi_sens = -(config_.rssi_threshold_dbm + 95);
+    const int32_t rssi_sens = rssi_sens_units(config_);
 
     // Step 3: Peak must be significantly above noise floor
     // Gate value comes from shape_gate_margin() — the single source of truth
@@ -2827,10 +3008,9 @@ bool DroneScanner::apply_shape_filters(
     } else {
         // ≤ 1.5x MaxW at w = 0 (uint16: 255 + 127 = 382 — the >255 range is
         // the documented "no cap" regime anyway). Exact user MaxW at w = 100.
-        const uint16_t maxw_eff = static_cast<uint16_t>(config_.spectrum_max_width) +
-            static_cast<uint16_t>(
-                (static_cast<uint32_t>(config_.spectrum_max_width) *
-                 (10000u - w2)) / 20000u);
+        // Shared author (eased_maxw_bins): the Step-13 EFFECTIVE-ARMING test
+        // consumes the SAME formula (audit M3 rev. 2).
+        const uint16_t maxw_eff = eased_maxw_bins(config_.spectrum_max_width, w2);
         if (signal_width > maxw_eff) return false;
 
         // Step 6b: EMISSION EXTENT (the real MaxW semantics).
@@ -2999,9 +3179,10 @@ bool DroneScanner::apply_shape_filters(
         // user value (OFF byte-identical); w < 100 slides the limit toward
         // the no-op 100 — the documented dead-band (S ≤ 100 never rejects,
         // sharpness ≥ 100 by construction) keeps its meaning at every w.
-        const int32_t sharpness_limit = 100 +
-            ((static_cast<int32_t>(config_.spectrum_peak_sharpness) - 100) *
-             static_cast<int32_t>(w2)) / 10000;
+        // Shared author (eased_sharpness_limit): the Step-13
+        // EFFECTIVE-ARMING test consumes the SAME formula (audit M3 rev. 2).
+        const int32_t sharpness_limit =
+            eased_sharpness_limit(config_.spectrum_peak_sharpness, w2);
         if (sharpness < sharpness_limit) return false;
     }
 
@@ -3234,14 +3415,14 @@ bool DroneScanner::apply_shape_filters(
     // Guard: skip for weak signals where flatness measurement is unreliable.
     // At high sensitivity, lower the guard so flatness activates earlier —
     // this is critical because flatness is the primary WiFi/BT rejection filter.
-    // At default sensitivity: guard = FLATNESS_MIN_PEAK_MARGIN (40, ~8 dB).
+    // At Sens <= 75 (rssi_sens <= 0): guard = FLATNESS_MIN_PEAK_MARGIN (40, ~8 dB).
     // At sens=87 (rssi_sens=12): guard = max(15, 40-12) = 28 (~5.6 dB).
     // At sens=95 (rssi_sens=20): guard = max(15, 40-20) = 20 (~4 dB).
-    const uint8_t effective_flatness_min = (rssi_sens > 0)
-        ? static_cast<uint8_t>((FLATNESS_MIN_PEAK_MARGIN > static_cast<uint8_t>(rssi_sens))
-            ? (FLATNESS_MIN_PEAK_MARGIN - rssi_sens)
-            : 15)
-        : FLATNESS_MIN_PEAK_MARGIN;
+    // Shared author (flatness_min_peak_margin): the Step-13
+    // EFFECTIVE-ARMING flat term consumes the SAME run guard (audit M3
+    // rev. 2) — an armed Flat verdict may only be granted when this step
+    // would actually RUN for this peak.
+    const uint8_t effective_flatness_min = flatness_min_peak_margin(rssi_sens);
     // SENS ADAPTIVE (was: skipped flatness for WEAK peaks in sensitive mode
     // — now stays ACTIVE): the limit eases with w² toward 100 (pct > 100
     // can never fire ⇒ near-gate weak peaks pass — the original intent),
@@ -3315,25 +3496,15 @@ bool DroneScanner::apply_shape_filters(
                 const uint8_t flatness_pct = static_cast<uint8_t>((high_power_count * 100) / effective_width);
                 // SENS eased limit (max-polarity): F + (100−F)·(10000−w²)/10000
                 // ≤ 100 — at w = 0 the limit is 100 (abstain), at w = 100 the
-                // exact user F (OFF byte-identical). uint16 intermediate.
-                // DOMAIN GUARD (audit D-CFG-RANGE): the `(100 − F)` term is
-                // UNSIGNED — an F of 101..255 underflows to ~4e9, the /10000
-                // quotient then overflows the uint16 cast and the limit comes
-                // out as garbage. Every shipped producer clamps Flat to 0..100
-                // (settings_manager parse + NumberField), but this chain is
-                // fed a raw ScanConfig with no range proof. Saturate to the
-                // documented domain — house style here is saturation for every
-                // other intermediate (elevated_sum, hp_sum, start_level), so
-                // this one is no exception. Stack: +2 B (register). Flash: ~16 B.
-                const uint16_t flat_user =
-                    (config_.spectrum_flatness > SPECTRUM_FLATNESS_PCT_MAX)
-                        ? static_cast<uint16_t>(SPECTRUM_FLATNESS_PCT_MAX)
-                        : static_cast<uint16_t>(config_.spectrum_flatness);
-                const uint8_t flatness_limit = static_cast<uint8_t>(
-                    static_cast<uint16_t>(flat_user) +
-                    static_cast<uint16_t>(
-                        ((static_cast<uint32_t>(SPECTRUM_FLATNESS_PCT_MAX) - flat_user) *
-                         (10000u - w2)) / 10000u));
+                // exact user F (OFF byte-identical). The DOMAIN GUARD (audit
+                // D-CFG-RANGE: saturate F to 0..100 before the UNSIGNED
+                // `(100 − F)` term) lives inside the shared helper — see its
+                // @note for the underflow proof.
+                // Shared author (eased_flatness_limit): the Step-13
+                // EFFECTIVE-ARMING test consumes the SAME formula AND the
+                // SAME saturation (audit M3 rev. 2). Stack: ~4 B. Flash: 0.
+                const uint16_t flatness_limit =
+                    eased_flatness_limit(config_.spectrum_flatness, w2);
                 if (flatness_pct > flatness_limit) return false;
             }
         }
@@ -3737,12 +3908,20 @@ void DroneScanner::process_spectrum_sweep(
 
     // Candidate gate uses the FULL Step 3 margin (shape_gate_margin): the
     // sensitive-mode relaxation AND the high-sensitivity scaling, identical to
-    // apply_shape_filters Step 3 in BOTH scan modes. Single source of truth —
-    // no candidate is collected that Step 3 would only reject, and every peak
-    // the gate admits is guaranteed the same Step 4 width threshold.
+    // apply_shape_filters Step 3 in BOTH scan modes when the chain RUNS.
+    // Single source of truth — no candidate is collected that Step 3 would
+    // only reject, and every peak the gate admits is guaranteed the same
+    // Step 4 width threshold.
     // Default margin=20 (~4 dB above noise); SENS mode: the NOISE-ADAPTIVE
     // gate clamp(3σ_IQR, 10, Mar-2) measured in update_auto_gate() below
     // (SHAPE_ADAPT_*), never stricter than Mar-2.
+    // RSSI-ONLY EXCEPTION (audit M2): with spectrum_detection_enabled OFF
+    // the margin is shape-domain — sweep_fast_prefilter bypasses it
+    // (!shape_detect_on ⇒ true) and the DB path applies a pure RSSI gate —
+    // so the fixed-threshold collector below must not gate on it either;
+    // tracking is then owned by apply_sweep_tracking()'s RSSI threshold
+    // alone, exactly like DB (README §14 bypass contract). See collect_gate
+    // below.
     // Step 1: Compute noise floor (25th percentile of usable bins).
     // Shared for all peaks in this frame — computed once.
     // FRAME-LEVEL MEDIAN FEED (FIX): track the raw frame peak in the SAME
@@ -3779,6 +3958,14 @@ void DroneScanner::process_spectrum_sweep(
     // depends on the fresh SENS gate measurement above.
     const uint8_t cfg_margin = shape_gate_margin();
     const int32_t frame_total_gain = get_current_total_gain();
+    // RSSI-ONLY COLLECT GATE (audit M2, see the candidate-gate comment above):
+    // shape OFF ⇒ 0 — every at/above-shelf crest reaches the RSSI gate in
+    // apply_sweep_tracking(), mirroring the DB RSSI-only path; shape ON ⇒
+    // cfg_margin unchanged (byte-identical). Sub-shelf bins stay excluded
+    // (margin >= 0), so the crest scan never reads below the noise shelf.
+    // Stack: 0 (register slot). SRAM: 0. Flash: ~16 B.
+    const uint8_t collect_gate =
+        config_.spectrum_detection_enabled ? cfg_margin : uint8_t{0};
 
     // Frame-level median feed (Md+): once per frame, BEFORE any accept/reject
     // decision. Reset-per-step semantics unchanged (frequency-change gate at
@@ -3901,8 +4088,10 @@ void DroneScanner::process_spectrum_sweep(
             }
         }
     } else {
-        // Fixed-threshold: collect all CREST bins above noise_floor + margin,
-        // keep the strongest MAX_SWEEP_PEAKS*2 (top-K — audit fix D4: the old
+        // Fixed-threshold: collect CREST bins at/above the effective gate
+        // (margin >= collect_gate: cfg_margin with shape ON, shelf-only in
+        // RSSI-only mode — audit M2), keep the strongest MAX_SWEEP_PEAKS*2
+        // (top-K — audit fix D4: the old
         // `cand_count < CAP` truncation kept the FIRST 16 bins by ascending
         // index, so a busy left sideband with 16+ passing bins starved the
         // right sideband entirely), sort by power descending, take top N.
@@ -3916,7 +4105,7 @@ void DroneScanner::process_spectrum_sweep(
         for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_DC_SPIKE_START; ++i) {
             const int32_t bin_val = spectrum.db[i];
             const int32_t margin = bin_val - static_cast<int32_t>(noise_floor);
-            if (margin >= static_cast<int32_t>(cfg_margin)) {
+            if (margin >= static_cast<int32_t>(collect_gate)) {
                 if (!is_crest_bin(spectrum.db.data(), i,
                                   FFT_EDGE_SKIP_NARROW,
                                   FFT_DC_SPIKE_START - 1)) {
@@ -3928,7 +4117,7 @@ void DroneScanner::process_spectrum_sweep(
         for (size_t i = FFT_DC_SPIKE_END; i < (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW); ++i) {
             const int32_t bin_val = spectrum.db[i];
             const int32_t margin = bin_val - static_cast<int32_t>(noise_floor);
-            if (margin >= static_cast<int32_t>(cfg_margin)) {
+            if (margin >= static_cast<int32_t>(collect_gate)) {
                 if (!is_crest_bin(spectrum.db.data(), i,
                                   FFT_DC_SPIKE_END,
                                   FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW - 1)) {

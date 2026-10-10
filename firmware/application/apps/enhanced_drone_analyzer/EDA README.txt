@@ -944,8 +944,18 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
   ==== the in-frame verdict (shape-passed Steps 1-12 OR TBD-confirmed) ====
 
   Step 13: Neighbor Margin (DB mode only; SKIPPED for shape-validated
-           detections ONLY WHEN THE CHAIN IS ARMED — MaxW < 114, or
-           Sharp > 100, or Flat > 0. Guards RSSI-only and TBD paths
+           detections ONLY WHEN THE CHAIN IS ARMED — the EFFECTIVE
+           (Sens-w-eased) MaxW < 114, or EFFECTIVE Sharp > 100, or
+           EFFECTIVE Flat in (0..100) AND Step 10 would RUN for this
+           peak (Flat > 0, margin >= flatness guard [40 at Sens <= 75],
+           w > 0) [audit M3 rev. 2: with Sens OFF / w = 100
+           the limits are the raw config; two deliberate corrections vs
+           legacy — Flat = 100 counted as "armed" before although
+           pct > 100 is unreachable, so it is now the no-op it is, and a
+           Flat config whose Step 10 abstained (margin < flatness guard)
+           no longer arms; both keep Step 13 guarding where the chain
+           cannot reject. Flat = 0 stays DISARMED, keeping the D-B
+           wideband guard at defaults]. Guards RSSI-only and TBD paths
            unconditionally; with PERMISSIVE defaults it also guards
            shape-validated verdicts [audit D-B]: otherwise DB scan has
            NO wideband gate at defaults, since Step 6c is sweep-only and
@@ -1277,8 +1287,9 @@ Code Quality:
 ================================================================================
 
 RSSI Thresholds (dBm):
-  RSSI_DETECTION_THRESHOLD_DBM     = -95   (minimum detection)
-  DEFAULT_THREAT_LOW_DBM           = -95   (weak but active)
+  RSSI_DETECTION_THRESHOLD_DBM     = -95   (rssi_sens formula anchor only)
+  DEFAULT_ALERT_RSSI_THRESHOLD_DBM = -105  (fresh detection gate, Sens 85)
+  DEFAULT_THREAT_LOW_DBM           = -105  (weak but active; = fresh gate)
   DEFAULT_THREAT_MEDIUM_DBM        = -89   (moderate signal)
   RSSI_HIGH_THREAT_THRESHOLD_DBM   = -85   (strong signal)
   RSSI_CRITICAL_THREAT_THRESHOLD_DBM = -82  (very strong, close range)

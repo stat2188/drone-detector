@@ -171,7 +171,7 @@ private:
     // Used to translate the WHOLE threat ladder by the gate delta when the
     // user changes Sensitivity, so all shelves move coherently and the
     // tuned gaps between shelves are preserved.
-    int32_t prev_gate_dbm_{RSSI_DETECTION_THRESHOLD_DBM};
+    int32_t prev_gate_dbm_{DEFAULT_ALERT_RSSI_THRESHOLD_DBM};
 
     void apply_settings_to_ui() noexcept;
     void update_preview() noexcept;

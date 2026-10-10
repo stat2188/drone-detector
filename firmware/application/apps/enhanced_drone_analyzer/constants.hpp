@@ -312,7 +312,7 @@ constexpr int32_t DEFAULT_ALERT_RSSI_THRESHOLD_DBM =
  * @brief RSSI threshold for high threat (dBm)
  * @note With default gains (LNA=32 + VGA=32 + RF_AMP=14 = 78 dB),
  *       max RSSI = (255-255)/5 - 78 = -78 dBm. Threshold must be reachable.
- *       -85 dBm = 10 dB above LOW (-95), 4 dB above MEDIUM (-89). Reachable when
+ *       -85 dBm = 20 dB above LOW (-105), 4 dB above MEDIUM (-89). Reachable when
  *       spectrum.db value >= 220 (~86% of max).
  * @note Previous value (-84) sat 2 dB below CRITICAL (-80), squeezing the HIGH
  *       band to 4 dB; lowered to -85 to give both HIGH and CRITICAL a usable
@@ -347,16 +347,20 @@ constexpr int32_t RSSI_NOISE_FLOOR_DBM = -100;
 
 /**
  * @brief Default RSSI threshold for low threat (dBm)
- * @note Equals detection threshold (-95 dBm) — weak but active signals just
- *       above the detection gate classify as LOW (not MEDIUM).
- * @note Previous value (-105) sat below the detection gate, making the LOW
- *       band unreachable: every detected signal was instantly MEDIUM or higher.
+ * @note Equals the fresh detection threshold (-105 dBm =
+ *       DEFAULT_ALERT_RSSI_THRESHOLD_DBM, Sens 85) — weak but active signals
+ *       just above the detection gate classify as LOW (not MEDIUM). The -95
+ *       dBm RSSI_DETECTION_THRESHOLD_DBM is the rssi_sens formula anchor,
+ *       not the gate.
+ * @note The -95 variant tracked the older detection default; once the fresh
+ *       gate became -105 (Sens 85), keeping LOW at -95 left a NONE band
+ *       [-105, -95) where detected signals classified as no threat at all.
  */
 constexpr int32_t DEFAULT_THREAT_LOW_DBM = -95;
 
 /**
  * @brief Default RSSI threshold for medium threat (dBm)
- * @note 6 dB above LOW (-95) gives a real LOW band for long-range/weak drones.
+ * @note 16 dB above LOW (-105) gives a real LOW band for long-range/weak drones.
  *       Stronger signals escalate to MEDIUM, HIGH (-85), CRITICAL (-82).
  * @note Previous value (-88) left only a 4 dB HIGH band between MEDIUM and
  *       CRITICAL (-80); -89 spreads the levels evenly across the dynamic range.
@@ -1609,6 +1613,29 @@ constexpr int32_t MAHALANOBIS_RSSI_MAX_DBM = -20;
  *       wideband gate while this note promised exactly that defense. When
  *       the chain is ARMED the legacy skip is preserved (dual-carrier FPV
  *       protection: the chain owns the wideband verdict then).
+ * @note EFFECTIVE ARMING (audit M3, scanner.cpp process_spectrum_message):
+ *       in Sensitive mode the chain is judged by the SAME w-eased limits
+ *       apply_shape_filters applies (Steps 6/7/10), fed with this frame's
+ *       primary-peak margin and the fresh gate — a chain eased to its
+ *       permissive floors in the gate..gate+SLACK band counts as DISARMED
+ *       here even when the raw config looks armed. With Sens OFF (w = 100)
+ *       the limits are the raw config values; corrections vs legacy are
+ *       the Flat = 100 no-op (pct > 100 unreachable ⇒ not armed) and the
+ *       flat run-guards below; Flat = 0 keeps the disarmed reading that
+ *       D-B relies on at defaults.
+ * @note EFFECTIVE ARMING rev. 2 (dependency audit): the three limits are
+ *       computed by the SHARED eased_maxw_bins / eased_sharpness_limit /
+ *       eased_flatness_limit helpers (scanner.cpp) that Steps 6/7/10 also
+ *       consume — test and chain cannot drift. The Flat arm further
+ *       mirrors THE THREE OUTER Step-10 run guards (Flat > 0, peak margin
+ *       >= flatness_min_peak_margin(rssi_sens) — 40 when rssi_sens <= 0,
+ *       Sens <= 75 —, adapt_w > 0; the step's inner narrowband-width
+ *       guard never abstains for the wideband threat Step 13 models):
+ *       a flat config whose step abstained for this peak
+ *       cannot own the wideband verdict. At Sens OFF with Flat > 0 and
+ *       margin < 40 this reads DISARMED where legacy read "armed" —
+ *       deliberate STRICTER reading (Step 13 runs) closing the same
+ *       D-B-shaped hole in the raw-config regime.
  */
 constexpr int32_t DEFAULT_NEIGHBOR_MARGIN_DB = 2;
 
