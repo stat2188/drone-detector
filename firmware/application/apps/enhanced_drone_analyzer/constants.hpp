@@ -1165,6 +1165,19 @@ constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 0;
 constexpr uint8_t DEFAULT_SPECTRUM_FLATNESS = 0;
 
 /**
+ * @brief Upper bound of the flatness PERCENTAGE domain (0-100).
+ * @note apply_shape_filters Step 10 eases the limit with
+ *       `(100 - Flat) * (10000 - w2) / 10000` in UNSIGNED arithmetic —
+ *       a ScanConfig carrying Flat > 100 would underflow that subtraction
+ *       and produce a garbage limit. Every shipped producer clamps to
+ *       0..100 (settings_manager.cpp parse + NumberField {0,100}); this
+ *       constant is the single named statement of that domain so the
+ *       defensive saturation in scanner.cpp has a name instead of a magic
+ *       100, and so the two stay welded together.
+ */
+constexpr uint8_t SPECTRUM_FLATNESS_PCT_MAX = 100;
+
+/**
  * @brief Minimum peak margin for flatness check to be meaningful (in spectrum.db units)
  * @note Below this SNR, the flatness measurement is unreliable because:
  *       - V-shape signals compress near the noise floor, increasing flatness_pct
@@ -1320,6 +1333,56 @@ static_assert(SHAPE_ADAPT_GATE_FLOOR <= (DEFAULT_SPECTRUM_MARGIN - 2),
     "SHAPE_ADAPT_GATE_FLOOR must sit below the default sensitive base margin");
 static_assert(SHAPE_ADAPT_SLACK_UNITS > 0,
     "SHAPE_ADAPT_SLACK_UNITS must be non-zero (weight division)");
+static_assert(SHAPE_ADAPT_SIGMA3_DEN > 0,
+    "SHAPE_ADAPT_SIGMA3_DEN must be non-zero (sigma division)");
+static_assert(SHAPE_ADAPT_MIN_WIDTH_RELAX < 255,
+    "SHAPE_ADAPT_MIN_WIDTH_RELAX must stay representable in the uint8 MinW math");
+
+// ============================================================================
+// PREFILTER CAP (audit D-PRE-GATE) — restores the provable
+// "UI drain prefilter is a strict SUBSET of the detector gate" invariant
+// ============================================================================
+// sweep_fast_prefilter() drops a sweep frame BEFORE
+// process_spectrum_sweep() runs when
+//     (peak - min_usable_bin) < shape_gate_margin_try() / 2
+// while the detector of the SAME frame gates on
+//     (peak - p25) >= clamp(3s_IQR, SHAPE_ADAPT_GATE_FLOOR, base)
+// In Sens mode shape_gate_margin_try() returns the one-frame-STALE
+// auto-gate_. Nothing ties the stale value to the fresh one: the usable-bin
+// IQR jumps when a wideband interferer enters/leaves the band (p75 moves,
+// p25 does not) or after an AGC step, so base > 2*FLOOR (Mar > 22) plus a
+// falling IQR gives stale/2 > fresh gate — the UI then discards a frame the
+// detector WOULD have accepted. Because the frame dies before
+// waterfall_history_.push(), one TBD vote is lost with it, which is exactly
+// the sensitivity the S1 drain work was built to protect.
+//
+// Proof of the repair (audit D-PRE-GATE, rev. 2 — cap = 2 ×
+// TBD_MIN_ELEVATION_UNITS = 12, was 2 × SHAPE_ADAPT_GATE_FLOOR = 20):
+//   returned/2 = TBD_MIN_ELEVATION_UNITS = 6
+//     <= SHAPE_ADAPT_GATE_FLOOR (10) <= fresh gate
+//     => detector-subset invariant holds (min_usable <= p25 makes
+//        margin_UI >= margin_det, so UI-fail implies detector-fail);
+//   returned/2 = 6 <= TBD_MIN_ELEVATION_UNITS
+//     => any frame carrying a TBD-vote bin (elevation >= 6 above p25)
+//        passes the prefilter whenever min <= p25 — ZERO TBD votes lost.
+//     The former 2*FLOOR = 20 cap still dropped the 6..9 elevation band
+//     whenever min == p25, losing exactly the weak-signal votes the S1
+//     drain work was built to protect — the repair now fully closes
+//     that hole, not just the detector-subset half of it.
+// The base_cap < FLOOR sub-case is constant across frames (both clamp
+// branches yield base_cap, staleness is impossible) and
+// min(base_cap, 12)/2 <= base_cap holds for every base_cap >= 0, so it
+// needs no cap.
+// CLEAN-spectrum parity: auto_gate_ = FLOOR = 10 <= 12 there, so the cap
+// stays disengaged and the prefilter keeps its full ~30-cycle CPU saving;
+// it binds only on NOISY spectra (measured 3σ_IQR > 12) and only ever
+// LOWERS the bar (fail-open direction), never raises it.
+constexpr uint8_t SHAPE_ADAPT_PREFILTER_CAP =
+    static_cast<uint8_t>(2u * static_cast<uint8_t>(TBD_MIN_ELEVATION_UNITS));
+
+static_assert(SHAPE_ADAPT_PREFILTER_CAP / 2u <= SHAPE_ADAPT_GATE_FLOOR,
+    "SHAPE_ADAPT_PREFILTER_CAP must keep the prefilter half-gate at or below "
+    "the detector floor, otherwise the UI subset invariant cannot hold");
 
 // ============================================================================
 // CFAR Detection Constants (Constant False Alarm Rate)

@@ -1826,12 +1826,33 @@ uint8_t DroneScanner::shape_gate_margin_try() const noexcept {
     // detector uses this frame — the last frame's measurement, written on
     // this same UI drain thread by update_auto_gate() (never the scanner
     // thread). Sentinel 0 (no measurement yet) falls back to base exactly
-    // like shape_gate_margin(). A one-frame-stale gate here can only affect
-    // the UI-side half-gate prefilter, whose weak frames are still offered
-    // to TBD via sweep_tbd_frame_reachable() — the "UI test is a strict
-    // subset of the detector test" invariant is preserved.
+    // like shape_gate_margin(). A one-frame-stale gate here feeds ONLY the
+    // UI-side half-gate prefilter — but "the rejected frame is still offered
+    // to TBD afterwards" is NOT a complete mitigation: a frame the prefilter
+    // drops never reaches waterfall_history_.push(), so it costs a TBD vote
+    // too. The "UI test is a strict subset of the detector test" contract
+    // therefore needs the cap below to actually hold.
+    // PREFILTER CAP (audit D-PRE-GATE, rev. 2 — see constants.hpp
+    // SHAPE_ADAPT_PREFILTER_CAP): this accessor feeds ONLY the UI-side
+    // sweep drain prefilter, whose rule is "keep the frame when
+    // (peak - min_bin) >= returned/2". The DETECTOR of the same frame uses
+    // the FRESH clamp(3s, FLOOR, base) >= FLOOR, so an uncapped STALE
+    // measurement can exceed 2xFLOOR and make the prefilter stricter than
+    // the detector (Mar > 22 + a falling usable-bin IQR) — dropping a frame
+    // before waterfall_history_.push() and costing a TBD vote too. Capping
+    // at 2*TBD_MIN_ELEVATION_UNITS (12) gives returned/2 = 6 <= FLOOR <=
+    // fresh gate (subset restored), and because min_bin <= p25 the UI
+    // margin is always >= the detector margin, so UI-fail now IMPLIES
+    // detector-fail (provably). The same 6 = the TBD vote floor, so a
+    // frame that could vote in the integrator can never be dropped here
+    // either — the 2*FLOOR=20 rev.1 cap still lost the 6..9 elevation
+    // band at min == p25. Only ever LOWERS the bar; clean-spectrum
+    // behavior (auto_gate_ = FLOOR = 10 <= 12) is unchanged.
     if (config_.sensitive_mode) {
-        return (auto_gate_ != 0) ? auto_gate_ : base;
+        const uint8_t sens_gate = (auto_gate_ != 0) ? auto_gate_ : base;
+        return (sens_gate > SHAPE_ADAPT_PREFILTER_CAP)
+            ? SHAPE_ADAPT_PREFILTER_CAP
+            : sens_gate;
     }
     const int32_t rssi_sens = -(config_.rssi_threshold_dbm + 95);
     if (!config_.sensitive_mode && rssi_sens > 0) {
@@ -3187,9 +3208,19 @@ bool DroneScanner::apply_shape_filters(
             const uint8_t max_valley = (left_valley_margin > right_valley_margin)
                 ? left_valley_margin : right_valley_margin;
             // SENS eased limit (max-polarity): D + (margin/3 + 1)·
-            // (10000 − w²)/10000 — at w = 0 the limit sits above every
-            // measurable flank (abstain), at w = 100 it is exactly the user
-            // D (OFF byte-identical). uint16: D ≤ 200 + ceiling ≤ 86 → 286.
+            // (10000 − w²)/10000 — at w = 100 it is exactly the user D
+            // (OFF byte-identical). uint16: D ≤ 200 + ceiling ≤ 86 → 286.
+            // PRECISE REACH (audit D-W0): the "+ ceiling" term only bounds
+            // the FIRST probe bin (the Step-4 walk guarantees
+            // data[left−1] − noise ≤ margin/3 − 1). The remaining
+            // VALLEY_PROBE_MAX_BINS−1 bins sit OUTSIDE the walk and are
+            // NOT bounded by margin/3, so at w = 0 the limit is NOT
+            // "above every measurable flank": elevated terrain within the
+            // 6-bin window (a plateau or second lobe one notch beyond an
+            // edge dip) can still exceed it and reject. The
+            // `adapt_w > 0` guard above additionally makes the step abstain
+            // at exactly w == 0, so the reachable w=0 case is really
+            // 0 < w < 100 where the limit is already ≥ D.
             const uint16_t valley_limit =
                 static_cast<uint16_t>(config_.spectrum_valley_depth) +
                 static_cast<uint16_t>(
@@ -3285,10 +3316,23 @@ bool DroneScanner::apply_shape_filters(
                 // SENS eased limit (max-polarity): F + (100−F)·(10000−w²)/10000
                 // ≤ 100 — at w = 0 the limit is 100 (abstain), at w = 100 the
                 // exact user F (OFF byte-identical). uint16 intermediate.
+                // DOMAIN GUARD (audit D-CFG-RANGE): the `(100 − F)` term is
+                // UNSIGNED — an F of 101..255 underflows to ~4e9, the /10000
+                // quotient then overflows the uint16 cast and the limit comes
+                // out as garbage. Every shipped producer clamps Flat to 0..100
+                // (settings_manager parse + NumberField), but this chain is
+                // fed a raw ScanConfig with no range proof. Saturate to the
+                // documented domain — house style here is saturation for every
+                // other intermediate (elevated_sum, hp_sum, start_level), so
+                // this one is no exception. Stack: +2 B (register). Flash: ~16 B.
+                const uint16_t flat_user =
+                    (config_.spectrum_flatness > SPECTRUM_FLATNESS_PCT_MAX)
+                        ? static_cast<uint16_t>(SPECTRUM_FLATNESS_PCT_MAX)
+                        : static_cast<uint16_t>(config_.spectrum_flatness);
                 const uint8_t flatness_limit = static_cast<uint8_t>(
-                    static_cast<uint16_t>(config_.spectrum_flatness) +
+                    static_cast<uint16_t>(flat_user) +
                     static_cast<uint16_t>(
-                        ((100u - static_cast<uint16_t>(config_.spectrum_flatness)) *
+                        ((static_cast<uint32_t>(SPECTRUM_FLATNESS_PCT_MAX) - flat_user) *
                          (10000u - w2)) / 10000u));
                 if (flatness_pct > flatness_limit) return false;
             }
@@ -3329,9 +3373,15 @@ bool DroneScanner::apply_shape_filters(
     // Only runs when explicitly enabled (opt-in, default OFF).
     // Very strong bypass: kurtosis is unreliable when signal fills >50% of bins.
     // SENS ADAPTIVE (was: skipped in sensitive mode — now stays ACTIVE):
-    // required kurtosis eases as user·w²/10000 — at small w only clearly
-    // platykurtic (WiFi-like, kurt < 0) profiles still fail; at w = 100
-    // the exact user K.
+    // required kurtosis eases as user·w²/10000 — over 0 < w < 100 only
+    // clearly platykurtic (WiFi-like, kurt < 0) profiles still fail; at
+    // w = 100 it is the exact user K. PRECISE EDGE (audit D-W0): the
+    // `adapt_w > 0` guard below makes Step 12 abstain COMPLETELY at
+    // w == 0 (peak margin exactly equal to the gate), i.e. the eased
+    // `kurt_limit == 0` comparison is never even evaluated there. That is
+    // deliberate — at the gate itself the segment is noise-dominated and
+    // an undefined-at-N==small statistic should not vote — but it means
+    // "kurt < 0 still fails at small w" is true for w >= 1 only.
     // FIX (audit D-A — SEGMENT SCOPE): computed over THIS emission's Step-4
     // fragment [left..right], NOT the whole frame. Steps 7-11 all measure the
     // same segment; the old whole-frame range let a SECOND emitter in the same
@@ -3583,7 +3633,7 @@ void DroneScanner::apply_sweep_tracking(
                 drone.update_cycle_peak(peak_rssi);
                 drone.get_mahalanobis_stats().last_tuned_frequency = peak_freq;
                 if (drone.threat_level > ThreatLevel::NONE) {
-                    trigger_alert(drone.threat_level);
+                    raise_alert(drone.threat_level);  // staged — drained at end of this function (D-ALERT-LOCK)
                 }
                 drone_created_here = true;
             } else if (add_err == ErrorCode::BUFFER_FULL) {

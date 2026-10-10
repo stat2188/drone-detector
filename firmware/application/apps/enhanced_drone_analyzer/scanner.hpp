@@ -2529,6 +2529,19 @@ private:
     // the 1-bin probe (the edge bin is the walk's maximum).
     static constexpr uint8_t VALLEY_PROBE_MAX_BINS = 6;
 
+    // INVARIANT LOCK (audit D-VALLEY-PROBE): the probe window must stay
+    // strictly smaller than the NMS separation, otherwise a distinct
+    // neighbouring emission whose peak respects CFAR_MIN_PEAK_SEPARATION
+    // could still fall INSIDE the probe window and be read as "flank of this
+    // emission" — valley would then reject a genuinely separate target.
+    // The relationship is currently only stated in the comment above; make
+    // the compiler enforce it so a future window/NMS tweak cannot silently
+    // break the argument. Stack: 0. SRAM: 0. Flash: 0.
+    static_assert(VALLEY_PROBE_MAX_BINS < CFAR_MIN_PEAK_SEPARATION,
+        "VALLEY_PROBE_MAX_BINS must stay below CFAR_MIN_PEAK_SEPARATION so a "
+        "distinct NMS-separated neighbour can never be read as this "
+        "emission's flank");
+
     // RSSI hysteresis state (Schmitt trigger: 2 dB to turn ON, 2 dB easier to stay ON)
     // NORMAL-mode keys — owned by process_spectrum_message(). Sweep mode has
     // its own per-window keys below and MUST NOT touch these (see C2 block).
