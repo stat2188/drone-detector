@@ -143,78 +143,118 @@ void CfarModeSelector::paint(ui::Painter& painter) {
 DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& config, DroneScanner* scanner_ptr, DroneDisplay* display) noexcept
     : ui::View()
     , labels_({
-        {{UI_POS_X(1), UI_POS_Y(1)}, "Int(ms):", Color::white()},
-        {{UI_POS_X(1), UI_POS_Y(3)}, "Sens:", Color::white()},
+        // Row 2 — scan interval / volume
+        {{UI_POS_X(0), UI_POS_Y(2)}, "Int(ms):", Color::white()},
         {{UI_POS_X(13), UI_POS_Y(2)}, "Vol:", Color::white()},
+        // Row 3 — rssi sensitivity / decrease cycles
+        {{UI_POS_X(0), UI_POS_Y(3)}, "Sens:", Color::white()},
         {{UI_POS_X(13), UI_POS_Y(3)}, "Cyc:", Color::white()},
-        {{UI_POS_X(17), UI_POS_Y(5)}, "Mar:", Color::white()},
-        {{UI_POS_X(17), UI_POS_Y(6)}, "Min:", Color::white()},
-        {{UI_POS_X(0), UI_POS_Y(5)}, "MaxW:", Color::white()},
-        {{UI_POS_X(0), UI_POS_Y(6)}, "Shrp:", Color::white()},
-        {{UI_POS_X(10), UI_POS_Y(5)}, "Rat:", Color::white()},
-        {{UI_POS_X(10), UI_POS_Y(6)}, "Vly:", Color::white()},
-        {{UI_POS_X(10), UI_POS_Y(4)}, "Flat:", Color::white()},
-        {{UI_POS_X(17), UI_POS_Y(4)}, "Sym:", Color::white()},
-        {{UI_POS_X(0), UI_POS_Y(0)}, "CFAR:", Color::white()},
-        {{UI_POS_X(11), UI_POS_Y(0)}, "Ref:", Color::white()},
-        {{UI_POS_X(17), UI_POS_Y(0)}, "Grd:", Color::white()},
-        {{UI_POS_X(22), UI_POS_Y(0)}, "Thr:", Color::white()},
-        {{UI_POS_X(0), UI_POS_Y(16)}, "Lo:", Color::white()},
-        {{UI_POS_X(8), UI_POS_Y(16)}, "Md:", Color::white()},
-        {{UI_POS_X(16), UI_POS_Y(16)}, "Hi:", Color::white()},
-        {{UI_POS_X(23), UI_POS_Y(16)}, "Cr:", Color::white()},
-        {{UI_POS_X(0), UI_POS_Y(7)}, "Mrg:", Color::white()},
+        // Row 8 — frequency match radius
+        {{UI_POS_X(0), UI_POS_Y(8)}, "Mrg:", Color::white()},
+        // Row 15 — miss tolerance
+        {{UI_POS_X(11), UI_POS_Y(15)}, "Miss:", Color::white()},
+        // Row 17 — threat ladder thresholds
+        {{UI_POS_X(0), UI_POS_Y(17)}, "Lo:", Color::white()},
+        {{UI_POS_X(8), UI_POS_Y(17)}, "Md:", Color::white()},
+        {{UI_POS_X(16), UI_POS_Y(17)}, "Hi:", Color::white()},
+        {{UI_POS_X(23), UI_POS_Y(17)}, "Cr:", Color::white()},
     })
-    , field_scan_interval_({UI_POS_X(1), UI_POS_Y(2)}, 4, {10, 1000}, 10, ' ')
-    , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(4)}, 3, {0, 100}, 1, ' ')
+    , labels_shape_({
+        // Row 0 — CFAR block
+        {{UI_POS_X(0), UI_POS_Y(0)}, "CFAR:", Color::white()},
+        {{UI_POS_X(12), UI_POS_Y(0)}, "Ref:", Color::white()},
+        {{UI_POS_X(18), UI_POS_Y(0)}, "Grd:", Color::white()},
+        {{UI_POS_X(23), UI_POS_Y(0)}, "Thr:", Color::white()},
+        // Row 5 — shape filter: width / ratio / margin
+        {{UI_POS_X(0), UI_POS_Y(5)}, "MaxW:", Color::white()},
+        {{UI_POS_X(8), UI_POS_Y(5)}, "Rat:", Color::white()},
+        {{UI_POS_X(15), UI_POS_Y(5)}, "Mar:", Color::white()},
+        // Row 6 — shape filter: sharpness / valley / min width
+        {{UI_POS_X(0), UI_POS_Y(6)}, "Shrp:", Color::white()},
+        {{UI_POS_X(8), UI_POS_Y(6)}, "Vly:", Color::white()},
+        {{UI_POS_X(15), UI_POS_Y(6)}, "Min:", Color::white()},
+        // Row 7 — shape filter: flatness / symmetry
+        {{UI_POS_X(0), UI_POS_Y(7)}, "Flat:", Color::white()},
+        {{UI_POS_X(8), UI_POS_Y(7)}, "Sym:", Color::white()},
+    })
+    // NOTE ON THE LAYOUT
+    // ------------------
+    // The view is 240x304 (the 16 px status bar is subtracted by
+    // NavigationView::update_view), i.e. exactly 19 rows of UI_POS_DEFAULT
+    // HEIGHT. ui::FocusManager picks the next widget by GEOMETRY only
+    // (firmware/common/ui_focus.cpp: rect_distances): a widget is reachable
+    // downward only if its top edge is at or below the current bottom edge,
+    // and upward only if its bottom edge is at or above the current top
+    // edge; distance is the squared axis gap plus a penalty for lateral
+    // offset. Two widgets whose rects OVERLAP on an axis are therefore
+    // mutually invisible on that axis, which is what made the previous
+    // 24 px checkboxes (on a 16 px grid) jump focus erratically.
+    // Consequences honoured below:
+    //   * every focusable widget is exactly 16 px tall;
+    //   * no two widgets of a row overlap horizontally, and no widget
+    //     crosses a row boundary;
+    //   * adjacent focusable rows are at most 16 px apart, so Up/Down walks
+    //     the grid in reading order.
+    // Checkbox width in the compact (16 px) form is 8*L+16 with the label
+    // drawn at x+18, so L must be len(text)+1 to fit the caption.
+    , field_scan_interval_({UI_POS_X(8), UI_POS_Y(2)}, 4, {10, 1000}, 10, ' ')
+    , field_rssi_threshold_({UI_POS_X(5), UI_POS_Y(3)}, 3, {0, 100}, 1, ' ')
     , field_volume_({UI_POS_X(17), UI_POS_Y(2)}, 2, {0, 99}, 1, ' ')
     , field_rssi_dec_cyc_({UI_POS_X(17), UI_POS_Y(3)}, 2, {1, 50}, 1, ' ')
-    , field_freq_match_radius_({UI_POS_X(4), UI_POS_Y(7)}, 3, {0, 100}, 1, ' ')
-    , check_audio_alerts_({UI_POS_X(1), UI_POS_Y(9)}, 6, "Audio", false)
-    , check_spectrum_visible_({UI_POS_X(20), UI_POS_Y(9)}, 5, "SpVis", false)
-    , check_timeline_visible_({UI_POS_X(20), UI_POS_Y(13)}, 5, "WF", false)
+    , field_freq_match_radius_({UI_POS_X(4), UI_POS_Y(8)}, 3, {0, 100}, 1, ' ')
+    , check_audio_alerts_({UI_POS_X(0), UI_POS_Y(13)}, 6, "Audio", true)
+    , check_spectrum_visible_({UI_POS_X(9), UI_POS_Y(13)}, 6, "SpVis", true)
+    , check_timeline_visible_({UI_POS_X(18), UI_POS_Y(13)}, 3, "WF", true)
 
-    , check_dwell_enabled_({UI_POS_X(1), UI_POS_Y(11)}, 6, "Dwell", false)
-    , check_confirm_count_({UI_POS_X(1), UI_POS_Y(13)}, 8, "Confirm", false)
-    , field_confirm_count_({UI_POS_X(13), UI_POS_Y(13)}, 2, {1, 10}, 1, ' ')
-    , field_miss_tolerance_({UI_POS_X(20), UI_POS_Y(13)}, 2, {1, 20}, 1, ' ')
-        , check_spectrum_detection_({UI_POS_X(20), UI_POS_Y(11)}, 5, "SpDet", false)
-    , field_neighbor_margin_({UI_POS_X(17), UI_POS_Y(15)}, 2, {0, 15}, 1, ' ')
-    , check_neighbor_margin_({UI_POS_X(20), UI_POS_Y(15)}, 4, "NB", false)
-    , check_noise_blacklist_({UI_POS_X(1), UI_POS_Y(15)}, 8, "Blklist", false)
-    , check_rssi_variance_({UI_POS_X(20), UI_POS_Y(7)}, 5, "RVar", false)
-    , preview_({0, 152, 240, 48})
-    , check_mahalanobis_({UI_POS_X(20), UI_POS_Y(2)}, 3, "MG", false)
-    , field_mahalanobis_threshold_({UI_POS_X(22), UI_POS_Y(1)}, 3,
+    , check_dwell_enabled_({UI_POS_X(14), UI_POS_Y(14)}, 6, "Dwell", true)
+    , check_confirm_count_({UI_POS_X(0), UI_POS_Y(14)}, 8, "Confirm", true)
+    , field_confirm_count_({UI_POS_X(11), UI_POS_Y(14)}, 2, {1, 10}, 1, ' ')
+    , field_miss_tolerance_({UI_POS_X(16), UI_POS_Y(15)}, 2, {1, 20}, 1, ' ')
+    , check_spectrum_detection_({UI_POS_X(22), UI_POS_Y(8)}, 6, "SpDet", true)
+    , field_neighbor_margin_({UI_POS_X(25), UI_POS_Y(15)}, 2, {0, 15}, 1, ' ')
+    , check_neighbor_margin_({UI_POS_X(19), UI_POS_Y(15)}, 3, "NB", true)
+    , check_noise_blacklist_({UI_POS_X(0), UI_POS_Y(15)}, 8, "Blklist", true)
+    , check_rssi_variance_({UI_POS_X(20), UI_POS_Y(3)}, 5, "RVar", true)
+    // Preview occupies rows 10-12 (y 160..208) — a free band between the
+    // shape-filter block (ends at y 144) and the display toggles (y 208).
+    // Nothing overlaps it, so its black background fill can no longer race
+    // with neighbouring checkbox repaints.
+    , preview_({0, 160, 240, 48})
+    , check_mahalanobis_({UI_POS_X(20), UI_POS_Y(2)}, 3, "MG", true)
+    , field_mahalanobis_threshold_({UI_POS_X(25), UI_POS_Y(2)}, 3,
                                {MAHALANOBIS_THRESHOLD_MIN_X10, MAHALANOBIS_THRESHOLD_MAX_X10},
                                DEFAULT_MAHALOBIS_THRESHOLD_X10, ' ')
-    , check_sensitive_mode_({UI_POS_X(10), UI_POS_Y(10)}, 4, "Sens", false)
-    , field_spectrum_margin_({UI_POS_X(20), UI_POS_Y(5)}, 3, {5, 200}, 5, ' ')
-    , field_spectrum_min_width_({UI_POS_X(20), UI_POS_Y(6)}, 3, {1, 100}, 1, ' ')
-    , field_spectrum_max_width_({UI_POS_X(6), UI_POS_Y(5)}, 3, {2, 255}, 1, ' ')
-    , field_spectrum_peak_sharpness_({UI_POS_X(6), UI_POS_Y(6)}, 3, {50, 250}, 5, ' ')
-    , field_spectrum_peak_ratio_({UI_POS_X(13), UI_POS_Y(5)}, 3, {0, 255}, 5, ' ')
-    , field_spectrum_valley_depth_({UI_POS_X(13), UI_POS_Y(6)}, 3, {0, 200}, 5, ' ')
-    , field_spectrum_flatness_({UI_POS_X(14), UI_POS_Y(4)}, 3, {0, 100}, 5, ' ')
-    , field_spectrum_symmetry_({UI_POS_X(20), UI_POS_Y(4)}, 3, {0, 100}, 5, ' ')
-    , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(13), 20}, "DEFAULT")
-    , button_about_({UI_POS_X(13), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(2), 20}, "!")
-    , button_save_({UI_POS_X(15), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(14), 20}, "SAVE")
-    , check_shape_bypass_({UI_POS_X(9), UI_POS_Y(7)}, 5, "Byp", false)
-    , check_median_enabled_({UI_POS_X(15), UI_POS_Y(7)}, 4, "Md+", false)
+    , check_sensitive_mode_({UI_POS_X(20), UI_POS_Y(7)}, 5, "Sens", true)
+    , field_spectrum_margin_({UI_POS_X(19), UI_POS_Y(5)}, 3, {5, 200}, 5, ' ')
+    , field_spectrum_min_width_({UI_POS_X(19), UI_POS_Y(6)}, 3, {1, 100}, 1, ' ')
+    , field_spectrum_max_width_({UI_POS_X(5), UI_POS_Y(5)}, 3, {2, 255}, 1, ' ')
+    , field_spectrum_peak_sharpness_({UI_POS_X(5), UI_POS_Y(6)}, 3, {50, 250}, 5, ' ')
+    , field_spectrum_peak_ratio_({UI_POS_X(12), UI_POS_Y(5)}, 3, {0, 255}, 5, ' ')
+    , field_spectrum_valley_depth_({UI_POS_X(12), UI_POS_Y(6)}, 3, {0, 200}, 5, ' ')
+    , field_spectrum_flatness_({UI_POS_X(5), UI_POS_Y(7)}, 3, {0, 100}, 5, ' ')
+    , field_spectrum_symmetry_({UI_POS_X(12), UI_POS_Y(7)}, 3, {0, 100}, 5, ' ')
+    // Row 18 — 16 px tall so the row ends exactly on the view bottom (304).
+    // UI_POS_Y_BOTTOM(2) + 20 px used to spill 4 px past the screen edge.
+    , button_defaults_({UI_POS_X(0), UI_POS_Y(18), UI_POS_WIDTH(13), 16}, "DEFAULT")
+    , button_about_({UI_POS_X(13), UI_POS_Y(18), UI_POS_WIDTH(2), 16}, "!")
+    , button_save_({UI_POS_X(15), UI_POS_Y(18), UI_POS_WIDTH(14), 16}, "SAVE")
+    , check_shape_bypass_({UI_POS_X(8), UI_POS_Y(8)}, 4, "Byp", true)
+    , check_median_enabled_({UI_POS_X(15), UI_POS_Y(8)}, 4, "Md+", true)
     // Threat shelf fields: length 4 — the range includes 4-glyph values
     // ("-120"); a 3-char field would paint outside its rect and leave stale
     // digits ("990" ghosts) when a 4-glyph value is replaced by a 3-glyph one.
-    , field_threat_low_({UI_POS_X(3), UI_POS_Y(16)}, 4, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
-    , field_threat_medium_({UI_POS_X(11), UI_POS_Y(16)}, 4, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
-    , field_threat_high_({UI_POS_X(19), UI_POS_Y(16)}, 4, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
-    , field_threat_critical_({UI_POS_X(26), UI_POS_Y(16)}, 4, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
+    // Row 17: the previous row 16 sat underneath the row-15 checkboxes, so
+    // the ladder could not be reached by pressing Down.
+    , field_threat_low_({UI_POS_X(3), UI_POS_Y(17)}, 4, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
+    , field_threat_medium_({UI_POS_X(11), UI_POS_Y(17)}, 4, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
+    , field_threat_high_({UI_POS_X(19), UI_POS_Y(17)}, 4, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
+    , field_threat_critical_({UI_POS_X(26), UI_POS_Y(17)}, 4, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
     // Zero-heap selector over the Flash CFAR_OPTIONS table (was an
     // ui::OptionsField with 7 options ≈ 196 B of heap + transient reallocs).
-    , field_cfar_mode_({UI_POS_X(4), UI_POS_Y(0)}, 7)
-    , field_cfar_ref_cells_({UI_POS_X(14), UI_POS_Y(0)}, 2, {4, 64}, 4, ' ')
-    , field_cfar_guard_cells_({UI_POS_X(20), UI_POS_Y(0)}, 1, {0, 8}, 1, ' ')
-    , field_cfar_threshold_({UI_POS_X(25), UI_POS_Y(0)}, 3, {10, 100}, 5, ' ')
+    , field_cfar_mode_({UI_POS_X(5), UI_POS_Y(0)}, 7)
+    , field_cfar_ref_cells_({UI_POS_X(16), UI_POS_Y(0)}, 2, {4, 64}, 4, ' ')
+    , field_cfar_guard_cells_({UI_POS_X(22), UI_POS_Y(0)}, 1, {0, 8}, 1, ' ')
+    , field_cfar_threshold_({UI_POS_X(27), UI_POS_Y(0)}, 3, {10, 100}, 5, ' ')
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , display_ptr_(display)
@@ -228,6 +268,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     add_children({
         &preview_,
         &labels_,
+        &labels_shape_,
         &field_scan_interval_,
         &field_rssi_threshold_,
         &field_volume_,
@@ -342,7 +383,13 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
 
     check_confirm_count_.on_select = [this](ui::Checkbox&, bool v) {
         settings_.confirm_count_enabled = v;
-        field_confirm_count_.visible(v);
+        // NOTE: use hidden(), not visible(). Widget::visible() only tracks a
+        // UI-automation flag — ui::Painter::paint_widget() overwrites it to
+        // true unconditionally for any non-hidden widget, so the old
+        // visible(false) call never hid anything and never removed the field
+        // from ui::FocusManager::update (which only consults hidden()).
+        field_confirm_count_.hidden(!v);
+        set_dirty();
         settings_dirty_ = true;
     };
 
@@ -631,7 +678,13 @@ DroneSettingsView::~DroneSettingsView() noexcept {
 }
 
 void DroneSettingsView::paint(ui::Painter& painter) {
-    (void)painter;
+    // A full repaint must start from a clean slate. Hiding a widget
+    // (set_shape_filter_visibility / confirm-count toggle) leaves its old
+    // glyphs on screen because ui::Painter::paint_widget only SKIPS a hidden
+    // widget — it never erases it. Filling the background here is what
+    // actually removes them; this runs whenever the view is marked dirty,
+    // which set_shape_filter_visibility() does explicitly.
+    painter.fill_rectangle(screen_rect(), style().background);
 }
 
 void DroneSettingsView::focus() {
@@ -664,7 +717,7 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     check_dwell_enabled_.set_value(settings_.dwell_enabled);
     check_confirm_count_.set_value(settings_.confirm_count_enabled);
     field_confirm_count_.set_value(static_cast<int32_t>(settings_.confirm_count));
-    field_confirm_count_.visible(settings_.confirm_count_enabled);
+    field_confirm_count_.hidden(!settings_.confirm_count_enabled);
     field_miss_tolerance_.set_value(static_cast<int32_t>(settings_.miss_tolerance));
     check_noise_blacklist_.set_value(settings_.noise_blacklist_enabled);
     check_spectrum_detection_.set_value(settings_.spectrum_detection_enabled);
@@ -723,21 +776,40 @@ void DroneSettingsView::update_preview() noexcept {
 }
 
 void DroneSettingsView::set_shape_filter_visibility(bool visible) noexcept {
-    field_spectrum_margin_.visible(visible);
-    field_spectrum_min_width_.visible(visible);
-    field_spectrum_max_width_.visible(visible);
-    field_spectrum_peak_sharpness_.visible(visible);
-    field_spectrum_peak_ratio_.visible(visible);
-    field_spectrum_valley_depth_.visible(visible);
-    field_spectrum_flatness_.visible(visible);
-    field_spectrum_symmetry_.visible(visible);
-    check_shape_bypass_.visible(visible);
-    check_median_enabled_.visible(visible);
+    // NOTE ON hidden() vs visible(): Widget::visible() is NOT a hide switch.
+    // ui::Painter::paint_widget() (firmware/common/ui_painter.cpp) sets
+    // visible(true) for every non-hidden widget before painting it, so a
+    // visible(false) here was silently undone on the next paint pass and the
+    // fields never disappeared. ui::FocusManager::add_children() also filters
+    // on hidden() only, so the old calls left all of these widgets in the
+    // D-pad graph. hidden() is the flag that both the painter and the focus
+    // manager honour.
+    field_spectrum_margin_.hidden(!visible);
+    field_spectrum_min_width_.hidden(!visible);
+    field_spectrum_max_width_.hidden(!visible);
+    field_spectrum_peak_sharpness_.hidden(!visible);
+    field_spectrum_peak_ratio_.hidden(!visible);
+    field_spectrum_valley_depth_.hidden(!visible);
+    field_spectrum_flatness_.hidden(!visible);
+    field_spectrum_symmetry_.hidden(!visible);
+    check_shape_bypass_.hidden(!visible);
+    check_median_enabled_.hidden(!visible);
     // CFAR fields are also gated by spectrum detection
-    field_cfar_mode_.visible(visible);
-    field_cfar_ref_cells_.visible(visible);
-    field_cfar_guard_cells_.visible(visible);
-    field_cfar_threshold_.visible(visible);
+    field_cfar_mode_.hidden(!visible);
+    field_cfar_ref_cells_.hidden(!visible);
+    field_cfar_guard_cells_.hidden(!visible);
+    field_cfar_threshold_.hidden(!visible);
+    // Captions belong to the gated block — without this they would float
+    // with no fields next to them.
+    labels_shape_.hidden(!visible);
+    // The preview renders the shape filter; it is meaningless while the
+    // filter is disabled.
+    preview_.hidden(!visible);
+
+    // A hidden widget is only SKIPPED by the painter, never erased, so the
+    // view has to repaint from a clean background to actually clear the
+    // vacated rows (and to redraw them when re-enabled).
+    set_dirty();
 }
 
 // ============================================================================

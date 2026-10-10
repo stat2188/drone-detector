@@ -92,7 +92,16 @@ public:
     }
 
 private:
+    // Always-visible captions (scan/volume, match radius, miss tolerance,
+    // threat ladder). Kept separate from labels_shape_ so that the whole
+    // shape-filter/CFAR caption set can be hidden together with its fields.
     ui::Labels labels_;
+
+    // Captions belonging to the SpDet-gated block (CFAR row + shape-filter
+    // rows). Hidden/shown together with the gated NumberFields/Checkboxes —
+    // otherwise they would float with no fields next to them.
+    ui::Labels labels_shape_;
+
     ui::NumberField field_scan_interval_;
     ui::NumberField field_rssi_threshold_;
     ui::NumberField field_volume_;
