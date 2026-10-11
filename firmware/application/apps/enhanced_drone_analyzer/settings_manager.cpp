@@ -58,6 +58,7 @@ SettingsStruct::SettingsStruct() noexcept
     , sensitive_mode(false)
     , shape_sim_threshold_pct(DEFAULT_SHAPE_SIM_THRESHOLD_PCT)
     , shape_bypass_enabled(false)
+    , robust_width_floor_enabled(true)
     , kurtosis_enabled(false)
     , kurtosis_min_x10(20)
     , adaptive_cfar_enabled(false)
@@ -437,6 +438,10 @@ static void parse_settings_line(
         s.file_version_x10 = static_cast<uint8_t>((v > 255) ? 255 : v);
     } else if (key_matches("shape_bypass_enabled")) {
         s.shape_bypass_enabled = parse_bool();
+    } else if (key_matches("robust_width_floor_enabled")) {
+        // Audit fix W1 kill switch. MISSING KEY (old settings files) keeps
+        // the in-struct default ON — the fix stays active after an upgrade.
+        s.robust_width_floor_enabled = parse_bool();
 
     // --- Advanced detection (file-only opt-in, not in the settings UI) ---
     } else if (key_matches("kurtosis_enabled")) {
@@ -774,6 +779,9 @@ ErrorCode SettingsFileManager::save(
     // Very-strong signal shape-filter bypass (default OFF)
     wbool(file, "shape_bypass_enabled", s.shape_bypass_enabled);
 
+    // Robust width-anchor floor (audit fix W1, default ON — RbF checkbox)
+    wbool(file, "robust_width_floor_enabled", s.robust_width_floor_enabled);
+
     // Advanced detection (file-only opt-in, not in the settings UI)
     wbool(file, "kurtosis_enabled", s.kurtosis_enabled);
     wl(file, "kurtosis_min_x10", static_cast<int64_t>(s.kurtosis_min_x10));
@@ -827,6 +835,9 @@ void SettingsFileManager::apply_to_config(
 
     // Very-strong signal shape-filter bypass (default OFF)
     config.shape_bypass_enabled = s.shape_bypass_enabled;
+
+    // Robust width-anchor floor (audit fix W1, default ON)
+    config.robust_width_floor_enabled = s.robust_width_floor_enabled;
 
     // Advanced detection
     config.kurtosis_enabled = s.kurtosis_enabled;
@@ -995,6 +1006,9 @@ void SettingsFileManager::extract_from_config(
 
     // Very-strong signal shape-filter bypass (default OFF)
     s.shape_bypass_enabled = config.shape_bypass_enabled;
+
+    // Robust width-anchor floor (audit fix W1, default ON)
+    s.robust_width_floor_enabled = config.robust_width_floor_enabled;
 
     // Advanced detection
     s.kurtosis_enabled = config.kurtosis_enabled;

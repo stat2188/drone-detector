@@ -1261,6 +1261,42 @@ constexpr uint8_t VERY_STRONG_SIGNAL_MARGIN = 80;
  */
 constexpr uint8_t EXTREME_SIGNAL_MARGIN = 96;
 
+/**
+ * @brief Contamination delta (25th - 10th usable-bin percentile) that demotes
+ *        the WIDTH-ANCHOR floor from p25 to p10 (audit fix W1).
+ * @note Every width gate (Step 4 fragment walk, Step 6b emission extent)
+ *       anchors its elevation bar at `floor + margin/divisor`, and the floor
+ *       was the 25th percentile. When a wideband emission (WiFi/BT) occupies
+ *       >= ~75% of the usable bins, p25 rises INTO the emission, the margin
+ *       shrinks to the top-of-plateau ripple, and the bar lands ~1-2 dB BELOW
+ *       THE CREST instead of above the true shelf: MaxW then measures the
+ *       crest's curvature (1-3 bins) instead of the emission's bandwidth, and
+ *       a 20-40 MHz flat top passes MaxW=2. The 10th percentile stays inside
+ *       the quiet minority in that regime, so it recovers the true shelf.
+ * @note GATED FALLBACK (provably no-op on clean spectra): clean noise has
+ *       p25 - p10 ~= 1-3 units (~3 sigma of the per-bin fluctuation at
+ *       sigma ~= 2 units), so any delta below this threshold keeps the
+ *       legacy p25 anchor BYTE-IDENTICAL. Only a band demonstrably occupied
+ *       by >= ~2 dB of shelf-to-p25 lift switches the anchor down.
+ * @note Sensitivity direction: LOWER anchor = wider measured width = MORE
+ *       wideband rejection, with two documented costs: (a) in a contaminated
+ *       frame a narrowband target spectrally adjacent to the wideband band
+ *       can bridge into its plateau and inherit its rejection — accepted
+ *       trade, the alternative is trusting a shelf that is the signal;
+ *       (b) none for clean frames (gated off).
+ * @note Scope: used ONLY for the width/extent anchors (Step 4 walk,
+ *       emission_extent). The Step-3 margin gate, valley/symmetry/flatness
+ *       margins and the Step 6c wall tests keep the p25 floor — lowering
+ *       those would open sensitivity holes or resurrect the FPV-at-window-
+ *       edge rejection the BOTH-EDGES relaxation exists to prevent.
+ * @note Kill switch: ScanConfig::robust_width_floor_enabled (settings
+ *       checkbox "RbF", default ON) skips the p10 pass entirely and returns
+ *       the legacy p25 anchor — field A/B of cost (a) without reflashing.
+ * @note Units: spectrum.db units, 5 units = 1 dB (see spectrum.db scale in
+ *       constants.hpp header notes).
+ */
+constexpr uint8_t WIDTH_FLOOR_CONTAM_DELTA_UNITS = 10;
+
 // ============================================================================
 // Track-Before-Detect (TBD) Confirmation Constants
 // ============================================================================
@@ -1309,6 +1345,36 @@ static_assert(
     "TBD_MIN_ELEVATION_UNITS must stay <= DEFAULT_SPECTRUM_MARGIN / 2: the "
     "TBD floor is also the sweep frame-reachability limit, and a higher floor "
     "would cut frames before the weak-signal integrator can vote");
+
+/**
+ * @brief Divisor of the Step-3 gate used as the FLOOR of the TBD width-anchor
+ *        elevation (audit fix W2: was gate/2).
+ * @note tbd_peak_is_narrowband() walks the envelope at
+ *       noise + max(envelope_peak_margin / 2, gate / DIV). For in-frame
+ *       targets (margin >= gate) the half-power term dominates and the anchor
+ *       is unchanged (Step 6b parity). Below the gate the old max(margin,
+ *       gate)/2 = gate/2 anchor sat ABOVE a weak peak's own envelope, so the
+ *       walk measured width = 1 BY CONSTRUCTION and neither width gate could
+ *       clip a weak flat-top: a WiFi/BT crest whose ripple stayed within
+ *       gate/2 of p25 was confirmed by TBD and tracked as a drone while
+ *       MaxW=2 looked like it was honored. Gate/3 (6 units at the default
+ *       Mar=20) keeps the anchor ABOVE the
+ *       noise fluctuation band (>= ~3 sigma at sigma ~= 2 units, so an
+ *       isolated noise bin almost never extends the walk) while letting the
+ *       walk reach the weak emission's actual plateau.
+ * @note Continuity at the gate: at margin == gate both formulas give
+ *       gate/2 > gate/3 — the anchor is continuous (no cliff at Step 3).
+ * @note Sensitivity risk (accepted, quantified): the 8-frame OR envelope can
+ *       lift isolated noise bins ~1 unit above a gate/3 anchor; a below-gate
+ *       1-2 bin target may measure 1 bin wider in rare frames. MinW is
+ *       exempt for below-gate targets by design, so only MaxW <= 2 users can
+ *       see a marginal flicker — far rarer than the flat-top escape this
+ *       closes.
+ */
+constexpr uint8_t TBD_WIDTH_ANCHOR_GATE_DIV = 3;
+
+static_assert(TBD_WIDTH_ANCHOR_GATE_DIV > 0,
+    "TBD_WIDTH_ANCHOR_GATE_DIV must be non-zero (anchor division)");
 
 // ============================================================================
 // SENS = ADAPTIVE SHAPE ("self-tuning" mode, sensitive_mode ON) — constants

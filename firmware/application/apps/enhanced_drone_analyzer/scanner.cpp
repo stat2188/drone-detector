@@ -109,6 +109,54 @@ static uint8_t quickselect_percentile(uint8_t* buf, size_t count, uint8_t percen
 }
 
 /**
+ * @brief Frame's two noise shelves in ONE buffer pass setup (audit fix W1).
+ * @param buf             Usable-bin buffer — MODIFIED by the quickselects
+ *                        (order is irrelevant to a selection algorithm, so
+ *                        p10 after p25 is exact).
+ * @param count           Number of usable bins (sweep ~228, DB ~236).
+ * @param robust_enabled  ScanConfig::robust_width_floor_enabled — the W1
+ *                        kill switch (settings checkbox "RbF", default ON).
+ *                        OFF skips the p10 pass and returns width == noise,
+ *                        i.e. the legacy p25 anchor byte-for-byte.
+ * @return {noise, width}: noise = 25th percentile (the legacy shelf — drives
+ *         the Step-3 margin, valley/symmetry/flatness margins, Step 6c walls);
+ *         width = the WIDTH-ANCHOR shelf — p25 itself when the band is clean
+ *         or the kill switch is OFF, the 10th percentile when
+ *         p25 - p10 >= WIDTH_FLOOR_CONTAM_DELTA_UNITS (the band is occupied
+ *         and p25 is the signal, not the noise).
+ * @note SINGLE SOURCE: both shape paths (analyze_spectrum_shape_multi and
+ *       process_spectrum_sweep) derive their shelves from this helper, so the
+ *       contamination rule exists exactly once. The DB TBD block keeps its own
+ *       direct p25 (its width anchor is the W2 gate/3 floor, not the W1
+ *       demotion); the sweep TBD path inherits this helper's p25 via
+ *       process_spectrum_sweep.
+ * @note Stack: 2 bytes (returned in registers). Flash: ~60 bytes.
+ */
+struct ShapeFloors {
+    uint8_t noise;
+    uint8_t width;
+};
+
+static ShapeFloors select_shape_floors(
+    uint8_t* buf,
+    size_t count,
+    bool robust_enabled
+) noexcept {
+    ShapeFloors floors{0, 0};
+    if (count == 0) return floors;
+    floors.noise = quickselect_percentile(buf, count, 25);
+    if (!robust_enabled) return floors;  // kill switch: legacy p25 anchor
+    const uint8_t p10 = quickselect_percentile(buf, count, 10);
+    // uint16: p10 (<=255) + delta (10) cannot wrap; p10 <= p25 holds for any
+    // multiset, so the subtraction sign is never in play.
+    const bool contaminated =
+        static_cast<uint16_t>(floors.noise) >=
+        static_cast<uint16_t>(p10) + WIDTH_FLOOR_CONTAM_DELTA_UNITS;
+    floors.width = contaminated ? p10 : floors.noise;
+    return floors;
+}
+
+/**
  * @brief SENS adaptive stringency weight (0..100) for one peak (SHAPE_ADAPT_*).
  * @param peak_margin Peak elevation above the noise shelf (units)
  * @param gate Effective Step-3 gate this frame (shape_gate_margin())
@@ -2423,6 +2471,7 @@ bool DroneScanner::analyze_spectrum_shape_impl(
     size_t peak_index,
     uint8_t raw_peak,
     uint8_t noise_floor,
+    uint8_t width_floor,
     int32_t& out_rssi,
     size_t edge_skip,
     int32_t total_gain,
@@ -2431,7 +2480,7 @@ bool DroneScanner::analyze_spectrum_shape_impl(
     ShapeVerdict* out_verdict
 ) noexcept {
     return apply_shape_filters(
-        spectrum.db.data(), peak_index, raw_peak, noise_floor,
+        spectrum.db.data(), peak_index, raw_peak, noise_floor, width_floor,
         out_rssi, edge_skip, /*has_dc_gap=*/true, total_gain,
         out_extent, reject_edge_clipped, out_verdict);
 }
@@ -2448,16 +2497,19 @@ bool DroneScanner::analyze_spectrum_shape_multi(
 ) noexcept {
     out_result.count = 0;
 
-    // Step 1: Noise floor (25th percentile of usable bins)
+    // Step 1: Noise floor (25th percentile of usable bins) + width-anchor
+    // shelf (select_shape_floors, audit fix W1: p10 fallback when the band is
+    // occupied). Both derive from the SAME filled buffer.
     uint8_t* sorted = spectrum_sort_buf_;
     size_t sort_count = 0;
     for (size_t i = FFT_EDGE_SKIP; i < FFT_BIN_COUNT - FFT_EDGE_SKIP; ++i) {
         if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
         sorted[sort_count++] = spectrum.db[i];
     }
-    const uint8_t noise_floor = (sort_count > 0)
-        ? quickselect_percentile(sorted, sort_count, 25)
-        : 0;
+    const ShapeFloors floors =
+        select_shape_floors(sorted, sort_count, config_.robust_width_floor_enabled);
+    const uint8_t noise_floor = floors.noise;
+    const uint8_t width_floor = floors.width;
     out_result.noise_floor = noise_floor;
 
     // SENS ADAPTIVE GATE (SHAPE_ADAPT_*): measure this frame's noise-driven
@@ -2563,7 +2615,8 @@ bool DroneScanner::analyze_spectrum_shape_multi(
             ShapeVerdict shape_verdict{};
             if (apply_shape_filters(
                     spectrum.db.data(), peak_bin, cfar_peaks[i].power,
-                    noise_floor, peak_rssi, FFT_EDGE_SKIP, /*has_dc_gap=*/true, total_gain,
+                    noise_floor, width_floor, peak_rssi, FFT_EDGE_SKIP,
+                    /*has_dc_gap=*/true, total_gain,
                     &det_extent, /*reject_edge_clipped=*/false, &shape_verdict)) {
                 if (accepted_count < MAX_SHAPE_DETECTIONS) {
                     accepted[accepted_count++] = det_extent;
@@ -2703,7 +2756,8 @@ bool DroneScanner::analyze_spectrum_shape_multi(
             ShapeVerdict shape_verdict{};
             if (apply_shape_filters(
                     spectrum.db.data(), candidates[i].bin, candidates[i].power,
-                    noise_floor, peak_rssi, FFT_EDGE_SKIP, /*has_dc_gap=*/true, total_gain,
+                    noise_floor, width_floor, peak_rssi, FFT_EDGE_SKIP,
+                    /*has_dc_gap=*/true, total_gain,
                     &det_extent, /*reject_edge_clipped=*/false, &shape_verdict)) {
                 if (accepted_count < MAX_SHAPE_DETECTIONS) {
                     accepted[accepted_count++] = det_extent;
@@ -2843,6 +2897,7 @@ bool DroneScanner::apply_shape_filters(
     size_t peak_idx,
     uint8_t raw_peak,
     uint8_t noise_floor,
+    uint8_t width_floor,
     int32_t& out_rssi,
     size_t edge_skip,
     bool has_dc_gap,
@@ -2978,13 +3033,27 @@ bool DroneScanner::apply_shape_filters(
     // band are elevated, so /3 captures too many bins and inflates width beyond
     // max_width, causing false rejection. /2 narrows the threshold to the actual
     // peak region, producing a reliable width measurement.
+    // WIDTH-ANCHOR FLOOR (audit fix W1): the bar is anchored at width_floor,
+    // NOT noise_floor. In a clean frame the two are identical
+    // (select_shape_floors keeps p25 until p25 - p10 reaches
+    // WIDTH_FLOOR_CONTAM_DELTA_UNITS), so this is a no-op there. In an
+    // OCCUPIED frame (WiFi/BT filling >= ~75% of usable bins) p25 is the
+    // emission itself: anchoring at p25 put the bar ~1-2 dB under the crest,
+    // MaxW measured the crest's curvature (1-3 bins) instead of the
+    // bandwidth, and a 20-40 MHz flat top passed MaxW=2. Anchoring at p10
+    // (the quiet minority's shelf) drops the bar back under the plateau, the
+    // walk spans the real emission and Step 6/6b reject it. Documented cost:
+    // in such a frame a narrowband target adjacent to the wideband band can
+    // bridge into its plateau (every connecting bin is >= the lower bar) and
+    // inherit the rejection — accepted, the alternative trusts a shelf that
+    // IS the signal.
     const uint8_t elevated_divisor = very_strong ? 2 : 3;
-    // Saturate to 255: noise_floor (0-255) + margin/2 (0-127) can exceed
+    // Saturate to 255: width_floor (0-255) + margin/2 (0-127) can exceed
     // uint8 without this (e.g. floor 200 + 50 = 250 ok, but 255 + 60
     // would wrap to 59 and corrupt the width measurement). uint16 holds
     // the sum, clamp keeps the threshold in-range.
     const uint16_t elevated_sum =
-        static_cast<uint16_t>(noise_floor) +
+        static_cast<uint16_t>(width_floor) +
         static_cast<uint16_t>(peak_margin / elevated_divisor);
     const uint8_t elevated_threshold = (elevated_sum > 255) ? 255 : static_cast<uint8_t>(elevated_sum);
 
@@ -3102,9 +3171,15 @@ bool DroneScanner::apply_shape_filters(
         // while WiFi rejection shifts to the sharpness gate (flat OFDM tops
         // ≈ 100-115 < 120) + valley depth. Interior dips deeper than
         // quarter-power still split (legit video+audio nulls).
+        // WIDTH-ANCHOR FLOOR (audit fix W1): fed with width_floor, same
+        // contaminated-frame demotion as the Step-4 bar above — a plateau
+        // invisible to the p25-anchored quarter/half-power levels must stay
+        // invisible to neither, or Step 6b would silently keep measuring the
+        // crest curvature. Clean frames: width_floor == noise_floor, call is
+        // byte-identical.
         const SignalExtent emission = emission_extent(
             [data](size_t i) noexcept { return data[i]; },
-            peak_idx, data_size, noise_floor, peak_margin, edge_skip, has_dc_gap);
+            peak_idx, data_size, width_floor, peak_margin, edge_skip, has_dc_gap);
         if (emission.width() > maxw_eff) return false;
 
         // Step 6c: EDGE-CLIP GUARD (sweep-only; reject_edge_clipped=true).
@@ -3952,28 +4027,46 @@ bool DroneScanner::tbd_peak_is_narrowband(
 
     // MAR-anchored elevated threshold (Step 6b parity for the TBD domain).
     // apply_shape_filters measures the emission extent at the HALF-POWER
-    // level (noise_floor + peak_margin/2 = peak − 6 dB), floored at gate/3.
-    // TBD sees peaks BELOW the gate (peak_margin < gate), where a bare
-    // peak_margin/2 sinks to 1-2 units (~0.2-0.4 dB) — inside the noise
-    // fluctuation band above the 25th-percentile shelf — so flanking noise
-    // bins would inflate the measured width and MaxW falsely reject exactly
-    // the weak targets TBD exists to find. Anchoring the elevation at
-    // max(peak_margin, shape_gate_margin)/2 keeps the floor above the
-    // fluctuation band for every TBD peak. The envelope is a max over
-    // frames, so noise inflation stays in the same band (max of 8 frames of
-    // ~2-unit sigma stays below the gate/2 elevation).
+    // level (noise_floor + peak_margin/2 = peak − 6 dB), floored at gate/3
+    // for weak peaks. TBD sees peaks BELOW the gate (peak_margin < gate),
+    // where a bare peak_margin/2 sinks to 1-2 units (~0.2-0.4 dB) — inside
+    // the noise fluctuation band above the 25th-percentile shelf — so
+    // flanking noise bins would inflate the measured width and MaxW falsely
+    // reject exactly the weak targets TBD exists to find.
+    // AUDIT FIX W2: the old floor was max(peak_margin, gate)/2, i.e. gate/2
+    // (= 10 units at Mar=20) for EVERY below-gate peak. A weak flat-top
+    // (WiFi/BT crest whose ripple stayed within gate/2 of p25) then had its
+    // anchor ABOVE its own envelope: the walk measured width = 1 BY
+    // CONSTRUCTION and neither width gate could clip it — MaxW=2 looked
+    // honored while TBD confirmed and tracked the flat top. The floor is now
+    // gate/TBD_WIDTH_ANCHOR_GATE_DIV (gate/3 = 6 units at the default
+    // Mar=20, ≈ 3σ at σ ≈ 2):
+    // still above the fluctuation band (an isolated noise bin extends the
+    // walk in ~0.1% of frames; the 8-frame OR envelope lifts that to a rare
+    // +1 bin), but BELOW a weak emission's plateau, so the walk measures the
+    // emission instead of its crest. In-frame targets (margin >= gate) are
+    // unchanged: the half-power term dominates and the anchor stays exactly
+    // Step-6b half power. Continuity at margin == gate holds (gate/2 > gate/3).
     // uint16 arithmetic: noise_floor (<=255) + 255/2 cannot wrap.
     const uint8_t peak_margin = envelope_peak - noise_floor;
     const uint8_t eff_margin = shape_gate_margin();
-    const uint8_t width_margin = (peak_margin > eff_margin) ? peak_margin : eff_margin;
     // HALF-POWER parity with apply_shape_filters Step 6b: the width threshold
-    // is peak − 6 dB (max(peak_margin, gate)/2 above the shelf), so MaxW bins
-    // mean the same bandwidth in the TBD domain as in the single-frame chain.
-    // The floor at gate/2 keeps the elevation above the noise fluctuation
-    // band (max over 8 frames of ~2-unit sigma stays below gate/2 = 10 units
-    // at the default Mar=20).
+    // is peak − 6 dB (peak_margin/2 above the shelf) once the peak reaches the
+    // gate, so MaxW bins mean the same bandwidth in the TBD domain as in the
+    // single-frame chain. Below the gate the floor is gate/3 (see W2 above).
+    const uint8_t half_power = static_cast<uint8_t>(peak_margin / 2u);
+    // Mirror of emission_extent's gate_floor guard (scanner.hpp): the
+    // clamps guarantee gate >= 3, so gate/3 >= 1 — the ternary is
+    // defense-in-depth parity with Step 6b, not a behavior change at any
+    // gate the settings can produce (parsed spectrum_margin >= 5 ->
+    // shape_gate_margin() >= 3 in both modes).
+    const uint8_t gate_floor = (eff_margin >= 3)
+        ? static_cast<uint8_t>(eff_margin / TBD_WIDTH_ANCHOR_GATE_DIV)
+        : 1;
+    const uint8_t anchor_elevation =
+        (half_power > gate_floor) ? half_power : gate_floor;
     const uint16_t elevated_threshold =
-        static_cast<uint16_t>(noise_floor) + static_cast<uint16_t>(width_margin / 2);
+        static_cast<uint16_t>(noise_floor) + anchor_elevation;
 
     const size_t upper_limit = data_size - edge_skip;
 
@@ -3999,16 +4092,19 @@ bool DroneScanner::tbd_peak_is_narrowband(
     // BUT the MinW frame is defined at the margin gate: Step 5 only measures
     // peaks that already cleared Step 3 (peak_margin >= gate). A TBD-domain
     // target sits BELOW the gate by definition (it exists precisely because
-    // it never cleared Step 3), and its envelope is walked at the higher
-    // half-power anchor noise + max(env_margin, gate)/2 — a strict MinW here
-    // cut exactly the weak flickery targets TBD exists to find. Rule: MinW
+    // it never cleared Step 3), and its envelope is walked at a
+    // noise-relative anchor (half power, floored at gate/3) whose ELEVATION
+    // frame is the gate — a strict MinW here cut exactly the weak flickery
+    // targets TBD exists to find. Rule: MinW
     // applies only to IN-FRAME targets (envelope peak margin >= gate, the
     // same gate Step 3 uses); below-gate targets keep the MaxW guard only —
     // persistence (TBD_MIN_FRAMES) + present-now + the noise-relative confirm
     // floor (sweep_tbd_effective_threshold) own the noise rejection there.
     // Width gates stay sensitivity-neutral for the weak path: a below-gate
-    // envelope measures width 1 by construction (the walk anchor sits ABOVE
-    // its own peak), so neither width gate can clip it.
+    // envelope whose peak sits under the gate/3 anchor still measures width 1
+    // (the walk cannot step onto a bin below its own peak's level), while a
+    // weak flat-top with 10 <= margin < gate now measures its REAL plateau
+    // and MaxW clips it (audit fix W2).
     if (peak_margin >= eff_margin
         && signal_width < config_.spectrum_min_width) {
         return false;
@@ -4261,7 +4357,11 @@ void DroneScanner::process_spectrum_sweep(
         if (bin_power > frame_peak_power) frame_peak_power = bin_power;
     }
     if (idx == 0) return;
-    const uint8_t noise_floor = quickselect_percentile(usable, idx, 25);
+    // p25 shelf + width-anchor shelf (select_shape_floors, audit fix W1).
+    const ShapeFloors sweep_floors =
+        select_shape_floors(usable, idx, config_.robust_width_floor_enabled);
+    const uint8_t noise_floor = sweep_floors.noise;
+    const uint8_t width_floor = sweep_floors.width;
 
     // SENS ADAPTIVE GATE (SHAPE_ADAPT_*): measure this frame's noise-driven
     // Step-3 gate NOW — cfg_margin below and every later shape_gate_margin()
@@ -4582,7 +4682,8 @@ void DroneScanner::process_spectrum_sweep(
             SignalExtent det_extent{};
             if (!analyze_spectrum_shape_impl(
                     spectrum, peak_index, cfar_peaks[p].power,
-                    noise_floor, shape_rssi, FFT_EDGE_SKIP_NARROW, total_gain,
+                    noise_floor, width_floor, shape_rssi, FFT_EDGE_SKIP_NARROW,
+                    total_gain,
                     &det_extent, /*reject_edge_clipped=*/true)) {
                 // TBD-RESURRECTION GUARD (FIX): only peaks that cleared the
                 // Step 3 margin gate (cfg_margin == shape_gate_margin(),

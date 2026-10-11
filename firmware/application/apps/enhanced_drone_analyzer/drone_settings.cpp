@@ -272,7 +272,17 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , field_spectrum_peak_sharpness_({UI_POS_X(5), UI_POS_Y(6)}, 3, {50, 250}, 5, ' ')
     , field_spectrum_peak_ratio_({UI_POS_X(12), UI_POS_Y(5)}, 3, {0, 255}, 5, ' ')
     , field_spectrum_valley_depth_({UI_POS_X(12), UI_POS_Y(6)}, 3, {0, 200}, 5, ' ')
-    , field_spectrum_flatness_({UI_POS_X(5), UI_POS_Y(7)}, 3, {0, 100}, 5, ' ')
+    // AUDIT FIX W3 (step 5 -> 1): flatness_pct = floor(high_count * 100 /
+    // width) with high_count >= 1 always, so its PASS region collapses as
+    // floor(100/width) <= F — F=5 needs width >= 17 even with a single
+    // >=90%-of-margin bin and unconditionally rejects every width <= 16;
+    // F=10/15 are the same cliff one step lower (reject <= 9 / <= 6).
+    // The useful band is ~30..60 (README):
+    // with step 5 the encoder grid from a saved 0 could only land on the
+    // kill-zone values 5/10/15/20, and ui::NumberField has no digit entry
+    // (on_keyboard handles +/-/select only), so 43/47 were unreachable.
+    // Step 1 makes the cliff and the useful band both traversable.
+    , field_spectrum_flatness_({UI_POS_X(5), UI_POS_Y(7)}, 3, {0, 100}, 1, ' ')
     , field_spectrum_symmetry_({UI_POS_X(12), UI_POS_Y(7)}, 3, {0, 100}, 5, ' ')
     // Row 18 — 16 px tall so the row ends exactly on the view bottom (304).
     // UI_POS_Y_BOTTOM(2) + 20 px used to spill 4 px past the screen edge.
@@ -280,6 +290,19 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , button_about_({UI_POS_X(13), UI_POS_Y(18), UI_POS_WIDTH(2), 16}, "!")
     , button_save_({UI_POS_X(15), UI_POS_Y(18), UI_POS_WIDTH(14), 16}, "SAVE")
     , check_shape_bypass_({UI_POS_X(8), UI_POS_Y(8)}, 4, "Byp", true)
+    // Robust width-anchor floor (audit fix W1 kill switch, DEFAULT ON).
+    // AUDIT FIX (CRITICAL, fixed): ui::Checkbox width is 8*L+16 px (small
+    // variant), NOT 8*L — the old X(19),Y(8) slot overlapped Md+ ([120,168)
+    // vs [152,200) = 16 px) and SpDet ([176,240) vs [152,200) = 24 px); both
+    // are paint AND focus rects, so the overlap corrupted D-pad traversal
+    // as well as painting. Row 8 is packed to the 240 px edge (SpDet ends at
+    // X(22)+64 = 240) and has no free slot for a 48 px checkbox. Row 7 right
+    // of the Sym field (X(12)+24 px = 120) is free: X(16) = 128..176 with
+    // the layout's usual 8 px gutter, disjoint from every other rect on the
+    // row (focus geometry rule: same row, disjoint columns). Same
+    // visibility block: set_shape_filter_visibility() already gates RbF
+    // with the rest of the shape section (spectrum_detection_enabled).
+    , check_robust_width_floor_({UI_POS_X(16), UI_POS_Y(7)}, 4, "RbF", true)
     , check_median_enabled_({UI_POS_X(15), UI_POS_Y(8)}, 4, "Md+", true)
     // Threat shelf fields: length 4 — the range includes 4-glyph values
     // ("-120"); a 3-char field would paint outside its rect and leave stale
@@ -344,6 +367,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &button_about_,
         &button_save_,
         &check_shape_bypass_,
+        &check_robust_width_floor_,
         &check_median_enabled_,
         &field_cfar_mode_,
         &field_cfar_ref_cells_,
@@ -594,6 +618,15 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         settings_dirty_ = true;
     };
 
+    // Robust width-anchor floor toggle (audit fix W1, default ON). Uncheck
+    // = field kill switch: the width gates fall back to the legacy p25
+    // anchor (byte-identical) — A/B against the bridging cost documented in
+    // ScanConfig::robust_width_floor_enabled.
+    check_robust_width_floor_.on_select = [this](ui::Checkbox&, bool v) {
+        settings_.robust_width_floor_enabled = v;
+        settings_dirty_ = true;
+    };
+
     // CFAR callbacks
     field_cfar_mode_.on_change = [this](size_t, int32_t v) {
         settings_.cfar_mode = static_cast<CFARMode>(v);
@@ -783,6 +816,7 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     field_neighbor_margin_.set_value(static_cast<int32_t>(settings_.neighbor_margin_db));
     check_rssi_variance_.set_value(settings_.rssi_variance_enabled);
     check_shape_bypass_.set_value(settings_.shape_bypass_enabled);
+    check_robust_width_floor_.set_value(settings_.robust_width_floor_enabled);
     check_median_enabled_.set_value(settings_.median_enabled);
     check_mahalanobis_.set_value(settings_.mahalanobis_enabled);
     field_mahalanobis_threshold_.set_value(static_cast<int32_t>(settings_.mahalanobis_threshold_x10));
@@ -847,6 +881,7 @@ void DroneSettingsView::set_shape_filter_visibility(bool visible) noexcept {
     field_spectrum_flatness_.hidden(!visible);
     field_spectrum_symmetry_.hidden(!visible);
     check_shape_bypass_.hidden(!visible);
+    check_robust_width_floor_.hidden(!visible);
     check_median_enabled_.hidden(!visible);
     // CFAR fields are also gated by spectrum detection
     field_cfar_mode_.hidden(!visible);

@@ -295,7 +295,7 @@ Key Structures:
     CFARMode cfar_mode
     uint8_t cfar_ref_cells/guard_cells/threshold_x10
     uint8_t cfar_hybrid_alpha/beta/gamma, os_cfar_k_percent, vi_cfar_threshold_x10
-    bool shape_bypass_enabled, sensitive_mode
+    bool shape_bypass_enabled, robust_width_floor_enabled, sensitive_mode
     uint8_t shape_sim_threshold_pct (50..100, default 100 = strict AND,
         only read when sensitive_mode ON; files stamped <= 1.3 migrate
         a stored 50 to 100 on load — audit D-FULL-PASS)
@@ -579,7 +579,7 @@ SettingsStruct fields (all persisted):
 
   // Advanced
   sensitive_mode, shape_sim_threshold_pct
-  shape_bypass_enabled
+  shape_bypass_enabled, robust_width_floor_enabled
   kurtosis_enabled, kurtosis_min_x10, adaptive_cfar_enabled
 
   // Sweep Window 1
@@ -757,8 +757,15 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
     → The narrowband guard is a MAR-anchored half-power walk + MinW (only
       in-frame peaks) + MaxW + a TBD-owned sideband BOTH-EDGES wideband rule
       (Step 6c parity — NOT user-configurable; TBD never runs apply_shape_
-      filters()). Below-gate envelopes measure only their core and are
-      untouched by the width rules.
+      filters()). The walk threshold is max(peak_margin/2, gate/3) above the
+      p25 shelf (audit fix W2 lowered the floor from gate/2 to gate/3): the
+      gate/3 term keeps weak (below-gate) envelopes out of the noise
+      fluctuation band. NOTE: unlike Step 4/6b, this walk stays anchored at
+      p25 — the W1 p10 demotion is scoped to apply_shape_filters() only, so
+      in a contaminated frame (Step 1) a below-gate crest sitting ON a p25
+      plateau still measures its crest curvature; the BOTH-EDGES sideband
+      rule is the wideband net there. Below-gate envelopes measure only
+      their core and are untouched by the width rules.
     → Reachable weak band: [noise + 1.2 dB, Step-3 gate), gated by
       persistence — this is the multi-frame path the single-frame chain
       (Steps 1-12, gate-bound) can never see.
@@ -766,6 +773,14 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
   Step 1: Noise Floor (caller — analyze_spectrum_shape_multi / sweep loop)
     quickselect 25th percentile of the usable bins (DC spike + edge bins
     excluded) — the shelf every margin below is measured against
+    Robust width floor "RbF" (default ON, audit fix W1): when
+      p25 - p10 >= 10 (2 dB — the band is occupied >= ~75% and p25 sits
+      INSIDE the wideband emission), the WIDTH-ANCHOR shelf (used ONLY by
+      the Step 4 walk and the Step 6b emission extent) demotes to the 10th
+      percentile, which stays inside the quiet minority and recovers the
+      true shelf. Clean spectra keep the p25 anchor byte-identical (their
+      delta is ~1-3 units). The Step-3 margin, valley/symmetry/flatness
+      margins and the Step 6c wall levels keep p25.
 
   Step 2: Candidate Peaks (caller)
     CFAR multi-peak (cfar_mode != OFF) OR fixed threshold: bins with
@@ -787,8 +802,10 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
     → Rejects sub-CFAR noise spikes
 
   Step 4: Width Measurement (walk — MEASURES, never rejects)
-    Expand left/right from the peak while bins >= noise + margin/3
-    (/2 when Shape-Bypass very-strong); DC spike = hard wall
+    Expand left/right from the peak while bins >= width_floor + margin/3
+    (width_floor == the Step-1 p25 shelf on a clean spectrum, the p10
+    fallback in a contaminated one; /2 when Shape-Bypass very-strong);
+    DC spike = hard wall
     → Produces left/right/signal_width consumed by Steps 5-11 — this is
       why width ALWAYS runs before sharpness/valley/flatness/symmetry:
       they all measure the SAME [left..right] band
@@ -799,10 +816,11 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
 
   Step 6: Maximum Width
     signal_width (Step-4 fragment) AND the WHOLE emission extent (Step 6b,
-    hysteresis walk at the QUARTER-POWER level max(margin/4, gate/3) — kept
-    BELOW the fragment bar (margin/3) so the extent can genuinely exceed the
-    fragment — with a HALF-POWER trim of outer noise-shelf shoulders) must
-    both be below spectrum_max_width
+    hysteresis walk at the QUARTER-POWER level max(margin/4, gate/3), both
+    levels anchored at the Step-1 width floor — kept BELOW the fragment bar
+    (margin/3) so the extent can genuinely exceed the fragment — with a
+    HALF-POWER trim of outer noise-shelf shoulders) must both be below
+    spectrum_max_width
     (default 255 bins = NO CAP — «проходят и узкие, и широкие»)
     → NOTE: in the raw-FFT chain the walk is DC-gap bounded, so the extent
       can never exceed 110 bins in DB (10..119 / 136..245) or 114 in sweep

@@ -153,6 +153,10 @@ private:
     // Very-strong shape-filter bypass toggle (default OFF — MaxW always enforced)
     ui::Checkbox check_shape_bypass_;
 
+    // Robust width-anchor floor toggle (audit fix W1, default ON — "RbF";
+    // uncheck to restore the legacy p25 width anchor for A/B field tests)
+    ui::Checkbox check_robust_width_floor_;
+
     // Median filter toggle
     ui::Checkbox check_median_enabled_;
 

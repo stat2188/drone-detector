@@ -171,6 +171,25 @@ struct ScanConfig {
     //          bypass MaxW (previously bypass was implicit and always on,
     //          which let close-range wideband signals pass with MaxW=5).
     bool shape_bypass_enabled{false};
+
+    // ROBUST WIDTH-ANCHOR FLOOR (audit fix W1, default ON — kill switch)
+    // When ON: select_shape_floors() demotes the width-anchor shelf from p25
+    //          to p10 whenever p25 - p10 >= WIDTH_FLOOR_CONTAM_DELTA_UNITS
+    //          (the band is occupied and p25 is the signal). The Step-4 walk
+    //          bar and the Step-6b emission extent then measure the emission
+    //          from the TRUE shelf, so a WiFi/BT flat top filling >= ~75% of
+    //          the usable bins is rejected by MaxW instead of passing as a
+    //          1-3-bin "crest curvature". No-op on clean spectra (gated by
+    //          the delta).
+    // When OFF: the width anchor is the legacy p25 shelf byte-for-byte —
+    //          the second (p10) quickselect is skipped entirely. Field kill
+    //          switch: uncheck "RbF" in settings to A/B against the
+    //          documented cost (a narrowband target adjacent to a wideband
+    //          plateau can bridge into it and inherit its rejection).
+    // In-class default true: old settings files lack the key and load the
+    //          fix; ScanConfig's explicit constructors rely on this default
+    //          (same pattern as shape_bypass_enabled).
+    bool robust_width_floor_enabled{true};
     /**
      * @brief Default constructor
      */
@@ -2199,6 +2218,12 @@ private:
      *       filter chain for the sweep loop.
      * @param spectrum 256-bin FFT data
      * @param out_rssi Output: RSSI in dBm if signal detected
+     * @param noise_floor Frame's p25 shelf (select_shape_floors) — margin gate
+     *        and shape margins.
+     * @param width_floor Frame's width-anchor shelf (select_shape_floors):
+     *        noise_floor on a clean spectrum, the p10 fallback when the band
+     *        is occupied (audit fix W1 — see WIDTH_FLOOR_CONTAM_DELTA_UNITS).
+     *        Anchors only the Step-4 walk and the emission extent.
      * @param edge_skip Number of edge bins to skip (FFT_EDGE_SKIP=10 for normal, FFT_EDGE_SKIP_NARROW=6 for sweep)
      * @param out_extent Optional. When non-null and the call returns true,
      *        receives the dedup extent: the UNION of the Step-4 fragment
@@ -2232,6 +2257,7 @@ private:
         size_t peak_index,
         uint8_t raw_peak,
         uint8_t noise_floor,
+        uint8_t width_floor,
         int32_t& out_rssi,
         size_t edge_skip,
         int32_t total_gain,
@@ -2266,9 +2292,12 @@ private:
      *         ([data](size_t i){ return data[i]; }) or a multi-frame
      *         OR-envelope reader for TBD.
      * @param peak_idx     Candidate peak bin
-     * @param noise_floor  25th-percentile noise shelf of the same data
-     * @param peak_margin  Elevation of the peak above noise_floor in the SAME
-     *                     data (bin_value(peak_idx) - noise_floor). Drives the
+     * @param noise_floor  Width-anchor shelf the levels are computed from:
+     *                     the frame's p25 on a clean spectrum, the p10
+     *                     fallback in an occupied band (audit fix W1 —
+     *                     apply_shape_filters passes width_floor).
+     * @param peak_margin  Elevation of the peak above the P25 shelf in the SAME
+     *                     data (bin_value(peak_idx) - p25). Drives the
      *                     half-power continuation anchor.
      * @param edge_skip    Edge bins to skip (FFT_EDGE_SKIP / FFT_EDGE_SKIP_NARROW)
      * @param has_dc_gap   true = DC spike bins (120-135) are a hard boundary —
@@ -2296,10 +2325,17 @@ private:
      *       band; interior dips deeper than quarter-power still split the
      *       emission (legit video+audio nulls), shallow ripples merge
      *       (WiFi crest-to-crest).
-     * @pre peak_margin == bin_value(peak_idx) - noise_floor and
+     * @pre peak_margin == bin_value(peak_idx) - THE P25 SHELF and
      *      peak_margin >= shape_gate_margin() when called from
-     *      apply_shape_filters (Step 3 guarantees this) — the trim loops are
-     *      bounded by peak_idx and never extend the extent past the peak.
+     *      apply_shape_filters (Step 3 guarantees this). The floor parameter
+     *      may be the DEMOTED width-anchor shelf (audit fix W1: p10 in an
+     *      occupied band), i.e. <= the p25 shelf the margin was measured
+     *      from — every derived level then sits lower, the walk widens and
+     *      the trim loosens, which is the intended contaminated-frame
+     *      behavior. The trim loops are bounded by peak_idx and never extend
+     *      the extent past the peak, and the peak stays >= start_level
+     *      because start_level is computed from the same (lower or equal)
+     *      floor.
      * @note Stack: ~24 bytes. Flash: ~140 bytes. No allocation, no float, O(n).
      */
     template <typename BinFn>
@@ -2378,7 +2414,17 @@ private:
      * @param data         Power data buffer (spectrum.db.data())
      * @param peak_idx     Index of detected peak
      * @param raw_peak     Raw power value at peak
-     * @param noise_floor  Computed noise floor (25th percentile)
+     * @param noise_floor  Frame's p25 shelf (select_shape_floors) — drives the
+     *                     Step-3 margin, valley/symmetry/flatness margins and
+     *                     the Step 6c wall levels.
+     * @param width_floor  Frame's width-anchor shelf (select_shape_floors):
+     *                     == noise_floor on a clean spectrum, the p10
+     *                     fallback when p25 - p10 reaches
+     *                     WIDTH_FLOOR_CONTAM_DELTA_UNITS (audit fix W1).
+     *                     Anchors ONLY the Step-4 fragment bar and the
+     *                     Step-6b emission extent — the two gates whose
+     *                     "floor + margin/divisor" elevation collapses onto
+     *                     the crest when p25 is the signal.
      * @param out_rssi     Output: RSSI in dBm if signal passes all filters
      * @param edge_skip    Number of edge bins to skip
      * @param has_dc_gap   true = skip FFT DC spike bins (120-135). All current
@@ -2418,6 +2464,7 @@ private:
         size_t peak_idx,
         uint8_t raw_peak,
         uint8_t noise_floor,
+        uint8_t width_floor,
         int32_t& out_rssi,
         size_t edge_skip,
         bool has_dc_gap,
@@ -2452,18 +2499,24 @@ private:
      *       narrow envelope, wideband emitters do not. Envelope values are a
      *       max over frames, so noise inflation stays inside the same
      *       fluctuation band the MAR anchoring was tuned for (max over 8 frames
-     *       of ~2-unit noise sigma stays below the gate/2 elevation).
-     * @note MAR anchoring preserved: elevation above the noise shelf is
-     *       max(envelope_peak_margin, shape_gate_margin())/2 (Step 6b
-     *       half-power parity) — TBD peaks sit below the gate, where bare
-     *       peak_margin/2 (1-3 units) sinks into
-     *       the noise fluctuation band and MaxW falsely rejects weak targets.
+     *       of ~2-unit noise sigma stays below the gate/3 anchor elevation).
+     * @note MAR anchoring preserved (audit fix W2): elevation above the noise
+     *       shelf is envelope_peak_margin/2 (Step 6b half-power parity),
+     *       FLOORED at shape_gate_margin()/TBD_WIDTH_ANCHOR_GATE_DIV (gate/3)
+     *       — TBD peaks sit below the gate, where bare peak_margin/2 (1-3
+     *       units) sinks into the noise fluctuation band and MaxW falsely
+     *       rejects weak targets. The old gate/2 floor sat ABOVE a weak
+     *       flat-top's own plateau, so the walk measured width 1 by
+     *       construction and MaxW=2 could never clip it; gate/3 stays above
+     *       the fluctuation band (~3.3σ) while reaching the plateau. Peaks at
+     *       or above the gate are unchanged (half power dominates).
      * @note MinW parity (FIX, permissive semantics): MinW is applied ONLY to
      *       in-frame targets (envelope peak margin >= shape_gate_margin()).
      *       The single-frame chain measures Step 5 widths only after Step 3
      *       cleared the gate, so applying MinW to below-gate TBD targets
-     *       would compare a width walked at a HIGHER elevation anchor
-     *       (max(env_margin, gate)/2) against a frame defined at the gate —
+     *       would compare a width walked at a gate-derived elevation anchor
+     *       (half power floored at gate/3) against a frame defined at the
+     *       gate —
      *       cutting exactly the weak targets TBD exists to find. Below-gate
      *       targets keep the MaxW guard only; persistence (TBD_MIN_FRAMES) +
      *       present-now + the noise-relative confirm floor
@@ -2478,9 +2531,11 @@ private:
      *       unreachable for a peak confined to one sideband. Reaching a wall
      *       already proves the boundary bin stayed above the walk threshold
      *       (the walk only steps onto bins that passed it), so no extra level
-     *       test is needed. Below-gate envelopes measure only their core (the
-     *       walk anchor sits ABOVE their own peak) and reach neither wall —
-     *       the weak-signal path is untouched by construction.
+     *       test is needed. A below-gate envelope whose peak sits under the
+     *       gate/3 anchor still measures only its core and reaches neither
+     *       wall (the weak-signal path stays untouched), while a weak
+     *       flat-top with 10 <= margin < gate now walks its real plateau
+     *       (audit fix W2).
      * @note Both TBD call sites (DB scan and process_spectrum_sweep) measure
      *       width in RAW BIN space: bin size is identical in both modes
      *       (DB_CAPTURE_RATE_HZ == SWEEP_SLICE_BW, static_assert in

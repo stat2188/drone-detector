@@ -97,6 +97,14 @@ struct SettingsStruct {
     // are enforced on every signal regardless of strength.
     bool shape_bypass_enabled{false};
 
+    // Robust width-anchor floor (default ON — audit fix W1 kill switch) —
+    // mirrors ScanConfig::robust_width_floor_enabled. When ON, the width
+    // gates anchor at the p10 shelf in an occupied band (p25 - p10 >=
+    // WIDTH_FLOOR_CONTAM_DELTA_UNITS); when OFF, the legacy p25 anchor is
+    // restored byte-for-byte. UI: "RbF" checkbox. Old settings files lack
+    // the key and load the default (ON).
+    bool robust_width_floor_enabled{true};
+
     // Advanced detection — persisted for round-trip but NOT exposed in the
     // settings UI (file-only opt-in; defaults preserve previous behavior)
     bool kurtosis_enabled{false};        // Shape-filter step 12 (default OFF)
