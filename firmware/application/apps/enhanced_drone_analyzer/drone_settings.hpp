@@ -132,8 +132,9 @@ private:
     ui::Checkbox check_mahalanobis_;
     ui::NumberField field_mahalanobis_threshold_;
 
-    // Sensitive mode toggle
+    // Sensitive mode toggle + its similarity-group threshold ("Shape score")
     ui::Checkbox check_sensitive_mode_;
+    ui::NumberField field_shape_sim_pct_;
 
     // Spectrum detection params
     ui::NumberField field_spectrum_margin_;

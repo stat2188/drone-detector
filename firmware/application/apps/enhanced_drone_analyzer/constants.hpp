@@ -1343,6 +1343,123 @@ static_assert(SHAPE_ADAPT_MIN_WIDTH_RELAX < 255,
     "SHAPE_ADAPT_MIN_WIDTH_RELAX must stay representable in the uint8 MinW math");
 
 // ============================================================================
+// SENS = PARALLEL SHAPE EVALUATION (sensitive_mode ON) — constants
+// ============================================================================
+// With Sens ON apply_shape_filters() does NOT short-circuit the similarity
+// steps: Steps 7/9/10 are measured in ONE fused pass over the Step-4 fragment,
+// every similarity verdict is computed unconditionally, and the final verdict
+// is
+//
+    //     pass <=>  (every armed HARD-envelope step passed)          // AND
+    //             && (armed SIMILARITY steps that agreed
+    //                 >= shape_sim_threshold_pct of the armed set)   // SCORE
+//
+// The two groups are DELIBERATELY not symmetric in representation:
+//
+// HARD      = the physical envelope — amplitude gate (Step 3), MinW (5),
+//             MaxW (6), emission extent (6b), edge-clip (6c, sweep only),
+//             ratio (8). Violating it means "not this class of signal at
+//             all", so it stays a conjunction and keeps its early return.
+//             Because AND is commutative over pure predicates, a hard step
+//             needs NO bitmask: it either returns false or does not speak.
+//             Giving it a bit would be state with no reader (zero-overhead
+//             principle) — hence there are deliberately NO SHAPE_BIT_* for it.
+//
+//             WHY RATIO (8) IS HARD WHILE SHARPNESS (7) IS SIMILARITY —
+//             both are "tall-vs-wide" V-shape criteria (ratio = margin*10/
+//             width, sharpness = margin*100/avg_margin), so the split looks
+//             arbitrary. It is not: ratio is a monotone function of the SAME
+//             (margin, width) pair that Steps 5 (MinW) and 6 (MaxW) already
+//             gate HARD. Scoring it would count the width dimension TWICE in
+//             the similarity numerator — a candidate could outvote a MinW/
+//             MaxW-consistent verdict with a second, correlated vote on the
+//             same measurement. Sharpness uses avg_margin (a shape statistic
+//             over the whole fragment), which the width gates do not
+//             constrain, so it is an INDEPENDENT witness and belongs in the
+//             scored group. Keep this split: correlated criteria go HARD
+//             (they re-derive an already-gated quantity), independent ones
+//             go SIMILARITY.
+//
+// SIMILARITY= the V-shape template criteria — sharpness (7), valley (9),
+//             flatness (10), symmetry (11), kurtosis (12). Scored, so a
+//             marginal target survives one disagreeing shape filter instead
+//             of being killed by whichever happened to run first. Only this
+//             group needs a bitmask: it is the only group with a reader
+//             (ShapeVerdict::similarity_pct -> Step-13 arming).
+//
+// Sens OFF keeps the legacy fail-fast ladder. Every predicate is pure in
+// {data, config, Step-4 band}, so "evaluate all and AND" is verdict-identical
+// to the ladder — only the evaluation order and the CPU cost differ (the
+// fused pass is CHEAPER than the three separate walks it replaces).
+//
+// Flash: 12 bytes. SRAM: 0. No FP, no allocation, no locks.
+constexpr uint16_t SHAPE_BIT_SHARPNESS = 1u << 0;  // Step 7
+constexpr uint16_t SHAPE_BIT_VALLEY = 1u << 1;     // Step 9
+constexpr uint16_t SHAPE_BIT_FLATNESS = 1u << 2;   // Step 10
+constexpr uint16_t SHAPE_BIT_SYMMETRY = 1u << 3;   // Step 11
+constexpr uint16_t SHAPE_BIT_KURTOSIS = 1u << 4;   // Step 12
+
+constexpr uint16_t SHAPE_SIM_MASK = SHAPE_BIT_SHARPNESS | SHAPE_BIT_VALLEY |
+    SHAPE_BIT_FLATNESS | SHAPE_BIT_SYMMETRY | SHAPE_BIT_KURTOSIS;
+
+// SHARE (percent) of the ARMED similarity steps that must agree for a
+// Sens-mode candidate to pass. The share is 100 * popcount(pass) /
+// popcount(armed) — NEVER the mask VALUE (audit D-SCORE: the mask is a bit
+// pattern, so Sharp|Flat = 0x05 and dividing by 5 reported 40% for a perfect
+// 2-of-2 candidate, rejecting every multi-armed target — Sens ON became
+// STRICTER than Sens OFF, the inverse of the feature's purpose).
+// 50% => floor(100*p/n) >= 50, i.e. "majority or tie":
+//   n=1: 1 of 1 (100*1/1 = 100)
+//   n=2: 1 of 2 (tie,  50)
+//   n=3: 2 of 3 (66)          — 1 of 3 = 33 is a minority
+//   n=4: 2 of 4 (tie,  50) AND 3 of 4 (75) — note the TIE also passes
+//   n=5: 3 of 5 (60)          — 2 of 5 = 40 is a minority
+// so the similarity group can never be STRICTER than the legacy ladder it
+// replaces. (The pre-audit wording listed only "3 of 4" for n=4 and so hid
+// that a 2-of-4 tie qualifies; the RULE — floor(100p/n) >= t  <=>  100p >=
+// n*t — was always implemented correctly, only the prose enumeration was
+// incomplete.)
+// User-tunable as ScanConfig::shape_sim_threshold_pct (settings UI, next to
+// the "Shape score" checkbox); raising it toward 100 converges on the legacy
+// AND verdict, at the cost of far-field sensitivity.
+constexpr uint8_t SHAPE_SIM_THRESHOLD_MIN_PCT = 50;
+constexpr uint8_t SHAPE_SIM_THRESHOLD_MAX_PCT = 100;
+constexpr uint8_t DEFAULT_SHAPE_SIM_THRESHOLD_PCT = 50;
+// ENCODER STEP for the settings-UI NumberField — NOT a default value.
+// ui::NumberField's 4th constructor positional is `step`, and the widget has
+// NO default-value parameter at all (value_ starts at 0 and is clamped into
+// range, then overwritten by DroneSettingsView::apply_settings_to_ui via
+// set_value). Passing DEFAULT_SHAPE_SIM_THRESHOLD_PCT (50) here — which is
+// what the pre-audit code did, copying the latent field_mahalanobis_threshold_
+// anti-pattern — made step == 50 over the range {50,100}, so the encoder
+// could only ever reach 50 and 100 and the entire "adaptive middle" of the
+// feature (55..95) was unreachable from the UI while the README promised
+// "шаг 5". Named constant so the UI and this doc can never drift again.
+constexpr uint8_t SHAPE_SIM_THRESHOLD_STEP_PCT = 5;
+
+static_assert(SHAPE_SIM_MASK == 0x1Fu,
+    "SHAPE_SIM_MASK must cover exactly bits 0..4 (the five similarity steps)");
+static_assert(DEFAULT_SHAPE_SIM_THRESHOLD_PCT >= SHAPE_SIM_THRESHOLD_MIN_PCT &&
+        DEFAULT_SHAPE_SIM_THRESHOLD_PCT <= SHAPE_SIM_THRESHOLD_MAX_PCT,
+    "DEFAULT_SHAPE_SIM_THRESHOLD_PCT must stay inside MIN..MAX");
+static_assert(SHAPE_SIM_THRESHOLD_MIN_PCT > 0 &&
+        SHAPE_SIM_THRESHOLD_MAX_PCT <= 100,
+    "SHAPE_SIM threshold bounds must stay inside 1..100");
+// The UI step must be positive and must tile the MIN..MAX range exactly, so
+// (a) the encoder never stalls and (b) MAX is reachable from MIN in a whole
+// number of detents. 50..100 step 5 => 11 detents, endpoint hit exactly.
+static_assert(SHAPE_SIM_THRESHOLD_STEP_PCT > 0 &&
+        (SHAPE_SIM_THRESHOLD_MAX_PCT - SHAPE_SIM_THRESHOLD_MIN_PCT) %
+                SHAPE_SIM_THRESHOLD_STEP_PCT == 0,
+    "SHAPE_SIM threshold step must divide the MIN..MAX range evenly "
+    "(otherwise the MAX endpoint is unreachable from MIN)");
+// NOTE: SHAPE_SIM_MASK is NOT assert-only — it is a LIVE defensive consumer
+// inside ShapeVerdict::similarity_pct() (scanner.hpp), which masks BOTH
+// sim_pass and sim_armed with it before counting. A stray non-similarity bit
+// can therefore never inflate or deflate the score, even if a future
+// refactor writes one by accident. Cost: two ANDs per call.
+
+// ============================================================================
 // PREFILTER CAP (audit D-PRE-GATE) — restores the provable
 // "UI drain prefilter is a strict SUBSET of the detector gate" invariant
 // ============================================================================
@@ -1555,6 +1672,25 @@ constexpr uint8_t MAHALANOBIS_THRESHOLD_MIN_X10 = 10;
  * @brief Maximum Mahalanobis threshold ×10 (10.0)
  */
 constexpr uint8_t MAHALANOBIS_THRESHOLD_MAX_X10 = 100;
+
+/**
+ * @brief Encoder step for the Mahalanobis threshold NumberField (0.5)
+ * @note ui::NumberField's 4th constructor positional is `step`, NOT a
+ *       default value (the widget has no default-value parameter; value_ is
+ *       overwritten by DroneSettingsView::apply_settings_to_ui). The
+ *       pre-audit code passed DEFAULT_MAHALOBIS_THRESHOLD_X10 (40) there,
+ *       so the encoder stepped by 4.0 over the range 1.0..10.0 and only
+ *       1.0 / 5.0 / 9.0 (then clipped to 10.0) were reachable — the whole
+ *       documented 0.1-granularity tuning range was dead. Step 5 = 0.5
+ *       matches the shape-filter fields' step-5 convention.
+ */
+constexpr uint8_t MAHALANOBIS_THRESHOLD_STEP_X10 = 5;
+
+static_assert(MAHALANOBIS_THRESHOLD_STEP_X10 > 0 &&
+        (MAHALANOBIS_THRESHOLD_MAX_X10 - MAHALANOBIS_THRESHOLD_MIN_X10) %
+                MAHALANOBIS_THRESHOLD_STEP_X10 == 0,
+    "Mahalanobis threshold step must divide the MIN..MAX range evenly "
+    "(otherwise the MAX endpoint is unreachable from MIN)");
 
 /**
  * @brief Q-format for fixed-point arithmetic (Q8.8 = 8 integer bits, 8 fractional bits)

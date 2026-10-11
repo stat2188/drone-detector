@@ -296,6 +296,7 @@ Key Structures:
     uint8_t cfar_ref_cells/guard_cells/threshold_x10
     uint8_t cfar_hybrid_alpha/beta/gamma, os_cfar_k_percent, vi_cfar_threshold_x10
     bool shape_bypass_enabled, sensitive_mode
+    uint8_t shape_sim_threshold_pct (50..100, only read when sensitive_mode ON)
     bool kurtosis_enabled, adaptive_cfar_enabled
     uint8_t rssi_decrease_cycles, freq_match_radius_mhz
 
@@ -575,7 +576,8 @@ SettingsStruct fields (all persisted):
   mahalanobis_enabled, mahalanobis_threshold_x10
 
   // Advanced
-  sensitive_mode, shape_bypass_enabled
+  sensitive_mode, shape_sim_threshold_pct
+  shape_bypass_enabled
   kurtosis_enabled, kurtosis_min_x10, adaptive_cfar_enabled
 
   // Sweep Window 1
@@ -939,6 +941,108 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
       longer flip peak A's verdict (segment contract shared with Steps 7-11).
       Abstains (skips) when signal_width < 4 bins — the statistic is
       undefined there (compute() would return a zeroed result).
+
+  ==== Sens = PARALLEL SHAPE EVALUATION (checkbox "Shape score", sensitive_mode) ====
+  ==== applies to BOTH in-frame paths (DB scan and sweep); see scanner.cpp ====
+
+  Как считается итоговый вердикт Steps 7..12, зависит от Sens:
+
+    Sens OFF  — legacy fail-fast лестница. Шаги выполняются строго в порядке
+                7 → 8 → 9 → 10 → 11 → 12; первый провалившийся шаг немедленно
+                возвращает false. Каждый предикат чист по {data, config,
+                Step-4 band}, поэтому порядок вычисления не влияет на итог.
+
+    Sens ON   — ШАГИ 7/9/10 ИЗМЕРЯЮТСЯ В ОДНОМ СЛИЯННОМ ПРОХОДЕ по фрагменту
+                [left..right] (раньше это были ТРИ прохода по одним и тем же
+                байтам). Все similarity-вердикты считаются безусловно и
+                комбинируются ОЧЕРЕДЬЮ:
+
+                  проходит <=> (каждый вооружённый HARD-шаг прошёл)      // AND
+                            && (вооружённые SIMILARITY-шаги, согласившиеся
+                                >= shape_sim_threshold_pct от вооружённых)  // SCORE
+
+    HARD      — физический конверт: амплитудный гейт (Step 3), MinW (5),
+                MaxW (6), emission extent (6b), edge-clip (6c, только sweep),
+                ratio (8). Нарушение означает «не тот класс сигнала вообще»,
+                поэтому остаётся конъюнкцией с ранним выходом. Битовая маска
+                ЕЙ НЕ НУЖНА: шаг либо return false, либо молчит.
+                ПОЧЕМУ RATIO (8) HARD, А SHARPNESS (7) SIMILARITY — оба
+                мериют «высота-против-ширины» (ratio = margin*10/width,
+                sharpness = margin*100/avg_margin), и раскол выглядит
+                произвольным. Это не так: ratio — монотонная функция ТОЙ ЖЕ
+                пары (margin, width), которую уже жёстко гейтят Steps 5
+                (MinW) и 6 (MaxW). Скоринг его посчитал бы измерение ширины
+                ДВАЖДЫ в числителе similarity — кандидат мог бы перебить
+                вердикт, согласованный с MinW/MaxW, вторым коррелированным
+                голосом по тому же измерению. Sharpness использует avg_margin
+                (статистика формы по всему фрагменту), которую ширина не
+                ограничивает, поэтому это НЕЗАВИСИМЫЙ свидетель и он в
+                скоринг-группе. Правило: коррелированные критерии → HARD
+                (они заново выводят уже прогейтанную величину),
+                независимые → SIMILARITY.
+
+    SIMILARITY— критерии V-образного шаблона: sharpness (7), valley (9),
+                flatness (10), symmetry (11), kurtosis (12). Скорятся, чтобы
+                пограничная цель переживала один разошедшийся shape-фильтр.
+                Только этой группе нужна маска — только у неё есть потребитель
+                (ShapeVerdict::similarity_pct → арминг Step 13).
+
+    ПОРОГ shape_sim_threshold_pct = 50 по умолчанию → доля =
+    100 × popcount(pass) / popcount(armed), НЕ значение маски (0x1F дал бы
+    16% за идеальные 5 из 5; audit D-SCORE — деление на маску отвергало
+    каждый мульти-вооружённый кандидат, делая Sens ON строже Sens OFF).
+    Порог 50 даёт (floor(100*p/n) >= 50, то есть «большинство или ничья»):
+      n=1: 1 из 1 (100)
+      n=2: 1 из 2 (ничья, 50)
+      n=3: 2 из 3 (66)            — 1 из 3 = 33 это меньшинство
+      n=4: 2 из 4 (ничья, 50) И 3 из 4 (75) — ничья тоже проходит
+      n=5: 3 из 5 (60)            — 2 из 5 = 40 это меньшинство
+    поэтому similarity-группа НИКОГДА не строже legacy-лестницы,
+    которую заменяет.     (Доаудитовая формулировка перечисляла для n=4
+    только «3 из 4» и тем самым скрывала, что ничья 2 из 4 тоже проходит;
+    сама ПРАВИЛОВАЯ функция — floor(100p/n) >= t <=> 100p >= n*t —
+    была реализована корректно всегда, неполной была только проза.)
+    Настраивается в UI Settings рядом с чекбоксом
+    «Shape score» (50..100, шаг 5 = SHAPE_SIM_THRESHOLD_STEP_PCT,
+    static_assert проверяет, что шаг делит диапазон нацело и MAX
+    достижим из MIN); 100 сходится к legacy-AND. Порог
+    читается только при Sens ON и защищён двойным clamp'ом (в парсере
+    файла и в apply_shape_filters).
+
+    ВООРУЖЕНИЕ (arming) вооружает шаг, только когда legacy действительно
+    ЗАПУСТИЛ бы его для этого пика. Невооружённый шаг не голосует и не
+    размывает score — ровно как его старый `if` не выполнился бы.
+
+    ПАРАДИКС ВОЗДЕРЖАНИЙ В Step 9 (два вида, это НЕ ошибка):
+      (a) very_strong → valley_outer == false → шаг НЕВООРУЖЁН: не входит
+          ни в знаменатель, ни в числитель — полностью нейтрально.
+      (b) has_secondary_peak → вооружён, хребты ПОСЧИТАНЫ, но вето снято
+          намеренно. Бит попадает ОДНОВРЕМЕННО в sim_armed и sim_pass, то
+          есть считается СОГЛАСИЕМ и тянет score ВВЕРХ.
+      (b) — не случайность: dual-peak skip это ПОЗИТИВНАЯ идентификация FPV
+      (ровно один узкий дополнительительный хребет с реальной впадиной =
+      видео + звуковая несущая), поэтому молчание долины — улика ЗА
+      кандидата. Это зеркалит legacy, где skip трактуется как pass.
+
+  Влияние на Step 13: кандидат, принятый по SCORE с одним разошедшимся
+  shape-фильтром (similarity_pct < 100), НЕ считается «цепочка полностью
+  владела вердиктом» — neighbor-margin post-filter для него ОБЯЗАН
+  сработать. При similarity_pct == 100 (legacy, либо полный Sens-score)
+  поведение Step 13 не меняется НИ на бит.
+
+  ВЛИЯНИЕ НА ВТОРИЧНЫЕ ОБНАРУЖЕНИЯ (известная и принятая асимметрия):
+  detections[1..] всегда шли в tracker В ОБХОД Step 13 (Step 13 существует
+  только для первичного signal_detected). Компенсация «частичный score ⇒
+  Step 13 обязан сработать» действует поэтому ТОЛЬКО на detections[0] —
+  ровно как и весь shape_chain_armed, существующий до этой правки. Вторичные
+  в Sens принимаются при score >= shape_sim_threshold_pct с защитой только от HARD-конверта +
+  confirm_count + RSSI-порога. Это консистентно с архитектурой D-B
+  (Step 13 по определению DB-primary-only) и НЕ является регрессией.
+
+  Публикация: ShapeVerdict записывается ТОЛЬКО при return true — тот же
+  success-only контракт, что и у out_extent (инвариант F3). Sweep оставляет
+  out_verdict = nullptr: у него нет ни Step 13, ни ShapeDetection, куда
+  положить score.
 
   ==== Tracking-layer post-filters — run AT TRACKING TIME, i.e. only after
   ==== the in-frame verdict (shape-passed Steps 1-12 OR TBD-confirmed) ====

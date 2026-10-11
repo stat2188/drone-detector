@@ -152,6 +152,12 @@ struct ScanConfig {
     // user value — the legacy strict chain, byte-identical.
     bool sensitive_mode{false};          // Default OFF — opt-in for adaptive shape
 
+    // Minimum SHARE (%) of the ARMED shape-similarity steps that must agree
+    // for a candidate to pass while sensitive_mode is ON ("Shape score" in
+    // the settings UI). 50 = majority-or-tie (default, never stricter than
+    // the legacy ladder); 100 = legacy AND verdict. Ignored when OFF.
+    uint8_t shape_sim_threshold_pct{DEFAULT_SHAPE_SIM_THRESHOLD_PCT};
+
     // Very-strong signal shape-filter bypass (opt-in, default OFF)
     // When ON: peak_margin > 80 (~16 dB) narrows the width measurement
     //          (margin/2 threshold) and skips valley/symmetry/kurtosis;
@@ -1440,6 +1446,19 @@ public:
         int32_t rssi;        ///< Estimated RSSI in dBm after shape filters
         uint16_t bin_index;  ///< FFT bin index (0-255, for debug/display)
         uint8_t peak_power;  ///< Raw peak power value (0-255)
+        /**
+         * @brief Share (0..100) of the ARMED similarity steps that agreed.
+         * @note Default 100 = "the chain fully owned the verdict". The legacy
+         *       fail-fast path always ends with sim_pass == sim_armed on
+         *       success, so it reports 100 by construction — consumers can
+         *       read this field unconditionally, no mode check required.
+         * @note Sens (parallel) path reports a value below 100 when the
+         *       candidate was accepted by shape_sim_threshold_pct with one
+         *       or more dissenting shape filters (e.g. 80 = 4 of 5 agreed).
+         * @note sizeof contribution: 0 bytes — fits in the existing 1-byte
+         *       trailing padding of the struct (4+4+2+1 = 11 -> 12).
+         */
+        uint8_t similarity_pct{100};
     };
 
     struct ShapeDetectionResult {
@@ -2099,6 +2118,72 @@ private:
     struct SignalExtent;
 
     /**
+     * @brief Similarity verdict bookkeeping of ONE successful apply_shape_filters() run.
+     * @note Records ONLY the SIMILARITY group (Steps 7/9/10/11/12). The
+     *       HARD envelope (Steps 3/5/6/6b/6c/8) is a scalar gate that keeps
+     *       its early return, so on any path that reaches the publication
+     *       point it has already passed by construction — carrying it would
+     *       be state with no reader (zero-overhead principle).
+     * @note Published ONLY when apply_shape_filters() returns true — the same
+     *       success-only contract as out_extent (audit invariant F3).
+     * @note Stack: 4 bytes. SRAM: 0. Flash: ~40 bytes. No FP, no allocation.
+     */
+    struct ShapeVerdict {
+        uint16_t sim_armed{0};  ///< Bitmask of similarity steps that actually ran
+        uint16_t sim_pass{0};   ///< Subset of sim_armed: steps that agreed
+
+        /**
+         * @brief Share of agreeing similarity steps, clamped to 0..100.
+         * @return 100 when no similarity step was armed (an empty score is a
+         *         full score: nothing disagreed, the hard envelope speaks),
+         *         else 100 * popcount(pass) / popcount(armed).
+         * @note SINGLE AUTHOR of the ratio — the Step-13 EFFECTIVE-ARMING
+         *       test in scanner.cpp consumes this and must never re-derive it.
+         * @note DENOMINATOR IS popcount(armed), NEVER the mask VALUE (audit
+         *       D-SCORE): sim_armed is a BIT PATTERN, so Sharp|Flat = 0x05.
+         *       Dividing by the pattern itself reported 2*100/5 = 40% for a
+         *       PERFECT candidate and rejected every multi-armed target in
+         *       Sens mode — Sens ON became STRICTER than Sens OFF, the exact
+         *       inverse of the feature's purpose.
+         * Stack: ~8 bytes (32-bit division result). Flash: ~40 bytes.
+         */
+        [[nodiscard]] uint8_t similarity_pct() const noexcept {
+            // MASK FIRST, COUNT SECOND. Both fields go through SHAPE_SIM_MASK
+            // so a stray non-similarity bit written by a future refactor is
+            // ignored in BOTH numerator and denominator — the score can be
+            // neither inflated nor deflated by one. Early return on the
+            // common (no-spoke) path before any arithmetic.
+            const uint16_t armed_set =
+                static_cast<uint16_t>(sim_armed & SHAPE_SIM_MASK);
+            const uint32_t armed_count = __builtin_popcount(armed_set);
+            if (armed_count == 0u) return 100u;
+            // sim_pass is a subset of sim_armed BY CONSTRUCTION (every setter
+            // sits inside its own arming guard), so pass_set <= armed_set and
+            // the quotient cannot exceed 100 — the clamp is defense-in-depth.
+            const uint16_t pass_set =
+                static_cast<uint16_t>(sim_pass & armed_set);
+            const uint32_t pct =
+                (__builtin_popcount(pass_set) * 100u) / armed_count;
+            return static_cast<uint8_t>((pct > 100u) ? 100u : pct);
+        }
+
+        /**
+         * @brief Sens-mode acceptance test: enough similarity steps agreed.
+         * @param min_pct User-tunable threshold (ScanConfig::
+         *        shape_sim_threshold_pct, 50..100). At 50 the test is
+         *        "majority or tie", so the similarity group can never be
+         *        STRICTER than the legacy ladder it replaces.
+         * @return true when similarity_pct() >= min_pct.
+         * @note Implemented THROUGH similarity_pct() so the two can never
+         *       drift (floor(p*100/n) >= t  <=>  p*100 >= n*t for n > 0,
+         *       n = popcount(armed)).
+         */
+        [[nodiscard]] bool similarity_ok(uint8_t min_pct) const noexcept {
+            return similarity_pct() >= min_pct;
+        }
+    };
+
+    /**
      * @brief Shared spectrum shape analysis with configurable edge skip.
      * @note Called by process_spectrum_sweep() (the DB multi-peak path calls
      *       apply_shape_filters() directly) to keep ONE implementation of the
@@ -2126,6 +2211,11 @@ private:
      *        satisfies it at EVERY sweep position. DB scan passes false
      *        (VTX drift may sit at the DB window edge BY DESIGN — see
      *        SWEEP_SLICE_BW notes).
+     * @param out_verdict Optional. When non-null and the function returns true,
+     *        receives the similarity-score bookkeeping (see ShapeVerdict).
+     *        Sweep leaves it null: it has no Step-13 arming and no
+     *        ShapeDetection to attach the score to, so a local instance
+     *        would be state with no reader.
      * @return true if drone-like signal detected
      */
     [[nodiscard]] bool analyze_spectrum_shape_impl(
@@ -2137,7 +2227,8 @@ private:
         size_t edge_skip,
         int32_t total_gain,
         SignalExtent* out_extent = nullptr,
-        bool reject_edge_clipped = false
+        bool reject_edge_clipped = false,
+        ShapeVerdict* out_verdict = nullptr
     ) noexcept;
 
     // ------------------------------------------------------------------------
@@ -2297,6 +2388,14 @@ private:
      *                     Step 6/6b, a degenerate peak-only extent is written
      *                     instead (dedup must not over-suppress bypassed signals).
      * @return true if signal passes all shape filters
+     * @param out_verdict Optional. When non-null and the function returns true,
+     *                     receives the similarity-score bookkeeping (see
+     *                     ShapeVerdict). Sens ON evaluates the similarity
+     *                     steps in ONE fused pass and combines them by
+      *                     shape_sim_threshold_pct; Sens OFF keeps the legacy
+     *                     fail-fast ladder and reports 100 by construction
+     *                     (sim_pass == sim_armed on any legacy success).
+     *                     Written ONLY on a true return (invariant F3).
      * @note Stack: ~0 bytes (all state via parameters).
      * @note Shared by analyze_spectrum_shape_multi() (DB scan, direct calls)
      *       and process_spectrum_sweep() via analyze_spectrum_shape_impl()
@@ -2315,7 +2414,8 @@ private:
         bool has_dc_gap,
         int32_t total_gain,
         SignalExtent* out_extent = nullptr,
-        bool reject_edge_clipped = false
+        bool reject_edge_clipped = false,
+        ShapeVerdict* out_verdict = nullptr
     ) const noexcept;
 
     /**

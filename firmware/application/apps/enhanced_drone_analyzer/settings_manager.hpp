@@ -85,6 +85,10 @@ struct SettingsStruct {
 
     // Sensitive mode — relaxes shape filters for weak/long-range signals
     bool sensitive_mode{false};
+    // Minimum SHARE (%) of the ARMED shape-similarity steps that must agree
+    // while sensitive_mode is ON ("Shape score" in the settings UI).
+    // 50 = majority-or-tie; 100 = legacy AND. Ignored when OFF.
+    uint8_t shape_sim_threshold_pct{DEFAULT_SHAPE_SIM_THRESHOLD_PCT};
 
     // Very-strong signal shape-filter bypass (default OFF) — mirrors
     // ScanConfig::shape_bypass_enabled. When OFF, MaxW/Vly/Sym shape filters

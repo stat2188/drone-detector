@@ -56,6 +56,7 @@ SettingsStruct::SettingsStruct() noexcept
     , mahalanobis_enabled(false)
     , mahalanobis_threshold_x10(DEFAULT_MAHALOBIS_THRESHOLD_X10)
     , sensitive_mode(false)
+    , shape_sim_threshold_pct(DEFAULT_SHAPE_SIM_THRESHOLD_PCT)
     , shape_bypass_enabled(false)
     , kurtosis_enabled(false)
     , kurtosis_min_x10(20)
@@ -422,6 +423,12 @@ static void parse_settings_line(
             : (v > MAHALANOBIS_THRESHOLD_MAX_X10 ? MAHALANOBIS_THRESHOLD_MAX_X10 : v));
     } else if (key_matches("sensitive_mode")) {
         s.sensitive_mode = parse_bool();
+    } else if (key_matches("shape_sim_threshold_pct")) {
+        const uint64_t v = parse_int();
+        s.shape_sim_threshold_pct = static_cast<uint8_t>(
+            (v < SHAPE_SIM_THRESHOLD_MIN_PCT) ? SHAPE_SIM_THRESHOLD_MIN_PCT
+            : (v > SHAPE_SIM_THRESHOLD_MAX_PCT ? SHAPE_SIM_THRESHOLD_MAX_PCT
+                                               : v));
     } else if (key_matches("shape_bypass_enabled")) {
         s.shape_bypass_enabled = parse_bool();
 
@@ -737,6 +744,8 @@ ErrorCode SettingsFileManager::save(
 
     // Sensitive mode
     wbool(file, "sensitive_mode", s.sensitive_mode);
+    wl(file, "shape_sim_threshold_pct",
+        static_cast<int64_t>(s.shape_sim_threshold_pct));
 
     // Very-strong signal shape-filter bypass (default OFF)
     wbool(file, "shape_bypass_enabled", s.shape_bypass_enabled);
@@ -787,6 +796,7 @@ void SettingsFileManager::apply_to_config(
 
     // Sensitive mode
     config.sensitive_mode = s.sensitive_mode;
+    config.shape_sim_threshold_pct = s.shape_sim_threshold_pct;
 
     // Very-strong signal shape-filter bypass (default OFF)
     config.shape_bypass_enabled = s.shape_bypass_enabled;
@@ -954,6 +964,7 @@ void SettingsFileManager::extract_from_config(
 
     // Sensitive mode
     s.sensitive_mode = config.sensitive_mode;
+    s.shape_sim_threshold_pct = config.shape_sim_threshold_pct;
 
     // Very-strong signal shape-filter bypass (default OFF)
     s.shape_bypass_enabled = config.shape_bypass_enabled;

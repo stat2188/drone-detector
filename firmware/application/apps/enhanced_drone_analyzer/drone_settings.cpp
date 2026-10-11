@@ -221,10 +221,51 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     // with neighbouring checkbox repaints.
     , preview_({0, 160, 240, 48})
     , check_mahalanobis_({UI_POS_X(20), UI_POS_Y(2)}, 3, "MG", true)
+    // AUDIT D1 sibling (pre-existing, fixed): the 4th positional is STEP.
+    // Passing DEFAULT_MAHALOBIS_THRESHOLD_X10 (40) here made the encoder
+    // step by 4.0 over 1.0..10.0, so only 1.0/5.0/9.0 (then clipped to
+    // 10.0) were reachable and the documented 0.1-granularity tuning was
+    // dead. Saved values are unaffected — set_value still applies them
+    // verbatim; only the encoder detent changes.
     , field_mahalanobis_threshold_({UI_POS_X(25), UI_POS_Y(2)}, 3,
                                {MAHALANOBIS_THRESHOLD_MIN_X10, MAHALANOBIS_THRESHOLD_MAX_X10},
-                               DEFAULT_MAHALOBIS_THRESHOLD_X10, ' ')
-    , check_sensitive_mode_({UI_POS_X(20), UI_POS_Y(7)}, 5, "Sens", true)
+                               MAHALANOBIS_THRESHOLD_STEP_X10, ' ')
+    // Sens-mode block on row 4 (previously empty): "Shape score" needs
+    // L = len("Shape score")+1 = 12 columns (8*L+16 = 112 px), which the
+    // packed row 7 could not hold, so the checkbox moved up one row —
+    // directly above the MaxW/Rat/Mar shape-filter block it governs. The
+    // threshold field sits beside it: 3 columns for values up to "100".
+    //
+    // WHAT THIS CHECKBOX REALLY TOGGLES (audit D2 — do not "simplify" the
+    // label back to "Sens"): it drives config_.sensitive_mode, the MASTER
+    // sensitivity switch, of which the score is only the newest of five
+    // effects —
+    //   (1) auto_gate_: per-frame 3σ noise-adaptive Step-3 gate,
+    //   (2) SHAPE_ADAPT_* w² easing of Steps 5/6/7/9/10/11/12,
+    //   (3) CFAR threshold −10 (analyze_spectrum_shape_multi),
+    //   (4) MinW relaxation toward the spike floor,
+    //   (5) the similarity SCORE combination (this field's consumer).
+    // The bare word "Sens" is ALSO unusable here: labels_ already owns
+    // "Sens:" at row 3 for the RSSI-sensitivity field, so reusing it would
+    // create a second, worse ambiguity. "Shape score" is the README's name
+    // for the feature; the master-switch scope lives in this comment and in
+    // the constants.hpp SENS = PARALLEL SHAPE EVALUATION block.
+    // NOTE: unlike the shape-filter fields below, this pair is NOT gated by
+    // set_spectrum_detection_visible() — sensitive_mode also shapes the
+    // RSSI/CFAR paths that stay live with SpDet off.
+    , check_sensitive_mode_({UI_POS_X(0), UI_POS_Y(4)}, 12, "Shape score", true)
+    // AUDIT D1 (CRITICAL, fixed): ui::NumberField's 4th positional is STEP,
+    // not a default value — the widget has no default-value parameter
+    // (value_ starts at 0, is clipped into range, then overwritten by
+    // apply_settings_to_ui's set_value). This line used to pass
+    // DEFAULT_SHAPE_SIM_THRESHOLD_PCT (50) as step over the range
+    // {50,100}, so the encoder/keyboard could only ever produce 50 and 100
+    // and the 55..95 "adaptive middle" was unreachable — while the README
+    // promised "шаг 5". Now the named SHAPE_SIM_THRESHOLD_STEP_PCT (5,
+    // static_asserted to tile MIN..MAX exactly).
+    , field_shape_sim_pct_({UI_POS_X(15), UI_POS_Y(4)}, 3,
+          {SHAPE_SIM_THRESHOLD_MIN_PCT, SHAPE_SIM_THRESHOLD_MAX_PCT},
+          SHAPE_SIM_THRESHOLD_STEP_PCT, ' ')
     , field_spectrum_margin_({UI_POS_X(19), UI_POS_Y(5)}, 3, {5, 200}, 5, ' ')
     , field_spectrum_min_width_({UI_POS_X(19), UI_POS_Y(6)}, 3, {1, 100}, 1, ' ')
     , field_spectrum_max_width_({UI_POS_X(5), UI_POS_Y(5)}, 3, {2, 255}, 1, ' ')
@@ -290,6 +331,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &check_mahalanobis_,
         &field_mahalanobis_threshold_,
         &check_sensitive_mode_,
+        &field_shape_sim_pct_,
         &field_spectrum_margin_,
         &field_spectrum_min_width_,
         &field_spectrum_max_width_,
@@ -585,6 +627,14 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         settings_dirty_ = true;
     };
 
+    // "Shape score" — minimum share of agreeing similarity steps. Only read
+    // by the scanner while sensitive_mode is ON; always editable so the
+    // threshold can be pre-tuned before enabling Sens.
+    field_shape_sim_pct_.on_change = [this](int32_t v) {
+        settings_.shape_sim_threshold_pct = static_cast<uint8_t>(v);
+        settings_dirty_ = true;
+    };
+
     field_mahalanobis_threshold_.on_change = [this](int32_t v) {
         settings_.mahalanobis_threshold_x10 = static_cast<uint8_t>(v);
         settings_dirty_ = true;
@@ -737,6 +787,10 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     check_mahalanobis_.set_value(settings_.mahalanobis_enabled);
     field_mahalanobis_threshold_.set_value(static_cast<int32_t>(settings_.mahalanobis_threshold_x10));
     check_sensitive_mode_.set_value(settings_.sensitive_mode);
+    // trigger_change=false: a fired on_change would set settings_dirty_ on
+    // the very first paint, making the view open "already modified".
+    field_shape_sim_pct_.set_value(
+        static_cast<int32_t>(settings_.shape_sim_threshold_pct), false);
     field_cfar_mode_.set_by_value(static_cast<int32_t>(settings_.cfar_mode));
     field_cfar_ref_cells_.set_value(static_cast<int32_t>(settings_.cfar_ref_cells));
     field_cfar_guard_cells_.set_value(static_cast<int32_t>(settings_.cfar_guard_cells));
