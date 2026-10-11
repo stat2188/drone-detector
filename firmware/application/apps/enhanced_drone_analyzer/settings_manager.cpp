@@ -429,6 +429,12 @@ static void parse_settings_line(
             (v < SHAPE_SIM_THRESHOLD_MIN_PCT) ? SHAPE_SIM_THRESHOLD_MIN_PCT
             : (v > SHAPE_SIM_THRESHOLD_MAX_PCT ? SHAPE_SIM_THRESHOLD_MAX_PCT
                                                : v));
+    } else if (key_matches("settings_version")) {
+        // "1.x" → 1x via the digit-only parser ("1.4" reads as 14).
+        // TRANSIENT: consumed by the load()-time D-FULL-PASS migration
+        // below, then cleared — never written back.
+        const uint64_t v = parse_int();
+        s.file_version_x10 = static_cast<uint8_t>((v > 255) ? 255 : v);
     } else if (key_matches("shape_bypass_enabled")) {
         s.shape_bypass_enabled = parse_bool();
 
@@ -533,6 +539,24 @@ ErrorCode SettingsFileManager::load(SettingsStruct& out) noexcept {
         out.cfar_hybrid_gamma = static_cast<uint8_t>(
             100 - out.cfar_hybrid_alpha - out.cfar_hybrid_beta);
     }
+
+    // D-FULL-PASS migration (2026-10): files stamped <= 1.3 carried the
+    // pre-D-FULL-PASS factory default shape_sim_threshold_pct = 50, and the
+    // audit-D1 UI step bug made 50 the only reachable stored value besides
+    // 100 — so a stored 50 in such a file is overwhelmingly the accidental
+    // old default, not a deliberate dissent opt-in. Promote it to the new
+    // default 100 (strict AND: every armed similarity gate must pass — a
+    // detection can never register after passing only part of them).
+    // Files stamped >= 1.4 preserve 50 verbatim: they were saved AFTER the
+    // default changed, i.e. the user re-confirmed the value deliberately.
+    // Versionless / hand-edited files (file_version_x10 == 0) are treated
+    // as legacy: they predate this migration. Known cost: a hand-edited
+    // deliberate 50 without a version line is promoted once.
+    if (out.file_version_x10 <= SETTINGS_FILE_VERSION_X10_PRE_FULL_PASS &&
+        out.shape_sim_threshold_pct == SHAPE_SIM_THRESHOLD_MIN_PCT) {
+        out.shape_sim_threshold_pct = DEFAULT_SHAPE_SIM_THRESHOLD_PCT;
+    }
+    out.file_version_x10 = 0;  // transient — never leaves load()
 
     file.close();
     return ErrorCode::SUCCESS;
@@ -757,7 +781,10 @@ ErrorCode SettingsFileManager::save(
 
     // Metadata
     ws(file, "freqman_path=DRONES\n");
-    ws(file, "settings_version=1.3\n");
+    // Keep in sync with SETTINGS_FILE_VERSION_X10 (constants.hpp): the
+    // loader parses this line digit-only ("1.4" → 14) for the D-FULL-PASS
+    // migration.
+    ws(file, "settings_version=1.4\n");
 
     (void)file.sync();
     file.close();

@@ -2126,10 +2126,16 @@ private:
      *       be state with no reader (zero-overhead principle).
      * @note Published ONLY when apply_shape_filters() returns true — the same
      *       success-only contract as out_extent (audit invariant F3).
+     * @note ARMING IS INFORMATIVE (audit D-ARM): sim_armed records steps
+     *       that both RAN and were structurally capable of REJECTING — a
+     *       step whose limit sits in its documented no-op regime (Sharp in
+     *       the D5 dead-band 51..100, Flat = 100) abstains: it writes
+     *       neither sim_pass nor sim_armed, so it can never dilute a real
+     *       dissent toward the tie-passing threshold 50.
      * @note Stack: 4 bytes. SRAM: 0. Flash: ~40 bytes. No FP, no allocation.
      */
     struct ShapeVerdict {
-        uint16_t sim_armed{0};  ///< Bitmask of similarity steps that actually ran
+        uint16_t sim_armed{0};  ///< Bitmask of informative, rejecting-capable similarity steps
         uint16_t sim_pass{0};   ///< Subset of sim_armed: steps that agreed
 
         /**
@@ -2170,9 +2176,12 @@ private:
         /**
          * @brief Sens-mode acceptance test: enough similarity steps agreed.
          * @param min_pct User-tunable threshold (ScanConfig::
-         *        shape_sim_threshold_pct, 50..100). At 50 the test is
-         *        "majority or tie", so the similarity group can never be
-         *        STRICTER than the legacy ladder it replaces.
+         *        shape_sim_threshold_pct, 50..100). DEFAULT 100 = STRICT
+         *        AND (audit D-FULL-PASS): every ARMED similarity gate must
+         *        agree — a detection can never be registered after passing
+         *        only part of the configured gates. Lowering toward 50 is
+         *        an explicit dissent opt-in ("majority or tie"), which can
+         *        never be STRICTER than the legacy ladder it replaces.
          * @return true when similarity_pct() >= min_pct.
          * @note Implemented THROUGH similarity_pct() so the two can never
          *       drift (floor(p*100/n) >= t  <=>  p*100 >= n*t for n > 0,

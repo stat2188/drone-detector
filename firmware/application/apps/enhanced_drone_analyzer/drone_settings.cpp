@@ -258,7 +258,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     // not a default value — the widget has no default-value parameter
     // (value_ starts at 0, is clipped into range, then overwritten by
     // apply_settings_to_ui's set_value). This line used to pass
-    // DEFAULT_SHAPE_SIM_THRESHOLD_PCT (50) as step over the range
+    // DEFAULT_SHAPE_SIM_THRESHOLD_PCT (then 50) as step over the range
     // {50,100}, so the encoder/keyboard could only ever produce 50 and 100
     // and the 55..95 "adaptive middle" was unreachable — while the README
     // promised "шаг 5". Now the named SHAPE_SIM_THRESHOLD_STEP_PCT (5,

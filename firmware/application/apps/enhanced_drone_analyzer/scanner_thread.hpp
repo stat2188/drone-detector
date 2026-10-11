@@ -6,7 +6,6 @@
 #include "ch.h"
 #include "scanner.hpp"
 #include "message.hpp"
-#include "event_m0.hpp"
 #include "constants.hpp"
 
 namespace drone_analyzer {

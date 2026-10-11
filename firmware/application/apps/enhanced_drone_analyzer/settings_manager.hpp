@@ -87,7 +87,9 @@ struct SettingsStruct {
     bool sensitive_mode{false};
     // Minimum SHARE (%) of the ARMED shape-similarity steps that must agree
     // while sensitive_mode is ON ("Shape score" in the settings UI).
-    // 50 = majority-or-tie; 100 = legacy AND. Ignored when OFF.
+    // 100 (DEFAULT, audit D-FULL-PASS) = strict AND — every armed gate must
+    // pass, a detection can never register after only part of them; 50..95
+    // = explicit dissent opt-in ("majority or tie" at 50). Ignored when OFF.
     uint8_t shape_sim_threshold_pct{DEFAULT_SHAPE_SIM_THRESHOLD_PCT};
 
     // Very-strong signal shape-filter bypass (default OFF) — mirrors
@@ -136,6 +138,12 @@ struct SettingsStruct {
     uint8_t sweep_det_win_name_idx[MAX_SWEEP_WINDOWS][DETECTION_WINDOWS_PER_WINDOW]{};
     uint8_t rssi_decrease_cycles{5};  // Normal mode: seconds before RSSI decay. Sweep mode: missed full-pass budget (CYC; HIGH/CRIT 2xCYC)
     uint8_t freq_match_radius_mhz{DEFAULT_FREQ_MATCH_RADIUS_MHZ};  // 0-100 MHz, drone detection merge radius (0=disabled)
+
+    // TRANSIENT (never saved): the settings_version line of the file just
+    // loaded, scaled x10 ("1.4" → 14). 0 = no version line seen (hand-
+    // edited / pre-version file). Consumed by the load()-time D-FULL-PASS
+    // migration, then cleared — it never reaches the save path.
+    uint8_t file_version_x10{0};
 
     SettingsStruct() noexcept;
 };

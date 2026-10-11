@@ -484,6 +484,14 @@ constexpr const char SETTINGS_FILE_PATH[] = "/EDA/SETTINGS.TXT";
  */
 constexpr uint32_t SETTINGS_FILE_VERSION = 1;
 
+// settings_version line of SETTINGS/eda_settings.txt, scaled x10 so the
+// digit-only parser can read "1.4" as 14 (audit D-FULL-PASS, 2026-10).
+// The writer stamps SETTINGS_FILE_VERSION_X10 on every save; the loader
+// compares against SETTINGS_FILE_VERSION_X10_PRE_FULL_PASS to decide
+// whether the legacy shape_sim_threshold_pct = 50 migration applies.
+constexpr uint8_t SETTINGS_FILE_VERSION_X10_PRE_FULL_PASS = 13;  // last pre-D-FULL-PASS writer ("1.3")
+constexpr uint8_t SETTINGS_FILE_VERSION_X10 = 14;                // this firmware ("1.4")
+
 // ============================================================================
 // Audio Constants
 // ============================================================================
@@ -1046,6 +1054,11 @@ constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 255;
  *       avg_margin <= peak_margin and sharpness >= 100 on EVERY frame —
  *       only thresholds >= 101 can ever reject. 50, 75 and 100 behave
  *       identically; the effective filtering range is 101..250.
+ * @note D-ARM (2026-10): under the Sens "Shape score" a dead-band value no
+ *       longer casts an always-pass VOTE — the step ABSTAINS (informative-
+ *       arming, see the SENS = PARALLEL SHAPE EVALUATION block below), so
+ *       the default 100 can no longer dilute a real Flat/Valley dissent to
+ *       a passing tie.
  * @note 100 (PERMISSIVE DEFAULT — "detect what fits the bands"): analog FM
  *       video is a quasi-flat block with a dominant carrier peak, measured
  *       sharpness ≈ 100-130 at medium range (the width walk runs at
@@ -1387,6 +1400,41 @@ static_assert(SHAPE_ADAPT_MIN_WIDTH_RELAX < 255,
 //             group needs a bitmask: it is the only group with a reader
 //             (ShapeVerdict::similarity_pct -> Step-13 arming).
 //
+// INFORMATIVE-ARMING (audit D-ARM, 2026-10) — arming is by REJECTION
+//             CAPABILITY, not by the raw field value: a similarity step is
+//             armed only when its verdict is STRUCTURALLY capable of
+//             rejecting this frame. A step whose limit sits in its
+//             documented no-op regime ABSTAINS — it contributes no bit to
+//             sim_pass, no bit to sim_armed, no score seat — exactly as if
+//             its legacy `if` had not executed. Two such regimes exist and
+//             both used to occupy permanent ALWAYS-PASS seats:
+//             (1) SHARPNESS in the D5 dead-band 51..100: avg includes the
+//                 peak, so sharpness >= 100 on every frame and a limit <=
+//                 100 can never reject. Armed iff
+//                 eased_sharpness_limit(user, w2) > 100 (SHARPNESS_NOOP_
+//                 CEILING in scanner.cpp — the same predicate Step 13's
+//                 EFFECTIVE-ARMING consumes, audit M3 rev. 2).
+//             (2) FLATNESS at 100: flatness_pct > 100 is unreachable, so
+//                 the limit saturates at the abstain ceiling. Armed iff
+//                 eased_flatness_limit(user, w2) < SPECTRUM_FLATNESS_PCT_MAX
+//                 plus the three Step-10 run guards (F > 0, margin floor,
+//                 w > 0 — Step 13 mirrors them).
+//             WHY IT MATTERED: the tie rule at the then-default threshold 50
+//             (majority-or-tie) turns a phantom always-pass vote into a
+//             dilution weapon — {Sharp(100, inert pass), Flat(45, real
+//             fail)} = 1 of 2 = 50% => PASS, so enabling Flat under "Shape
+//             score" could NEVER reject a WiFi flat-top while Sharp sat at
+//             its 100 default. After D-ARM the same config arms only Flat:
+//             a WiFi fail is 0 of 1 = 0% => REJECT. Sens OFF is
+//             VERDICT-IDENTICAL (the dead-band step's early return never
+//             fired: ok was unconditionally true) — D-ARM only removes the
+//             phantom vote and skips the fused-loop work.
+//             The "never STRICTER than the legacy ladder" invariant below
+//             is stated over the ARMED set; D-ARM only shrinks the set to
+//             informative members, so the invariant is preserved (score
+//             still accepts a superset of what the AND-ladder accepts for
+//             the same armed set).
+//
 // Sens OFF keeps the legacy fail-fast ladder. Every predicate is pure in
 // {data, config, Step-4 band}, so "evaluate all and AND" is verdict-identical
 // to the ladder — only the evaluation order and the CPU cost differ (the
@@ -1408,33 +1456,41 @@ constexpr uint16_t SHAPE_SIM_MASK = SHAPE_BIT_SHARPNESS | SHAPE_BIT_VALLEY |
 // pattern, so Sharp|Flat = 0x05 and dividing by 5 reported 40% for a perfect
 // 2-of-2 candidate, rejecting every multi-armed target — Sens ON became
 // STRICTER than Sens OFF, the inverse of the feature's purpose).
-// 50% => floor(100*p/n) >= 50, i.e. "majority or tie":
+// DEFAULT = 100 = STRICT AND (audit D-FULL-PASS, 2026-10): a detection can
+// NEVER be registered after passing only SOME of the configured similarity
+// gates — every armed gate must agree, exactly like the Sens-OFF ladder.
+// The tunable range below 100 exists only as an EXPLICIT user opt-in to
+// dissent-tolerance (far-field / multipath); the product default and the
+// DEFAULT button restore full pass-through.
+// MIN 50% => floor(100*p/n) >= 50, i.e. "majority or tie" — the most
+// permissive end of the tunable range, documented so a user who lowers the
+// field knows exactly what they are buying:
 //   n=1: 1 of 1 (100*1/1 = 100)
 //   n=2: 1 of 2 (tie,  50)
 //   n=3: 2 of 3 (66)          — 1 of 3 = 33 is a minority
 //   n=4: 2 of 4 (tie,  50) AND 3 of 4 (75) — note the TIE also passes
 //   n=5: 3 of 5 (60)          — 2 of 5 = 40 is a minority
-// so the similarity group can never be STRICTER than the legacy ladder it
-// replaces. (The pre-audit wording listed only "3 of 4" for n=4 and so hid
-// that a 2-of-4 tie qualifies; the RULE — floor(100p/n) >= t  <=>  100p >=
-// n*t — was always implemented correctly, only the prose enumeration was
-// incomplete.)
+// so even at MIN the similarity group can never be STRICTER than the legacy
+// ladder it replaces. (The pre-audit wording listed only "3 of 4" for n=4
+// and so hid that a 2-of-4 tie qualifies; the RULE — floor(100p/n) >= t
+// <=> 100p >= n*t — was always implemented correctly, only the prose
+// enumeration was incomplete.)
 // User-tunable as ScanConfig::shape_sim_threshold_pct (settings UI, next to
-// the "Shape score" checkbox); raising it toward 100 converges on the legacy
-// AND verdict, at the cost of far-field sensitivity.
+// the "Shape score" checkbox).
 constexpr uint8_t SHAPE_SIM_THRESHOLD_MIN_PCT = 50;
 constexpr uint8_t SHAPE_SIM_THRESHOLD_MAX_PCT = 100;
-constexpr uint8_t DEFAULT_SHAPE_SIM_THRESHOLD_PCT = 50;
+constexpr uint8_t DEFAULT_SHAPE_SIM_THRESHOLD_PCT = 100;
 // ENCODER STEP for the settings-UI NumberField — NOT a default value.
 // ui::NumberField's 4th constructor positional is `step`, and the widget has
 // NO default-value parameter at all (value_ starts at 0 and is clamped into
 // range, then overwritten by DroneSettingsView::apply_settings_to_ui via
-// set_value). Passing DEFAULT_SHAPE_SIM_THRESHOLD_PCT (50) here — which is
-// what the pre-audit code did, copying the latent field_mahalanobis_threshold_
-// anti-pattern — made step == 50 over the range {50,100}, so the encoder
-// could only ever reach 50 and 100 and the entire "adaptive middle" of the
-// feature (55..95) was unreachable from the UI while the README promised
-// "шаг 5". Named constant so the UI and this doc can never drift again.
+// set_value). Passing DEFAULT_SHAPE_SIM_THRESHOLD_PCT (then 50) here —
+// which is what the pre-audit code did, copying the latent
+// field_mahalanobis_threshold_ anti-pattern — made step == 50 over the
+// range {50,100}, so the encoder could only ever reach 50 and 100 and the
+// entire "adaptive middle" of the feature (55..95) was unreachable from the
+// UI while the README promised "шаг 5". Named constant so the UI and this
+// doc can never drift again.
 constexpr uint8_t SHAPE_SIM_THRESHOLD_STEP_PCT = 5;
 
 static_assert(SHAPE_SIM_MASK == 0x1Fu,

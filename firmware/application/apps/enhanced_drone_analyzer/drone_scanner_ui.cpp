@@ -20,6 +20,11 @@
 #include "sweep_sensitivity.hpp"
 #include "string_format.hpp"
 #include "baseband_api.hpp"
+// DIRECT dependency (IWYU): this TU consumes RetuneMessage,
+// ChannelStatisticsMessage and MessageHandlerRegistration — previously
+// smuggled in transitively via scanner_thread.hpp (which itself moved the
+// event_m0.hpp include into scanner_thread.cpp).
+#include "message.hpp"
 #include "portapack_persistent_memory.hpp"
 #include "portapack.hpp"
 #include "file_path.hpp"

@@ -1,5 +1,10 @@
 #include "scanner_thread.hpp"
 #include "portapack.hpp"
+// IWYU: EventDispatcher (run()'s RetuneMessage dispatch) lives here — needed
+// by THIS TU only, not by the scanner_thread.hpp interface. Keeping it in
+// the header dragged ui_widget/ui_painter/portapack transitively into every
+// TU that includes scanner_thread.hpp (drone_scanner_ui and its clients).
+#include "event_m0.hpp"
 
 namespace drone_analyzer {
 
