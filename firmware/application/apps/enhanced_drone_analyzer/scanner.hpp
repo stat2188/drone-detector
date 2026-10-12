@@ -2148,9 +2148,13 @@ private:
      * @note ARMING IS INFORMATIVE (audit D-ARM): sim_armed records steps
      *       that both RAN and were structurally capable of REJECTING — a
      *       step whose limit sits in its documented no-op regime (Sharp in
-     *       the D5 dead-band 51..100, Flat = 100) abstains: it writes
-     *       neither sim_pass nor sim_armed, so it can never dilute a real
-     *       dissent toward the tie-passing threshold 50.
+     *       the D5 dead-band 51..100, Flat = 100, Valley with
+     *       noise + limit > 255, Sym truncated to a 0 bar) abstains: it
+     *       writes neither sim_pass nor sim_armed, so it can never dilute
+     *       a real dissent toward the tie-passing threshold 50. Kurtosis
+     *       has NO such regime (kurtosis_x10 can reach ≈ −30 while the
+     *       clamped limit stays >= 0) and deliberately carries no
+     *       capability term — see constants.hpp D-ARM regimes (1)-(5).
      * @note Stack: 4 bytes. SRAM: 0. Flash: ~40 bytes. No FP, no allocation.
      */
     struct ShapeVerdict {

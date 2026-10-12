@@ -1485,6 +1485,39 @@ static_assert(SHAPE_ADAPT_MIN_WIDTH_RELAX < 255,
 //                 eased_flatness_limit(user, w2) < SPECTRUM_FLATNESS_PCT_MAX
 //                 plus the three Step-10 run guards (F > 0, margin floor,
 //                 w > 0 — Step 13 mirrors them).
+//             (3) VALLEY with an UNREACHABLE limit (D-ARM ext. 2026-10):
+//                 the probe margins are data[i] − noise_floor over uint8
+//                 bins, so max_valley is structurally bounded by
+//                 255 − noise_floor; when
+//                 noise_floor + eased_valley_limit(D, margin, w2) > 255 no
+//                 flank terrain can reach the limit and the verdict is
+//                 vacuously true EVERY frame — a permanent always-pass
+//                 seat (high-noise + deep-D regime, broader under
+//                 w-easing). Armed iff that sum <= 255 on top of the
+//                 legacy outer guards (D > 0, !very_strong, w > 0). The
+//                 formula lives in eased_valley_limit() (scanner.cpp,
+//                 shared author of the arming test and the Step-9 chain,
+//                 audit M3 rev. 2 pattern).
+//             (4) SYMMETRY at a TRUNCATED-TO-ZERO bar (D-ARM ext. 2026-10):
+//                 sym_limit = user·w²/10000 truncates to 0 whenever
+//                 user·w² < 10000 (e.g. Y = 50 & w <= 14), and
+//                 ok = (sym_pct >= 0) is then vacuously true for every
+//                 geometry. Armed iff eased_sym_limit(user, w2) > 0 on top
+//                 of the legacy guards (Y > 0, width > 1, !very_strong,
+//                 w > 0, !clipped). Shared author: eased_sym_limit()
+//                 (scanner.cpp).
+//             (5) KURTOSIS deliberately has NO capability term — proof of
+//                 ABSENCE, do not "fix" this: kurtosis_x10 (excess kurtosis
+//                 × 10, spectral_kurtosis.hpp) ranges DOWN to ≈ −30 —
+//                 platykurtic flat-tops are NEGATIVE, Gaussian ≈ 0 — while
+//                 the settings clamp (0..200) and the w-easing keep
+//                 kurt_limit >= 0 in EVERY armed configuration, including
+//                 the truncated-to-0 band user·w² < 10000 where
+//                 ok = (kurtosis_x10 >= 0) is a REAL "reject the flat/
+//                 platykurtic" verdict. Every reachable limit is therefore
+//                 structurally violable; adding a `kurt_limit > 0` disarm
+//                 would LOOSEN Step 12 and break Sens-OFF verdict identity
+//                 at kurtosis_min_x10 = 0.
 //             WHY IT MATTERED: the tie rule at the then-default threshold 50
 //             (majority-or-tie) turns a phantom always-pass vote into a
 //             dilution weapon — {Sharp(100, inert pass), Flat(45, real

@@ -307,6 +307,53 @@ static uint16_t eased_flatness_limit(uint8_t user_flatness, uint16_t w2) noexcep
              (10000u - w2)) / 10000u));
 }
 
+/**
+ * @brief SENS eased valley-depth limit — shared author of Step 9 and arming.
+ * @param user_valley_depth Raw ScanConfig::spectrum_valley_depth (0..200,
+ *        settings clamp) — 0 is the documented DISABLE sentinel and is
+ *        excluded by the valley_outer run guard before this helper runs.
+ * @param peak_margin raw_peak − noise_floor (Step 3 gate already cleared,
+ *        so >= 1).
+ * @param w2 adapt_w², 0..10000.
+ * @return D + (peak_margin/3 + 1)·(10000 − w²)/10000: the exact user D at
+ *         w² = 10000 (Sens OFF byte-identity), the smooth-flank ceiling
+ *         (margin/3 + 1) added at w² = 0. MAX-POLARITY (a HIGHER limit is
+ *         MORE permissive: reject iff max_valley >= limit).
+ * @note Consumed by apply_shape_filters Step 9 AND the Step-9
+ *       INFORMATIVE-ARMING capability test (audit D-ARM ext. 2026-10,
+ *       regime (3) in constants.hpp): one formula, so the arming test
+ *       cannot drift from what the chain runs. uint16: 200 + 86 = 286 max.
+ * Stack: ~8 bytes (register). SRAM: 0. Flash: ~48 bytes. No FP.
+ */
+static uint16_t eased_valley_limit(uint8_t user_valley_depth, uint8_t peak_margin, uint16_t w2) noexcept {
+    return static_cast<uint16_t>(user_valley_depth) +
+        static_cast<uint16_t>(
+            (static_cast<uint32_t>(peak_margin / 3u + 1u) *
+             (10000u - w2)) / 10000u);
+}
+
+/**
+ * @brief SENS eased symmetry limit — shared author of Step 11 and arming.
+ * @param user_symmetry Raw ScanConfig::spectrum_symmetry (0..100, settings
+ *        clamp) — 0 is the documented DISABLE sentinel, excluded by the
+ *        Step-11 run guard before this helper runs.
+ * @param w2 adapt_w², 0..10000.
+ * @return user·w²/10000 (MIN-POLARITY: reject iff sym_pct < limit). At
+ *         w² = 10000 the exact user Y (Sens OFF byte-identity); the
+ *         INTEGER TRUNCATION to 0 for user·w² < 10000 is the vacuous-bar
+ *         regime: ok = (sym_pct >= 0) is then true for EVERY geometry, so
+ *         a zero limit can never reject — see the Step-11
+ *         INFORMATIVE-ARMING capability test (audit D-ARM ext. 2026-10,
+ *         regime (4) in constants.hpp).
+ * @note Consumed by apply_shape_filters Step 11 AND its arming — one
+ *       formula, cannot drift.
+ * Stack: ~4 bytes (register). SRAM: 0. Flash: ~32 bytes. No FP.
+ */
+static uint8_t eased_sym_limit(uint8_t user_symmetry, uint16_t w2) noexcept {
+    return static_cast<uint8_t>(
+        (static_cast<uint32_t>(user_symmetry) * w2) / 10000u);
+}
+
 // ============================================================================
 // ScanConfig Implementation
 // ============================================================================
@@ -3430,10 +3477,32 @@ bool DroneScanner::apply_shape_filters(
         (eased_sharpness_limit(config_.spectrum_peak_sharpness, w2) >
          SHARPNESS_NOOP_CEILING);
 
-    // Step 9 arming (legacy outer condition, verbatim).
+    // Step 9 arming — legacy outer condition (verbatim) plus the D-ARM
+    // rejection-capability term below.
     const bool valley_outer =
         (config_.spectrum_valley_depth > 0) && !very_strong &&
         (!config_.sensitive_mode || adapt_w > 0);
+    // INFORMATIVE-ARMING CAPABILITY (audit D-ARM ext. 2026-10 — regime (3)
+    // of constants.hpp): the probe margins are data[i] − noise_floor over
+    // data[i] <= 255 (uint8 bins), so max_valley can NEVER exceed
+    // 255 − noise_floor. When noise_floor + eased_valley_limit() > 255 not
+    // even a bin at the top of the dB scale can reach the limit: ok ≡
+    // (max_valley < limit) ≡ true for EVERY possible flank terrain, and
+    // the step would take a permanent ALWAYS-PASS score seat (the exact
+    // dilution D-ARM exists to remove). High-noise + deep-D regime
+    // (e.g. D = 70, noise > 185 at w = 100; broader under w-easing).
+    // Sens OFF VERDICT-IDENTITY: when the check fires,
+    // max_valley <= 255 − noise_floor < D = limit, so the legacy fail-fast
+    // early-return could never have fired either — skipping the step
+    // changes no accept/reject, it only removes the phantom vote and the
+    // probe/fused-loop work (a CPU win). The dual-peak skip
+    // (has_secondary_peak) is unaffected: it lives INSIDE the armed
+    // verdict and keeps its documented always-pass semantics (README
+    // paradox (b)).
+    const bool sim_armed_valley = valley_outer &&
+        ((static_cast<uint16_t>(noise_floor) +
+          eased_valley_limit(config_.spectrum_valley_depth, peak_margin, w2))
+         <= 255u);
 
     // Step 10 arming: the OUTER run guard (Flat + peak-margin floor +
     // adapt_w). The narrowband guard is folded in below as sim_armed_flat.
@@ -3494,14 +3563,39 @@ bool DroneScanner::apply_shape_filters(
     // in the deepest frame of the DB path. Dropped; the geometry now lives
     // inside the Step 11 block where it is read, and the /0 proof travels
     // with the division. Verdict-identical: the term was always true.
+    //
+    // INFORMATIVE-ARMING CAPABILITY (audit D-ARM ext. 2026-10 — regime (4)
+    // of constants.hpp): sym_limit = user·w²/10000 TRUNCATES TO 0 in the
+    // user·w² < 10000 band (e.g. Y = 50 & w <= 14), and ok = (sym_pct >=
+    // 0) is then vacuously true for every geometry — an always-pass
+    // dilution seat exactly like the Sharp/Flat no-op ceilings. Armed only
+    // when the bar is >= 1 (a real reject exists: sym_pct == 0, i.e. the
+    // peak sits on one fragment edge — width > 1 guarantees max_side >= 1,
+    // so sym_pct is well-defined). Sens OFF VERDICT-IDENTITY: at w2 =
+    // 10000 the limit is the raw user Y > 0 (Y = 0 never armed), so the
+    // new term is vacuously true there — no Sens-OFF behavior change.
     const bool sim_armed_sym =
         (config_.spectrum_symmetry > 0) && (signal_width > 1) && !very_strong &&
-        (!config_.sensitive_mode || adapt_w > 0) && !left_clipped && !right_clipped;
+        (!config_.sensitive_mode || adapt_w > 0) && !left_clipped && !right_clipped &&
+        (eased_sym_limit(config_.spectrum_symmetry, w2) > 0);
 
     // Step 12 arming. MIN-SAMPLE ABSTAIN: SpectralKurtosis::compute early-outs
     // below 4 samples with a zeroed result (kurtosis_x10 = 0) — running it on
     // a narrow burst (MinW default 2) would REJECT on an undefined statistic.
     // Same 4-bin floor FLATNESS_MIN_SIGNAL_WIDTH uses for the same reason.
+    // NO CAPABILITY TERM (audit D-ARM ext. 2026-10 — proof of ABSENCE):
+    // unlike Sharp/Flat/Valley/Sym, Step 12 has NO always-pass regime, so
+    // adding one would be a bug, not a fix. kurtosis_x10 = excess kurtosis
+    // × 10 (spectral_kurtosis.hpp) ranges DOWN to ≈ −30 — platykurtic
+    // flat-tops are NEGATIVE, Gaussian noise ≈ 0 — while the settings
+    // clamp (settings_manager.cpp: 0..200) and the w-easing keep
+    // kurt_limit >= 0 in EVERY armed configuration, including the
+    // truncated-to-0 band user·w² < 10000 where ok = (kurtosis_x10 >= 0)
+    // is a REAL "reject the flat/platykurtic" verdict, not a vacuous pass.
+    // Every reachable limit is therefore structurally violable; the arming
+    // is already rejection-capable. A `kurt_limit > 0` disarm would
+    // LOOSEN Step 12 (kurt < 0 would no longer reject) and break Sens-OFF
+    // verdict identity at kurtosis_min_x10 = 0.
     const bool sim_armed_kurt =
         config_.kurtosis_enabled && (peak_margin >= FLATNESS_MIN_PEAK_MARGIN) &&
         !very_strong && (!config_.sensitive_mode || adapt_w > 0) &&
@@ -3510,7 +3604,7 @@ bool DroneScanner::apply_shape_filters(
     ShapeVerdict verdict{};
     verdict.sim_armed = static_cast<uint16_t>(
         (sim_armed_sharp ? SHAPE_BIT_SHARPNESS : uint16_t{0}) |
-        (valley_outer ? SHAPE_BIT_VALLEY : uint16_t{0}) |
+        (sim_armed_valley ? SHAPE_BIT_VALLEY : uint16_t{0}) |
         (sim_armed_flat ? SHAPE_BIT_FLATNESS : uint16_t{0}) |
         (sim_armed_sym ? SHAPE_BIT_SYMMETRY : uint16_t{0}) |
         (sim_armed_kurt ? SHAPE_BIT_KURTOSIS : uint16_t{0}));
@@ -3518,7 +3612,7 @@ bool DroneScanner::apply_shape_filters(
     // ---- Thresholds needed INSIDE the fused loop (loop-invariant) ----
     uint8_t secondary_threshold = 0;  // Step 9 ridge bar  = noise + margin/2
     uint8_t required_dip = 0;         // Step 9 dual-peak dip = max(margin/6, 2)
-    if (valley_outer) {
+    if (sim_armed_valley) {
         // Saturate to 255: peak_margin/2 (0-127) added to noise_floor
         // (0-255) can overflow uint8 (e.g. 255 + 60 -> 59 without this),
         // which would lower the dual-peak bypass bar and misroute wideband
@@ -3598,7 +3692,7 @@ bool DroneScanner::apply_shape_filters(
     bool in_run = false;
     bool cur_has_peak = false;
 
-    const bool need_fuse = sim_armed_sharp || valley_outer || sim_armed_flat;
+    const bool need_fuse = sim_armed_sharp || sim_armed_valley || sim_armed_flat;
     if (need_fuse) {
         for (size_t i = left; i <= right; ++i) {
             // DC gap TERMINATES a run (hard measurement boundary, same as
@@ -3607,7 +3701,7 @@ bool DroneScanner::apply_shape_filters(
             // first. close_run() touches ONLY Step-9 state, which 7/10 never
             // read — so the fused order is exact.
             if (has_dc_gap && i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) {
-                if (valley_outer && in_run) {
+                if (sim_armed_valley && in_run) {
                     in_run = false;
                     if (!cur_has_peak) {
                         ++extra_runs;
@@ -3623,7 +3717,7 @@ bool DroneScanner::apply_shape_filters(
                 ++margin_count;
             }
 
-            if (valley_outer) {
+            if (sim_armed_valley) {
                 if (v >= secondary_threshold) {
                     if (!in_run) {
                         in_run = true;
@@ -3665,7 +3759,7 @@ bool DroneScanner::apply_shape_filters(
             // skipped bin `left`/peak entirely (audit D7 — up to 1/width soft).
             if (sim_armed_flat && v >= high_power_threshold) ++high_power_count;
         }
-        if (valley_outer && in_run && !cur_has_peak) {
+        if (sim_armed_valley && in_run && !cur_has_peak) {
             ++extra_runs;
             if (cur_run > extra_widest) extra_widest = cur_run;
         }
@@ -3729,7 +3823,11 @@ bool DroneScanner::apply_shape_filters(
     // (margin/3 + 1) — near the gate valley effectively abstains, at full
     // stringency it is exactly the user D — weak-signal geometry stays
     // protected without a binary bypass.
-    if (valley_outer) {
+    // D-ARM ext. 2026-10: guarded by sim_armed_valley (outer conditions
+    // AND the noise+limit <= 255 capability term — see the arming block),
+    // so an unreachable-limit frame never enters this block, never takes
+    // a score seat and never pays the probe cost.
+    if (sim_armed_valley) {
         // FIX B5 (narrow dual-peak skip): the old "any bin above half-peak"
         // test was satisfied by dozens of bins of a WiFi flat-top, so valley
         // NEVER rejected flat-tops while claiming to. Count ridges above the
@@ -3815,11 +3913,14 @@ bool DroneScanner::apply_shape_filters(
             // SENS eased limit (max-polarity): D + (margin/3 + 1)·
             // (10000 − w²)/10000 — at w = 100 it is exactly the user D
             // (OFF byte-identical). uint16: D ≤ 200 + ceiling ≤ 86 → 286.
-            // PRECISE REACH (audit D-W0): the "+ ceiling" term only bounds
-            // the FIRST probe bin (the Step-4 walk guarantees
-            // data[left−1] − noise ≤ margin/3 − 1). The remaining
-            // VALLEY_PROBE_MAX_BINS−1 bins sit OUTSIDE the walk and are
-            // NOT bounded by margin/3, so at w = 0 the limit is NOT
+            // Shared author (eased_valley_limit): the Step-9
+            // INFORMATIVE-ARMING capability term consumes the SAME formula
+            // (audit D-ARM ext. 2026-10), so the arming test and the chain
+            // cannot drift. PRECISE REACH (audit D-W0): the "+ ceiling"
+            // term only bounds the FIRST probe bin (the Step-4 walk
+            // guarantees data[left−1] − noise ≤ margin/3 − 1). The
+            // remaining VALLEY_PROBE_MAX_BINS−1 bins sit OUTSIDE the walk
+            // and are NOT bounded by margin/3, so at w = 0 the limit is NOT
             // "above every measurable flank": elevated terrain within the
             // 6-bin window (a plateau or second lobe one notch beyond an
             // edge dip) can still exceed it and reject. The
@@ -3827,21 +3928,24 @@ bool DroneScanner::apply_shape_filters(
             // at exactly w == 0, so the reachable w=0 case is really
             // 0 < w < 100 where the limit is already ≥ D.
             const uint16_t valley_limit =
-                static_cast<uint16_t>(config_.spectrum_valley_depth) +
-                static_cast<uint16_t>(
-                    (static_cast<uint32_t>(peak_margin / 3u + 1u) *
-                     (10000u - w2)) / 10000u);
+                eased_valley_limit(config_.spectrum_valley_depth, peak_margin, w2);
             ok = (max_valley < valley_limit);
         }
-        // ABSTENTION MODEL — TWO KINDS COEXIST BY DESIGN, and they must not
-        // be "unified" by a future auditor:
+        // ABSTENTION MODEL — THREE KINDS COEXIST BY DESIGN, and they must
+        // not be "unified" by a future auditor:
         //
-        //  (a) very_strong  => valley_outer == false => the step is UNARMED.
+        //  (a) very_strong => valley_outer == false => the step is UNARMED.
         //      It contributes nothing to sim_armed (denominator) and nothing
         //      to sim_pass (numerator): a fully NEUTRAL abstention.
         //  (b) has_secondary_peak => armed, ridge scan RAN, but the veto was
         //      deliberately withheld. The bit lands in BOTH sim_armed and
         //      sim_pass, i.e. it counts as AGREEMENT and pulls the score UP.
+        //  (c) noise_floor + eased_valley_limit() > 255 (D-ARM ext. 2026-10,
+        //      regime (3)) => sim_armed_valley == false even when
+        //      valley_outer is true: max_valley is structurally bounded by
+        //      255 − noise_floor, so ok ≡ true and the step would have been
+        //      a permanent always-pass seat. Kind (c) is a fully NEUTRAL
+        //      abstention, identical to (a) — the block above never runs.
         //
         // (b) is correct rather than accidental: the dual-peak skip is a
         // POSITIVE FPV identification ("exactly one narrow extra ridge with a
@@ -3924,9 +4028,14 @@ bool DroneScanner::apply_shape_filters(
         const size_t min_side = (left_width < right_width) ? left_width : right_width;
         const uint8_t sym_pct =
             static_cast<uint8_t>((min_side * 100) / max_side);
-        // SENS eased limit (min-polarity): user·w²/10000 — small w => 0 => abstain.
-        const uint8_t sym_limit = static_cast<uint8_t>(
-            (static_cast<uint32_t>(config_.spectrum_symmetry) * w2) / 10000u);
+        // SENS eased limit (min-polarity): user·w²/10000 — small w eases
+        // the bar toward 0. A truncated-to-0 limit can never reject
+        // (sym_pct >= 0 is vacuous), so the arming already excludes it
+        // (D-ARM ext. regime (4)): entering this block implies limit >= 1.
+        // Shared author (eased_sym_limit): the Step-11 INFORMATIVE-ARMING
+        // capability term consumes the SAME formula (audit D-ARM ext.
+        // 2026-10), so the arming test and the chain cannot drift.
+        const uint8_t sym_limit = eased_sym_limit(config_.spectrum_symmetry, w2);
         const bool ok = (sym_pct >= sym_limit);
         if (ok) verdict.sim_pass |= SHAPE_BIT_SYMMETRY;
         if (!sens_parallel && !ok) return false;

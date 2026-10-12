@@ -1044,7 +1044,29 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
       (1) Sharpness в D5 dead-band 51..100 (avg включает peak ⇒
           sharpness >= 100 на каждом кадре, лимит <= 100 ничего не
           отклоняет — audit D5);
-      (2) Flatness = 100 (flatness_pct > 100 недостижимо — no-op).
+      (2) Flatness = 100 (flatness_pct > 100 недостижимо — no-op);
+      (3) Valley с НЕДОСТИЖИМЫМ лимитом (D-ARM ext. 2026-10): margin'ы
+          проб — это data[i] − noise_floor при data[i] <= 255 (uint8),
+          т.е. max_valley структурно ограничен сверху 255 − noise_floor.
+          Когда noise_floor + eased_valley_limit(D, margin, w2) > 255 даже
+          бин на верху шкалы не дотягивает до лимита: ok ≡ true на КАЖДОМ
+          кадре — фантомное ALWAYS-PASS место (режим «высокий шум +
+          глубокая D», напр. D = 70 при noise > 185 на w = 100; шире под
+          w-easing). Формула вынесена в eased_valley_limit() (scanner.cpp,
+          единый автор арминга и Step-9 — паттерн shared author M3 rev. 2);
+      (4) Symmetry с ОБРЕЗАННЫМ ДО НУЛЯ лимитом (D-ARM ext. 2026-10):
+          sym_limit = user·w²/10000 обрезается до 0 при user·w² < 10000
+          (напр. Y = 50 при w <= 14), и ok = (sym_pct >= 0) становится
+          вакуумно истинным для ЛЮБОЙ геометрии. Вооружение требует
+          eased_sym_limit(user, w2) > 0 (shared author: eased_sym_limit()).
+    У KURTOSIS capability-термина НАМЕРЕННО НЕТ (доказательство отсутствия
+    — не «чинить»): kurtosis_x10 = избыточная куртозис×10
+    (spectral_kurtosis.hpp) опускается до ≈ −30 (платикуртические
+    плосковершины ОТРИЦАТЕЛЬНЫ, гауссово шум ≈ 0), а settings-кламп
+    (0..200) и w-easing держат kurt_limit >= 0 в КАЖДОМ вооружённом
+    режиме — включая обрезанную до 0 полосу, где ok = (kurtosis_x10 >= 0)
+    является РЕАЛЬНЫМ «отклонить плосковершину», а не вакуумным pass'ом.
+    Любой достижимый лимит структурно нарушаем.
     При СТАРОМ дефолте 50 («большинство или ничья») такой фантомный PASS
     размывал любой РЕАЛЬНЫЙ отказ: {Sharp(100, инертный PASS),
     Flat(45, честный FAIL)} = 1 из 2 = 50% => ПРОХОД — включение Flat
