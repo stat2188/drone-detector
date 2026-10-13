@@ -2,6 +2,7 @@
 #include <cstring>
 #include <array>
 #include <new>
+#include <cstdio>
 
 #include "ch.h"
 

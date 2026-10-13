@@ -477,6 +477,7 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , lock_start_time_{0}
     , confirm_start_time_{0}
     , spectrum_sort_buf_{}
+    , envelope_buf_{}
     , lock_timeout_count_{0}
     , sweep_usable_buf_{}
     , alert_callback_in_progress_()
@@ -2524,10 +2525,16 @@ bool DroneScanner::analyze_spectrum_shape_impl(
     int32_t total_gain,
     SignalExtent* out_extent,
     bool reject_edge_clipped,
-    ShapeVerdict* out_verdict
+    ShapeVerdict* out_verdict,
+    const uint8_t* shape_data
 ) noexcept {
+    // shape_data == nullptr → legacy raw path (byte-for-byte). Non-null →
+    // the opt-in spatial envelope (config_.spectrum_envelope_enabled), whose
+    // monotone-raising property means the Step-3 margin (derived from the RAW
+    // raw_peak the caller measured) can only widen the walk, never tighten it.
+    const uint8_t* data = (shape_data != nullptr) ? shape_data : spectrum.db.data();
     return apply_shape_filters(
-        spectrum.db.data(), peak_index, raw_peak, noise_floor, width_floor,
+        data, peak_index, raw_peak, noise_floor, width_floor,
         out_rssi, edge_skip, /*has_dc_gap=*/true, total_gain,
         out_extent, reject_edge_clipped, out_verdict);
 }
@@ -2567,6 +2574,24 @@ bool DroneScanner::analyze_spectrum_shape_multi(
     update_auto_gate(spectrum, FFT_EDGE_SKIP, noise_floor);
 
     const int32_t total_gain = get_current_total_gain();
+
+    // SPATIAL ENVELOPE (opt-in, config_.spectrum_envelope_enabled).
+    // Computed ONCE per frame over the two sidebands (DC gap never bridged).
+    // shape_data selects it for the crest TOPOLOGY test and the shape chain's
+    // width-walk / extent / valley / flatness / symmetry / kurtosis. The
+    // envelope is monotone-RAISING (env[i] >= raw[i]), so it can only fill
+    // one-bin notches on a jagged slope — it never lowers a peak, never
+    // shrinks the Step-3 margin (still measured on RAW below), and never
+    // moves a crest's frequency. When the flag is OFF this is a no-op and
+    // shape_data == raw — the legacy path, byte-for-byte.
+    // Stack: ~8 bytes (pointer). SRAM: envelope_buf_ = 256 B (class member).
+    if (config_.spectrum_envelope_enabled) {
+        compute_envelope_frame(spectrum.db.data(), envelope_buf_,
+                               FFT_EDGE_SKIP, FFT_DC_SPIKE_START, FFT_DC_SPIKE_END);
+    }
+    const uint8_t* shape_data = config_.spectrum_envelope_enabled
+        ? static_cast<const uint8_t*>(envelope_buf_)
+        : spectrum.db.data();
 
     if (config_.cfar_mode != CFARMode::OFF) {
         // Find ALL CFAR-passing peaks (up to MAX_SHAPE_DETECTIONS)
@@ -2661,7 +2686,7 @@ bool DroneScanner::analyze_spectrum_shape_multi(
             // Stack: +4 bytes (one reused slot for the whole loop).
             ShapeVerdict shape_verdict{};
             if (apply_shape_filters(
-                    spectrum.db.data(), peak_bin, cfar_peaks[i].power,
+                    shape_data, peak_bin, cfar_peaks[i].power,
                     noise_floor, width_floor, peak_rssi, FFT_EDGE_SKIP,
                     /*has_dc_gap=*/true, total_gain,
                     &det_extent, /*reject_edge_clipped=*/false, &shape_verdict)) {
@@ -2740,7 +2765,7 @@ bool DroneScanner::analyze_spectrum_shape_multi(
                 const size_t hi = left_side
                     ? static_cast<size_t>(FFT_DC_SPIKE_START - 1)
                     : static_cast<size_t>(FFT_BIN_COUNT - FFT_EDGE_SKIP - 1);
-                if (!is_crest_bin(spectrum.db.data(), i, lo, hi)) continue;
+                if (!is_crest_bin(shape_data, i, lo, hi)) continue;
                 keep_strongest(candidates, cand_count, SimplePeak{i, spectrum.db[i]});
             }
         }
@@ -2802,7 +2827,7 @@ bool DroneScanner::analyze_spectrum_shape_multi(
             // above for why it must not be hoisted. Stack: +4 bytes (reused).
             ShapeVerdict shape_verdict{};
             if (apply_shape_filters(
-                    spectrum.db.data(), candidates[i].bin, candidates[i].power,
+                    shape_data, candidates[i].bin, candidates[i].power,
                     noise_floor, width_floor, peak_rssi, FFT_EDGE_SKIP,
                     /*has_dc_gap=*/true, total_gain,
                     &det_extent, /*reject_edge_clipped=*/false, &shape_verdict)) {
@@ -4494,6 +4519,26 @@ void DroneScanner::process_spectrum_sweep(
     const uint8_t collect_gate =
         config_.spectrum_detection_enabled ? cfg_margin : uint8_t{0};
 
+    // SPATIAL ENVELOPE (opt-in, config_.spectrum_envelope_enabled) — SWEEP
+    // parity with the DB path (analyze_spectrum_shape_multi). Computed ONCE
+    // per frame over the two narrow-edge sidebands (DC gap never bridged).
+    // shape_data below feeds the crest TOPOLOGY test and the shape chain via
+    // analyze_spectrum_shape_impl's shape_data parameter. Monotone-RAISING
+    // (env[i] >= raw[i]) ⇒ the collect_gate margin (still measured on RAW
+    // spectrum.db) can only admit more candidates, never fewer; RSSI /
+    // raw_peak / frequency stay on the RAW peak the collector measured.
+    // When the flag is OFF this is a no-op and shape_data == nullptr → the
+    // legacy raw path, byte-for-byte.
+    // Stack: ~8 bytes (pointer). SRAM: envelope_buf_ = 256 B (class member).
+    if (config_.spectrum_envelope_enabled) {
+        compute_envelope_frame(spectrum.db.data(), envelope_buf_,
+                               FFT_EDGE_SKIP_NARROW,
+                               FFT_DC_SPIKE_START, FFT_DC_SPIKE_END);
+    }
+    const uint8_t* shape_data = config_.spectrum_envelope_enabled
+        ? static_cast<const uint8_t*>(envelope_buf_)
+        : nullptr;
+
     // Frame-level median feed (Md+): once per frame, BEFORE any accept/reject
     // decision. Reset-per-step semantics unchanged (frequency-change gate at
     // the top of this function); the filter warms within one revisit dwell
@@ -4633,7 +4678,8 @@ void DroneScanner::process_spectrum_sweep(
             const int32_t bin_val = spectrum.db[i];
             const int32_t margin = bin_val - static_cast<int32_t>(noise_floor);
             if (margin >= static_cast<int32_t>(collect_gate)) {
-                if (!is_crest_bin(spectrum.db.data(), i,
+                if (!is_crest_bin(shape_data != nullptr ? shape_data : spectrum.db.data(),
+                                  i,
                                   FFT_EDGE_SKIP_NARROW,
                                   FFT_DC_SPIKE_START - 1)) {
                     continue;
@@ -4645,7 +4691,8 @@ void DroneScanner::process_spectrum_sweep(
             const int32_t bin_val = spectrum.db[i];
             const int32_t margin = bin_val - static_cast<int32_t>(noise_floor);
             if (margin >= static_cast<int32_t>(collect_gate)) {
-                if (!is_crest_bin(spectrum.db.data(), i,
+                if (!is_crest_bin(shape_data != nullptr ? shape_data : spectrum.db.data(),
+                                  i,
                                   FFT_DC_SPIKE_END,
                                   FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW - 1)) {
                     continue;
@@ -4793,7 +4840,8 @@ void DroneScanner::process_spectrum_sweep(
                     spectrum, peak_index, cfar_peaks[p].power,
                     noise_floor, width_floor, shape_rssi, FFT_EDGE_SKIP_NARROW,
                     total_gain,
-                    &det_extent, /*reject_edge_clipped=*/true)) {
+                    &det_extent, /*reject_edge_clipped=*/true,
+                    /*out_verdict=*/nullptr, shape_data)) {
                 // TBD-RESURRECTION GUARD (FIX): only peaks that cleared the
                 // Step 3 margin gate (cfg_margin == shape_gate_margin(),
                 // hoisted above) block TBD. Short-circuit order guards the

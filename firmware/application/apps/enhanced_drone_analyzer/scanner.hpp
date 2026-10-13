@@ -18,6 +18,7 @@
 #include "waterfall_history.hpp"
 #include "spectral_kurtosis.hpp"
 #include "adaptive_threshold.hpp"
+#include "spectrum_envelope.hpp"
 
 namespace drone_analyzer {
 
@@ -77,6 +78,18 @@ struct ScanConfig {
     bool noise_blacklist_enabled{true}; // Skip frequencies with persistent noise
     bool spectrum_detection_enabled{true}; // Detect drone signals by spectrum shape (U/V peaks)
     bool median_enabled{false};              // Median filter for RSSI spike rejection (OFF by default — opt-in)
+    // SPATIAL ENVELOPE (3-tap max-of-neighbours) for the SHAPE pipeline.
+    // When OFF (default): crest collection + apply_shape_filters read the RAW
+    //   bins byte-for-byte — the legacy path, unchanged.
+    // When ON: a monotone-RAISING envelope (dst[i] >= src[i], see
+    //   spectrum_envelope.hpp) is computed once per frame and fed to the crest
+    //   test and the shape chain's width-walk / emission-extent / valley /
+    //   flatness / symmetry / kurtosis. It fills ONE-bin notches on jagged
+    //   slopes (the "staircase" that spawns phantom crests and truncated peak
+    //   edges) but can never lower a peak, shrink the Step-3 margin, or move a
+    //   crest bin — so RSSI / frequency / waterfall stay on RAW. Field kill
+    //   switch: uncheck to A/B.
+    bool spectrum_envelope_enabled{false};   // Default OFF — opt-in spatial smoothing
     uint8_t spectrum_margin{DEFAULT_SPECTRUM_MARGIN};            // Peak margin above noise (5 ≈ 1 dB; CFAR + post-filters do FP rejection)
     uint8_t spectrum_min_width{DEFAULT_SPECTRUM_MIN_WIDTH};      // Min signal width in bins (rejects narrow noise spikes)
     uint8_t spectrum_max_width{DEFAULT_SPECTRUM_MAX_WIDTH};            // Max signal width (reject flat U/I shapes)
@@ -2254,6 +2267,12 @@ private:
      *        Sweep leaves it null: it has no Step-13 arming and no
      *        ShapeDetection to attach the score to, so a local instance
      *        would be state with no reader.
+     * @param shape_data Optional. When non-null, the shape chain reads THIS
+     *        buffer instead of spectrum.db (the opt-in spatial envelope,
+     *        config_.spectrum_envelope_enabled). Must be a 256-bin buffer
+     *        whose indices align with spectrum.db. nullptr = legacy raw path
+     *        (byte-for-byte). RSSI / raw_peak / frequency still derive from
+     *        the RAW peak the caller measured.
      * @return true if drone-like signal detected
      */
     [[nodiscard]] bool analyze_spectrum_shape_impl(
@@ -2267,7 +2286,8 @@ private:
         int32_t total_gain,
         SignalExtent* out_extent = nullptr,
         bool reject_edge_clipped = false,
-        ShapeVerdict* out_verdict = nullptr
+        ShapeVerdict* out_verdict = nullptr,
+        const uint8_t* shape_data = nullptr
     ) noexcept;
 
     // ------------------------------------------------------------------------
@@ -2831,6 +2851,16 @@ private:
     // the shape chain has finished reading it (same thread, sequential).
     static constexpr size_t SPECTRUM_SORT_BUF_SIZE = 256;
     mutable uint8_t spectrum_sort_buf_[SPECTRUM_SORT_BUF_SIZE];
+
+    // SPATIAL ENVELOPE scratch (opt-in, config_.spectrum_envelope_enabled).
+    // Holds the 3-tap max-of-neighbours envelope of the current frame's 256
+    // bins. Written once per frame at the top of process_spectrum_message /
+    // process_spectrum_sweep; read by the crest test and apply_shape_filters
+    // ONLY when the flag is ON. When OFF this buffer is never touched and the
+    // legacy raw path runs byte-for-byte. Same sequential same-thread scratch
+    // contract as spectrum_sort_buf_ (no cross-thread sharing).
+    // SRAM: 256 bytes (class member, not stack). Flash: 0.
+    uint8_t envelope_buf_[256];
 
     // Lock timeout violation counter (for monitoring and debugging)
     uint32_t lock_timeout_count_{0};

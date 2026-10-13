@@ -1,6 +1,7 @@
 #include <cstdint>
 #include <cstring>
 #include <string_view>
+#include <cstdio>
 
 #include "drone_sweep_view.hpp"
 #include "drone_settings.hpp"
