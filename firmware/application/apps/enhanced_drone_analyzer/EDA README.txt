@@ -509,7 +509,7 @@ The EDA follows the standard Mayhem UI pattern:
     └── Status bar                       — state + DB count
 
   DroneSettingsView (inherits ui::View)
-    ├── ~40 UI widgets (NumberField, Checkbox, OptionsField)
+    ├── ~40 UI widgets (NumberField, Checkbox, CfarModeSelector)
     ├── SpectrumPreviewWidget            — live filter preview
     ├── Threat threshold ladder          — normalize_threat_ladder()
     └── Save/Defaults/About buttons
@@ -519,7 +519,7 @@ The EDA follows the standard Mayhem UI pattern:
     │   ├── Start/End NumberFields
     │   ├── Enabled Checkbox
     │   └── 5×2 Det-Win NumberFields (From/To, MHz)
-    ├── OptionsField window_select_      — switch window 1-4
+    ├── StaticOptionsSelector window_select_ — switch window 1-4 (zero-heap)
     └── Save/Defaults buttons
 
 Widget Update Pattern:
@@ -1324,6 +1324,32 @@ Stack-Heavy Functions (monitored):
   absorb_from()                — ~128 bytes (merged[12])
   refresh_ui()                 — uses BSS for refresh_drones_[]
   DroneSettingsView ctor       — ~480B (all widgets in class)
+
+Heap (deliberately NOT budgeted above — measure it, do not guess it):
+  Application heap = _end .. __ram_end__ (LPC43xx_M0.ld): whatever the
+  64 KB AHB SRAM at 0x20000000 has left after .stacks + .data + .bss.
+  Read the live figures from System -> Debug -> Memory (ui_debug.cpp:
+  core free / heap free / fragment count) with EDA open on each tab.
+  WARNING: __ram_end__ (0x20010000) overlaps the M4's usb_bulk_buffer
+  (LPC43xx_M4.ld ram_usb = 0x20008000 + 32K). Harmless while SD-over-USB
+  is idle, but any heap block handed out inside that range would be
+  corrupted by the M4's SCSI DMA. Check _end in the map file before
+  growing .bss.
+
+OOM pre-flight (guard against the "Out of Memory" HardFault):
+  operator new() calls chDbgPanic("Out of Memory") when chHeapAlloc()
+  returns NULL (common/chibios_cpp.cpp), which surfaces as a HardFault in
+  release builds. Every EDA push site is therefore screened with
+  NavigationView::can_push<T>() BEFORE any irreversible state change
+  (unregister_handlers / exit_sweep_mode / scanner thread stop):
+    drone_scanner_ui.cpp   Load, Set, SWP buttons
+    drone_settings.cpp     Error and About modals
+    drone_sweep_view.cpp   frequency keypad (before spectrum_streaming_stop)
+  A declined push shows show_alert("Low memory: ...") instead of crashing.
+  can_push<T>(extra) = sizeof(T) + NavigationView::PUSH_HEAP_RESERVE
+  (2048 B for the view's own Labels/selector vectors) + extra. It compares
+  against TOTAL free bytes, so it is a budget check, not a fragmentation
+  proof — see chHeapStatus() in ui_debug.cpp for the fragment count.
 
 ================================================================================
 19. ERROR HANDLING STRATEGY

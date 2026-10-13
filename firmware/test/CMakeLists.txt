@@ -25,6 +25,7 @@ set(DOCTESTINC ${PROJECT_SOURCE_DIR}/include)
 enable_testing()
 add_subdirectory(application)
 add_subdirectory(baseband)
+add_subdirectory(enhanced_drone_analyzer)
 
 add_custom_target(build_tests)
-add_dependencies(build_tests application_test baseband_test)
+add_dependencies(build_tests application_test baseband_test enhanced_drone_analyzer_test)

@@ -111,15 +111,81 @@ private:
 };
 
 /**
+ * @brief Zero-heap selector over a Flash-resident string table
+ *
+ * Second generation of the RangeNameSelector pattern: the option NAMES are
+ * `const char*` literals (Flash, zero copy, resolved at paint time) instead of
+ * a std::vector<std::pair<std::string,int32_t>>. Value space IS the index
+ * space, which is what both remaining ui::OptionsField users in this view
+ * (window selector, R1..R5 slot selector) actually need.
+ *
+ * Replaces the last heap dependencies of the SWP tab: each OptionsField cost
+ * one vector allocation in its constructor plus a transient one per
+ * set_options() — exactly the allocation class that starved the SWP keypad
+ * before commit 23bc0a40.
+ *
+ * @note API mirrors ui::OptionsField (on_change(size_t, int32_t),
+ *       set_selected_index(), set_by_value(), value()) so the existing wiring
+ *       compiles unchanged.
+ * @note Heap: 0 B. SRAM: ~20 B (member of the owning view). Flash: name table.
+ * @note UI-thread only — same contract as every other selector widget here.
+ */
+class StaticOptionsSelector : public ui::Widget {
+public:
+    using value_t = int32_t;
+
+    std::function<void(size_t, value_t)> on_change{};
+
+    StaticOptionsSelector(
+        ui::Point parent_pos, size_t length,
+        const char* const* names, size_t count) noexcept
+        : ui::Widget{{parent_pos, {8 * static_cast<int>(length), 16}}},
+          length_{length},
+          names_{names},
+          count_{count} {
+        set_focusable(true);
+    }
+
+    StaticOptionsSelector(const StaticOptionsSelector&) = delete;
+    StaticOptionsSelector& operator=(const StaticOptionsSelector&) = delete;
+
+    [[nodiscard]] value_t value() const noexcept {
+        return static_cast<value_t>(selected_index_);
+    }
+
+    [[nodiscard]] size_t selected_index() const noexcept {
+        return selected_index_;
+    }
+
+    void set_selected_index(size_t new_index, bool trigger_change = true) noexcept;
+    void set_by_value(value_t v) noexcept;
+
+    void paint(ui::Painter& painter) override;
+    bool on_encoder(const ui::EncoderEvent delta) override;
+    bool on_keyboard(const ui::KeyboardEvent key) override;
+    bool on_touch(const ui::TouchEvent event) override;
+    void on_focus() override;
+    void on_blur() override;
+
+private:
+    const size_t length_;
+    const char* const* names_;
+    const size_t count_;
+    size_t selected_index_{0};
+};
+
+/**
  * @brief Single-window sweep configuration view (reuses widgets for all 4 windows)
  * @note Contains Start/End + Enabled + 5 detection ranges (From/To) for ONE
  *       window. DroneSweepView switches the data pointer to show different
  *       windows. (The sweep center pitch is auto-derived for gapless coverage —
  *       SweepWindow::init() ignores step_freq. See SWEEP_GAPLESS_STEP_MAX_HZ.)
- * @note SRAM: ~900 bytes heap (24 widgets × ~32 bytes each + labels
- *       + 1 OptionsField + RangeNameSelector). The range-label selector is
- *       zero-heap (Flash strings) — it replaced a second OptionsField whose
- *       options vector cost >1 KB of heap at the current RANGE_NAMES size.
+ * @note SRAM: ~900 bytes of members (24 widgets × ~32 bytes each + labels
+ *       + 2 selectors). Both selectors here (slot, name) are zero-heap
+ *       Flash-string types — they replaced the ui::OptionsFields whose option
+ *       vectors were built on the heap at every view construction. The only
+ *       heap left in this view is the three ui::Labels vectors, allocated once
+ *       in the constructor and never re-sized (entry count is fixed).
  */
 class SweepWindowView : public ui::View {
 public:
@@ -271,17 +337,17 @@ public:
         {{UI_POS_X(0), UI_POS_Y(8)}, "Range:", Color::white()},
         {{UI_POS_X(0), UI_POS_Y(9)}, "Name:", Color::white()},
     };
-    ui::OptionsField field_label_slot_{
+    // Zero-heap selector: the R1..R5 names are Flash literals, so no
+    // std::vector<std::pair<std::string,int32_t>> is built for this field
+    // any more (the OptionsField here cost one vector allocation per
+    // SweepWindowView construction — the last one in this class).
+    static constexpr const char* slot_names_[DETECTION_WINDOWS_PER_WINDOW] = {
+        "R1", "R2", "R3", "R4", "R5"};
+    StaticOptionsSelector field_label_slot_{
         {UI_POS_X(7), UI_POS_Y(8)},
         4,
-        {
-            {"R1", 0},
-            {"R2", 1},
-            {"R3", 2},
-            {"R4", 3},
-            {"R5", 4},
-        }
-    };
+        slot_names_,
+        DETECTION_WINDOWS_PER_WINDOW};
     // Zero-heap selector: draws the label straight from the Flash-resident
     // RANGE_NAMES table — no options vector, no std::string (saves >1 KB
     // of heap vs an OptionsField over the full RANGE_NAMES table; that
@@ -293,7 +359,8 @@ public:
 /**
  * @brief Sweep settings view — accessible via SWP button
  * @note Uses a SINGLE SweepWindowView that swaps data for each window.
- *       A window selector (OptionsField) switches which window is displayed.
+ *       A window selector (StaticOptionsSelector, zero-heap) switches which
+ *       window is displayed.
  *       Total SRAM: ~1,260B (SweepWindowView ~800B + WindowData[4] 448B + UI ~10B)
  *       vs old design: ~4,800B (2 group views ~2,400B each + TabView + buttons)
  */
@@ -325,17 +392,17 @@ private:
     // Single reusable view (~480 bytes) — bound to windows_[selected]
     SweepWindowView sweep_view_;
 
-    // Window selector — positioned above "-- Window --" label
-    ui::OptionsField field_window_select_{
+    // Window selector — positioned above "-- Window --" label.
+    // Zero-heap: the four names are Flash literals, so opening the SWP tab no
+    // longer allocates an OptionsField options vector (see
+    // StaticOptionsSelector for the full rationale).
+    static constexpr const char* window_names_[NUM_WINDOWS] = {
+        "Win 1", "Win 2", "Win 3", "Win 4"};
+    StaticOptionsSelector field_window_select_{
         {UI_POS_X(0), UI_POS_Y(1)},
         5,
-        {
-            {"Win 1", 0},
-            {"Win 2", 1},
-            {"Win 3", 2},
-            {"Win 4", 3},
-        }
-    };
+        window_names_,
+        NUM_WINDOWS};
 
     // Buttons — row 8, directly below the detection-window grid: Down from the
     // bottom row (dw4 / Enabled) lands on them in one predictable step instead
