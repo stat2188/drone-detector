@@ -21,6 +21,7 @@
  * the Free Software Foundation, Inc., 51 Franklin Street,
  * Boston, MA 02110-1301, USA.
  * Заебали эти разработчики Mayhem не могут кучу поделить между вкладками 
+ * Hamster 2188
  */
 
 #ifndef __UI_NAVIGATION_H__
