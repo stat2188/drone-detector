@@ -1,6 +1,5 @@
 #include <cstdint>
 #include <cstring>
-#include <string_view>
 #include <cstdio>
 
 #include "drone_sweep_view.hpp"
@@ -115,92 +114,6 @@ void RangeNameSelector::paint(ui::Painter& painter) {
     painter.draw_string(
         screen_pos(), paint_style,
         range_name_to_string(static_cast<uint8_t>(selected_index_)));
-}
-
-// ============================================================================
-// StaticOptionsSelector — zero-heap replacement for the two remaining
-// ui::OptionsField instances in this file (window selector, R1..R5 slot)
-// ============================================================================
-// Same contract as RangeNameSelector above: the option names are Flash
-// string literals, resolved through std::string_view at paint time
-// (Painter::draw_string takes string_view → no temporary std::string, no
-// heap). Replaces one std::vector allocation per OptionsField construction
-// plus the transient one inside set_options().
-// Heap: 0 B. SRAM: ~20 B. Flash: the name table only.
-
-void StaticOptionsSelector::set_selected_index(
-    const size_t new_index, const bool trigger_change) noexcept {
-    if (count_ == 0 || new_index >= count_) return;
-    const bool changed = (new_index != selected_index_);
-    selected_index_ = new_index;
-    if (trigger_change && on_change) {
-        on_change(selected_index_, static_cast<int32_t>(selected_index_));
-    }
-    if (changed) set_dirty();
-}
-
-void StaticOptionsSelector::set_by_value(const value_t v) noexcept {
-    // Value space IS the index space: names_[i] <-> i.
-    set_selected_index(
-        (v >= 0 && static_cast<size_t>(v) < count_)
-            ? static_cast<size_t>(v) : 0U);
-}
-
-bool StaticOptionsSelector::on_encoder(const ui::EncoderEvent delta) {
-    // Wrap in both directions (parity with ui::OptionsField::on_encoder).
-    if (count_ == 0) return false;
-    int32_t new_value = static_cast<int32_t>(selected_index_) + delta;
-    if (new_value < 0) {
-        new_value = static_cast<int32_t>(count_) - 1;
-    } else if (static_cast<size_t>(new_value) >= count_) {
-        new_value = 0;
-    }
-    set_selected_index(static_cast<size_t>(new_value));
-    return true;
-}
-
-bool StaticOptionsSelector::on_keyboard(const ui::KeyboardEvent key) {
-    // Parity with ui::OptionsField::on_keyboard.
-    if (key == '+' || key == ' ' || key == 10) return on_encoder(1);
-    if (key == '-' || key == 8) return on_encoder(-1);
-    return false;
-}
-
-bool StaticOptionsSelector::on_touch(const ui::TouchEvent event) {
-    // Parity with ui::OptionsField::on_touch: tap = focus only, the value is
-    // edited with the encoder.
-    if (event.type == ui::TouchEvent::Type::Start) {
-        focus();
-    }
-    return true;
-}
-
-void StaticOptionsSelector::on_focus() {
-    set_dirty();  // repaint with the focused (inverted) style
-}
-
-void StaticOptionsSelector::on_blur() {
-    set_dirty();  // repaint without the focused style
-}
-
-void StaticOptionsSelector::paint(ui::Painter& painter) {
-    const auto paint_style = has_focus() ? style().invert() : style();
-
-    // Dark background box erases the previous (possibly longer) label —
-    // mirrors ui::OptionsField::paint().
-    painter.fill_rectangle(
-        {screen_rect().location(), {static_cast<ui::Dim>(length_ * 8), 16}},
-        Theme::getInstance()->bg_darkest->background);
-
-    if (names_ == nullptr || count_ == 0 || names_[selected_index_] == nullptr) return;
-
-    // Name lives in Flash (string literal) — zero heap, zero copy
-    // (Painter::draw_string takes std::string_view). Truncated to the field
-    // width exactly like ui::OptionsField::paint() does, so a longer name can
-    // never bleed into the neighbouring widget.
-    std::string_view text{names_[selected_index_]};
-    if (text.length() > length_) text = text.substr(0, length_);
-    painter.draw_string(screen_pos(), paint_style, text);
 }
 
 // ============================================================================
@@ -336,11 +249,6 @@ static void open_freq_keypad_push(
     SweepFieldID field_id,
     FreqHz initial_hz,
     SweepWindowView& host) noexcept {
-    // OOM pre-flight — first statement: FrequencyKeypadView is a heap push like
-    // any other, and a failed one panics in operator new() ("Out of Memory").
-    // Declining BEFORE spectrum_streaming_stop() leaves the RF path untouched,
-    // so the user simply stays on the field they were editing.
-    if (!nav.can_push<FrequencyKeypadView>(512)) return;
     baseband::spectrum_streaming_stop();
     auto* new_view = nav.push<FrequencyKeypadView>(
         static_cast<rf::Frequency>(initial_hz));

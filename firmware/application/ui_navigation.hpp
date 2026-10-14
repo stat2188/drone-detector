@@ -27,7 +27,6 @@
 #ifndef __UI_NAVIGATION_H__
 #define __UI_NAVIGATION_H__
 
-#include <cstddef>
 #include <vector>
 #include <map>
 #include <utility>
@@ -113,30 +112,6 @@ class NavigationView : public View {
     T* push(Args&&... args) {
         return reinterpret_cast<T*>(push_view(std::unique_ptr<View>(new T(*this, std::forward<Args>(args)...))));
     }
-
-    /* Bytes of heap kept in reserve for the allocations a view constructor
-     * performs for its own children (ui::Labels vectors, ui::OptionsField
-     * option tables, std::function closures > 8 B). Sized for the largest
-     * known child-widget set in the firmware (~2 KB); callers that know their
-     * view allocates more (file listing vectors, modal string bodies) pass the
-     * extra amount to can_push(). */
-    static constexpr size_t PUSH_HEAP_RESERVE = 2048;
-
-    /* Pre-flight check for push<T>(): operator new() panics with
-     * "Out of Memory" when chHeapAlloc() returns NULL (common/chibios_cpp.cpp),
-     * and that panic surfaces as a HardFault in release builds. A view that is
-     * about to be pushed on top of an already loaded screen must therefore be
-     * screened BEFORE the caller performs irreversible state changes (message
-     * handler unregistration, scanner thread stop, sweep mode exit).
-     * Note: chHeapStatus() reports total free bytes, not the largest free
-     * block — this is a budget check, not a guarantee against fragmentation. */
-    template <class T>
-    bool can_push(const size_t ctor_heap_bytes = 0) const {
-        return has_heap_for(sizeof(T) + PUSH_HEAP_RESERVE + ctor_heap_bytes);
-    }
-
-    /* True when at least `bytes` are free on the default heap. */
-    bool has_heap_for(size_t bytes) const;
 
     template <class T, class... Args>
     T* replace(Args&&... args) {

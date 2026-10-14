@@ -574,13 +574,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             // temporary literal here would double the per-open cost.
             static const std::string k_invalid_settings_msg{
                 "Invalid settings.\nCheck min<=max\nand valid ranges."};
-            // OOM pre-flight: ModalMessageView copies title_ + message_ into
-            // std::string members, so the push is a heap allocation like any
-            // other — if it fails, operator new() panics. Declining is silent
-            // (this view has no zero-heap banner) but keeps the firmware alive.
-            if (nav_.can_push<ModalMessageView>()) {
-                nav_.display_modal("Error", k_invalid_settings_msg);
-            }
+            nav_.display_modal("Error", k_invalid_settings_msg);
             return;
         }
         settings_dirty_ = false;  // committed — destructor re-commit skipped
@@ -609,11 +603,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             "TQQqcs8V-V28Bf2AGvl8xOc5HR\n"
             "Telegram: @max_ai_master\n"
             "TM PowerHamster2188"};
-        // OOM pre-flight (message body ≈ 190 B → one non-SSO std::string
-        // allocation on top of the view itself).
-        if (nav_.can_push<ModalMessageView>(256)) {
-            nav_.display_modal("About", k_about_msg);
-        }
+        nav_.display_modal("About", k_about_msg);
     };
 
     // Median filter toggle (spike rejection on RSSI samples)

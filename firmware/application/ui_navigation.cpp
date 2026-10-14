@@ -22,8 +22,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "ch.h"
-
 #include "ui_navigation.hpp"
 
 #include "event_m0.hpp"
@@ -618,12 +616,6 @@ bool NavigationView::is_top() const {
 
 bool NavigationView::is_valid() const {
     return view_stack.size() != 0;  // work around to check if nav is valid, not elegant i know. so TODO
-}
-
-bool NavigationView::has_heap_for(const size_t bytes) const {
-    size_t free_bytes = 0;
-    (void)chHeapStatus(nullptr, &free_bytes);
-    return free_bytes >= bytes;
 }
 
 View* NavigationView::push_view(std::unique_ptr<View> new_view) {

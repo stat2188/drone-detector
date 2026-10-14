@@ -456,16 +456,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     };
 
     button_load_.on_select = [this](ui::Button&) {
-        // OOM pre-flight — MUST be the first statement: the Load path mutates
-        // scanner state (exit_sweep_mode) before it pushes, so a late failure
-        // would leave sweep mode half-torn-down. FileLoadView builds a
-        // std::vector<std::filesystem::path> of the directory listing on top of
-        // the view itself (~64 B per entry), so the budget needs 4 KB more than
-        // the object.
-        if (!nav_.can_push<FileLoadView>(4096)) {
-            show_alert("Low memory: no Load", 3000);
-            return;
-        }
         // Always clean up sweep mode before pushing sub-view
         if (composite_active_) {
             exit_sweep_mode(true);
@@ -559,16 +549,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
-        // OOM pre-flight: operator new() inside nav_.push() panics with
-        // "Out of Memory" (HardFault in release builds). The check runs BEFORE
-        // unregister_handlers() / exit_sweep_mode() / scanner stop, because
-        // those mutations have no unwind path if the push is declined.
-        // DroneSettingsView's two ui::Labels groups (10 + 12 entries ≈ 700 B of
-        // vector heap) are covered by NavigationView::PUSH_HEAP_RESERVE.
-        if (!nav_.can_push<DroneSettingsView>()) {
-            show_alert("Low memory: no Set", 3000);
-            return;
-        }
         // CRITICAL: Unregister message handlers BEFORE pushing sub-view.
         // Both views register handlers for ChannelSpectrumConfig / DisplayFrameSync.
         // Without explicit unregister, MessageHandlerMap hits chDbgPanic("MsgDblReg").
@@ -614,13 +594,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     button_swp_.on_select = [this](ui::Button&) {
         if (initialization_failed_ || scanner_ptr_ == nullptr) {
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
-            return;
-        }
-        // OOM pre-flight — same contract as the Set button: sized for
-        // DroneSweepView (WindowData[4] + SweepWindowView widgets ≈ 2 KB of
-        // members) plus its Labels vectors, covered by PUSH_HEAP_RESERVE.
-        if (!nav_.can_push<DroneSweepView>()) {
-            show_alert("Low memory: no SWP", 3000);
             return;
         }
         // CRITICAL: Unregister message handlers BEFORE pushing sub-view.
