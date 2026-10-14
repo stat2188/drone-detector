@@ -510,8 +510,11 @@ private:
     static constexpr uint8_t DIRTY_ALL       = 0x0F;
     // Incremental spectrum sub-flags (sweep composite only).
     // DIRTY_SPEC        — full spectrum repaint (mode/layout/title change).
-    // DIRTY_SPEC_DATA   — composite data changed → per-column diff redraw.
-    // DIRTY_SPEC_MARKER — scan head moved → 2 column writes only.
+    // DIRTY_SPEC_DATA   — composite data changed → FULL band repaint (the
+    //                     white envelope line has a cross-column dependency,
+    //                     so a per-column diff would leave it stale; see
+    //                     render_composite_partial_band).
+    // DIRTY_SPEC_MARKER — scan head moved → 2 column writes only (data unchanged).
     static constexpr uint8_t DIRTY_SPEC_DATA   = 1 << 4;
     static constexpr uint8_t DIRTY_SPEC_MARKER = 1 << 5;
     static constexpr uint8_t DIRTY_SPEC_ANY =
@@ -595,7 +598,8 @@ private:
     ) noexcept;
 
     /**
-     * @brief Per-band incremental render state (sweep composite).
+     * @brief Per-band render state (sweep composite): screen shadow + marker
+     *        tracking for the marker-only fast path (new data → full repaint).
      * @note shadow points into file-scope s_dd (BSS) — NOT owned, never freed.
      * @note last_* fields snapshot every screen-visible input; any mismatch
      *       forces a full band repaint (correctness over speed).
@@ -638,12 +642,18 @@ private:
     ) noexcept;
 
     /**
-     * @brief Incremental composite render of one band: redraw ONLY columns
-     *        whose rendered value changed since last paint (+ marker diff).
-     * @note Envelope state advances over ALL columns (mirrors full render
-     *       exactly — vertical connectors are column-local, so per-column
-     *       redraw is pixel-identical to a full repaint).
-     * @note Stack: ~40 B. Flash: ~500 B. Typical cost: 10-60 column writes.
+     * @brief Composite render of one band. New data → FULL repaint (delegates
+     *        to render_composite_full_band); unchanged data → marker-only
+     *        fast path (restore old marker column from shadow + draw new).
+     * @note Full repaint on data is mandatory, not an optimization choice: the
+     *       white envelope connector for transition (i-1 → i) is drawn AT
+     *       COLUMN i spanning [min(top[i-1],top[i]), max(...)] — a cross-column
+     *       dependency. A per-column value diff (p != shadow[i]) cannot detect
+     *       a top[i-1]-only change that moves pixels at column i, so the line
+     *       would go stale. The marker-only path is correct because data is
+     *       unchanged (no connector can be stale) and the old marker column is
+     *       fully restored from shadow.
+     * @note Stack: ~48 B. Flash: ~500 B. Marker-only cost: 1 column restore.
      */
     void render_composite_partial_band(
         Painter& painter, BandRenderCtx& band,

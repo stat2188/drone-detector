@@ -86,9 +86,10 @@ struct DisplayBuffers {
     uint8_t composite_sort[COMPOSITE_SIZE]{};
     uint8_t sweep2_persist[COMPOSITE_SIZE]{};
     uint8_t sweep2_sort[COMPOSITE_SIZE]{};
-    // Incremental-render shadows: rendered (post noise-floor) value per column
-    // currently ON SCREEN for each sweep band. Authoritative screen copy —
-    // rebuilt by full render, diffed by incremental render.
+    // Render shadows: rendered (post noise-floor) value per column currently
+    // ON SCREEN for each sweep band. Authoritative screen copy — rebuilt by
+    // full render; used by the marker-only fast path to restore the old
+    // marker column (new data always forces a full repaint).
     // SRAM: +480 B BSS (no heap, no stack).
     uint8_t composite_rendered[COMPOSITE_SIZE]{};
     uint8_t sweep2_rendered[COMPOSITE_SIZE]{};
@@ -1039,7 +1040,9 @@ void DroneDisplay::set_composite_data(const uint8_t* data, size_t size) noexcept
 
     composite_data_ = s_dd.composite_persist;
     composite_data_size_ = copy_n;
-    // Data changed → incremental per-column diff redraw (NOT a full repaint).
+    // Data changed → FULL band repaint (the white envelope line is a
+    // cross-column construct; a per-column diff would leave it stale — see
+    // render_composite_partial_band).
     dirty_flags_ |= DIRTY_SPEC_DATA;
     set_dirty();
 }
@@ -1129,8 +1132,9 @@ void DroneDisplay::update_noise_floor() noexcept {
         sweep2_noise_floor_valid_ = true;
     }
     // Noise floor is auto-detected in render_composite_partial_band() via
-    // last_noise_floor: if it changed → automatic full band repaint; if it is
-    // unchanged (common between passes) → cheap incremental data diff only.
+    // last_noise_floor: if it changed → automatic full band repaint (need_full).
+    // New composite data always triggers a full repaint regardless (envelope
+    // cross-column dependency), so there is no "cheap data diff" path anymore.
     dirty_flags_ |= DIRTY_SPEC_DATA;
     set_dirty();
 }
@@ -1385,24 +1389,48 @@ void DroneDisplay::render_composite_partial_band(
         || band.last_threshold != min_color_power_
         || band.last_title_start != title_start
         || band.last_title_end != title_end;
-    if (need_full) {
+
+    // Data changed → FULL band repaint (never patch the white line column-wise).
+    //
+    // Math — why an incremental per-column diff cannot keep the envelope line
+    // correct: draw_bar_with_envelope() draws the connector for the transition
+    // (i-1 → i) AT COLUMN i, spanning [min(top[i-1],top[i]), max(...)]:
+    //
+    //     connector(i) = f(top[i-1], top[i])   // cross-column dependency
+    //
+    // The incremental diff below is keyed on `p != band.shadow[i]` — column i's
+    // OWN post-noise-floor power. If top[i-1] moves while top[i] stays equal to
+    // shadow[i], column i is not selected for redraw, yet the connector pixels
+    // AT COLUMN i must move. That delta is invisible to a per-column value
+    // diff, so the white line goes stale exactly when a neighbour's top shifts.
+    // (This was the "envelope line doesn't update" defect.) The only correct
+    // response to new data is a full repaint of the band, which recomputes
+    // every connector from the true tops.
+    if (need_full || data_changed) {
         render_composite_full_band(painter, band, composite_data, composite_size,
                                    start_x, start_y, width, height,
                                    scan_head, noise_floor, title_start, title_end);
         return;
     }
 
-    // Old marker column must be restored from shadow (the white line is on
-    // screen, but shadow holds the true data pixels for that column).
+    // ---- Marker-only fast path (data unchanged since last full paint) ----
+    // Old marker column must be restored from shadow (the white marker line is
+    // on screen, but shadow holds the true data pixels for that column). The
+    // marker is a full-height white line, so it also covers the connector at
+    // its own column; that column is fully restored here. The NEW marker column
+    // intentionally covers its own connector (marker draws on top) and will be
+    // restored the next time the marker leaves it. Data is unchanged, so no
+    // other connector on screen can be stale.
     const int16_t restore_col =
         (band.marker_on_screen != scan_head) ? band.marker_on_screen : -1;
 
     const uint8_t display_threshold = min_color_power_;
 
     // White envelope state — advanced over EVERY column (unchanged ones too),
-    // exactly mirroring the full-render loop in draw_bar_with_envelope().
-    // Vertical connectors are drawn at their own column X, so a per-column
-    // redraw is pixel-identical to a full repaint. Stack: ~6 bytes.
+    // exactly mirroring the full-render loop in draw_bar_with_envelope(), so the
+    // restored marker column redraws pixel-identical to a full repaint.
+    // (Only reachable for the single restore column: data_changed returned above.)
+    // Stack: ~6 bytes.
     const uint16_t envelope_y0 = static_cast<uint16_t>(chart_start_y + chart_height);
     EnvelopeState env{envelope_y0, false, 0};
 
@@ -1605,7 +1633,8 @@ void DroneDisplay::set_sweep2_data(const uint8_t* data, size_t size) noexcept {
 
     sweep2_data_ = s_dd.sweep2_persist;
     sweep2_data_size_ = copy_n;
-    // Data changed → incremental per-column diff redraw (NOT a full repaint).
+    // Data changed → FULL band repaint (white envelope line is cross-column;
+    // see render_composite_partial_band).
     dirty_flags_ |= DIRTY_SPEC_DATA;
     set_dirty();
 }
