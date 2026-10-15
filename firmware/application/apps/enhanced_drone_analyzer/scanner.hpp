@@ -433,6 +433,61 @@ void keep_strongest(PeakT (&peaks)[K], size_t& count, const PeakT& cand) noexcep
 }
 
 /**
+ * @brief Refine an envelope-crest bin to the RAW-power apex of its plateau.
+ * @details The 3-tap max envelope (spectrum_envelope.hpp) turns a spike or a
+ *          filled one-bin notch into a full-height plateau [p,p,...,p];
+ *          is_crest_bin's ge_left && gt_right rule (strict on the right) then
+ *          anchors the crest at the plateau TAIL, whose raw power may sit
+ *          below the collection gate (emission loss) or understate the
+ *          emission's power/frequency (attribution error). This helper walks
+ *          the equal-envelope-level run around `crest` and returns the bin
+ *          with maximum RAW power — the true apex — so frequency and power
+ *          attribution stay on the measured peak.
+ * @param raw Raw 256-bin spectrum (read-only, MUST NOT alias env).
+ * @param env Envelope buffer (read-only).
+ * @param crest Envelope-crest bin (must lie in [lo, hi]).
+ * @param lo First usable bin of the sideband (inclusive).
+ * @param hi Last usable bin of the sideband (inclusive).
+ * @return Bin index of the raw apex inside the plateau (== crest when the
+ *         crest already is the apex — clean symmetric peaks, zero cost).
+ * @note Called ONLY from the FIXED-THRESHOLD collection when
+ *       config_.spectrum_envelope_enabled is ON (env active). CFAR paths do
+ *       not need it: they pick the RAW peak bin themselves and run the chain
+ *       on the envelope from that index.
+ * @note Stack: ~16 bytes (3 indices + 2 registers). Flash: ~64 bytes
+ *       (inlined). No float, no allocation. Worst case O(sideband) on a
+ *       perfectly flat plateau — bounded by 118 bins (DB) / 114 (sweep).
+ */
+[[nodiscard]] inline size_t refine_crest_to_raw_apex(
+    const uint8_t* raw,
+    const uint8_t* env,
+    size_t crest,
+    size_t lo,
+    size_t hi) noexcept {
+    if (raw == nullptr || env == nullptr || crest < lo || crest > hi) {
+        return crest;
+    }
+
+    const uint8_t level = env[crest];
+    size_t best = crest;
+    uint8_t best_raw = raw[crest];
+
+    for (size_t i = crest; i > lo && env[i - 1] == level; --i) {
+        if (raw[i - 1] > best_raw) {
+            best_raw = raw[i - 1];
+            best = i - 1;
+        }
+    }
+    for (size_t i = crest; i < hi && env[i + 1] == level; ++i) {
+        if (raw[i + 1] > best_raw) {
+            best_raw = raw[i + 1];
+            best = i + 1;
+        }
+    }
+    return best;
+}
+
+/**
  * @brief CFAR (Constant False Alarm Rate) detector
  * @note Adapts detection threshold to local noise level
  * @note Supports CA-CFAR, GO-CFAR, SO-CFAR, and Hybrid modes

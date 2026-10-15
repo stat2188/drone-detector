@@ -105,6 +105,17 @@ struct SettingsStruct {
     // the key and load the default (ON).
     bool robust_width_floor_enabled{true};
 
+    // Spatial envelope kill switch (default OFF — opt-in staircase fix) —
+    // mirrors ScanConfig::spectrum_envelope_enabled. When ON, a 3-tap
+    // max-of-neighbours envelope (spectrum_envelope.hpp) is fed to the crest
+    // topology test and the shape chain, filling one-bin notches on jagged
+    // slopes so phantom crests and truncated peak edges stop spawning false
+    // detections inside one physical emission. When OFF, the raw bins are
+    // read byte-for-byte (legacy path). UI: "Env" checkbox. Old settings
+    // files lack the key and load the default (OFF — field behavior
+    // unchanged until the user opts in).
+    bool spectrum_envelope_enabled{false};
+
     // Advanced detection — persisted for round-trip but NOT exposed in the
     // settings UI (file-only opt-in; defaults preserve previous behavior)
     bool kurtosis_enabled{false};        // Shape-filter step 12 (default OFF)

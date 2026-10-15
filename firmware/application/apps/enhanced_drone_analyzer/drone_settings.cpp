@@ -303,6 +303,13 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     // visibility block: set_shape_filter_visibility() already gates RbF
     // with the rest of the shape section (spectrum_detection_enabled).
     , check_robust_width_floor_({UI_POS_X(16), UI_POS_Y(7)}, 4, "RbF", true)
+    // Spatial envelope toggle (staircase fix, DEFAULT OFF — "Env"). Row 7
+    // right of RbF: RbF ends at X(16)+48 = 176, Env at X(23) = 184..232
+    // with the layout's usual 8 px gutter, within the 240 px edge —
+    // disjoint from every other rect on the row (focus geometry rule).
+    // Same visibility block: set_shape_filter_visibility() gates Env with
+    // the rest of the shape section (spectrum_detection_enabled).
+    , check_spectrum_envelope_({UI_POS_X(23), UI_POS_Y(7)}, 4, "Env", false)
     , check_median_enabled_({UI_POS_X(15), UI_POS_Y(8)}, 4, "Md+", true)
     // Threat shelf fields: length 4 — the range includes 4-glyph values
     // ("-120"); a 3-char field would paint outside its rect and leave stale
@@ -368,6 +375,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &button_save_,
         &check_shape_bypass_,
         &check_robust_width_floor_,
+        &check_spectrum_envelope_,
         &check_median_enabled_,
         &field_cfar_mode_,
         &field_cfar_ref_cells_,
@@ -627,6 +635,15 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         settings_dirty_ = true;
     };
 
+    // Spatial envelope toggle (staircase fix, default OFF). Check = the
+    // 3-tap max-of-neighbours envelope feeds the crest topology test and the
+    // shape chain (fills one-bin notches on jagged slopes); uncheck = the
+    // legacy raw path, byte-for-byte.
+    check_spectrum_envelope_.on_select = [this](ui::Checkbox&, bool v) {
+        settings_.spectrum_envelope_enabled = v;
+        settings_dirty_ = true;
+    };
+
     // CFAR callbacks
     field_cfar_mode_.on_change = [this](size_t, int32_t v) {
         settings_.cfar_mode = static_cast<CFARMode>(v);
@@ -817,6 +834,7 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     check_rssi_variance_.set_value(settings_.rssi_variance_enabled);
     check_shape_bypass_.set_value(settings_.shape_bypass_enabled);
     check_robust_width_floor_.set_value(settings_.robust_width_floor_enabled);
+    check_spectrum_envelope_.set_value(settings_.spectrum_envelope_enabled);
     check_median_enabled_.set_value(settings_.median_enabled);
     check_mahalanobis_.set_value(settings_.mahalanobis_enabled);
     field_mahalanobis_threshold_.set_value(static_cast<int32_t>(settings_.mahalanobis_threshold_x10));
@@ -882,6 +900,7 @@ void DroneSettingsView::set_shape_filter_visibility(bool visible) noexcept {
     field_spectrum_symmetry_.hidden(!visible);
     check_shape_bypass_.hidden(!visible);
     check_robust_width_floor_.hidden(!visible);
+    check_spectrum_envelope_.hidden(!visible);
     check_median_enabled_.hidden(!visible);
     // CFAR fields are also gated by spectrum detection
     field_cfar_mode_.hidden(!visible);

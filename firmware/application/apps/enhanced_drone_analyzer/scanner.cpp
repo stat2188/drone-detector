@@ -2749,10 +2749,25 @@ bool DroneScanner::analyze_spectrum_shape_multi(
         size_t cand_count = 0;
 
         const uint8_t gate = shape_gate_margin();
+        // GATE DOMAIN (envelope audit fix A): when the opt-in spatial envelope
+        // is active, gate on the ENVELOPE value — env[i] >= raw[i] by
+        // construction, so this admits a SUPERSET of raw-gated bins at the
+        // surviving (envelope) crest positions: the "never fewer candidates"
+        // invariant now holds END-TO-END, not just inside apply_shape_filters.
+        // The is_crest_bin topology test below still removes the jagged-slope
+        // phantoms — that is the envelope's purpose. Envelope OFF:
+        // shape_data == spectrum.db.data(), so shape_data[i] is byte-identical
+        // to the legacy spectrum.db[i] gate.
+        // ATRIBUTION (envelope audit fix B): a filled notch / widened spike is
+        // a full-height plateau in the envelope; is_crest_bin anchors the
+        // crest at the plateau TAIL whose raw power may understate the peak.
+        // refine_crest_to_raw_apex() walks the plateau and returns the RAW
+        // apex, so frequency and power stay on the measured peak. OFF path:
+        // the helper is skipped, apex == i — byte-identical to legacy.
         for (size_t i = FFT_EDGE_SKIP; i < FFT_BIN_COUNT - FFT_EDGE_SKIP; ++i) {
             if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-            const int32_t margin =
-                static_cast<int32_t>(spectrum.db[i]) - static_cast<int32_t>(noise_floor);
+            const int32_t gate_power = static_cast<int32_t>(shape_data[i]);
+            const int32_t margin = gate_power - static_cast<int32_t>(noise_floor);
             // margin > 0 preserves the old "max_val <= noise_floor → nothing"
             // semantics even if a pathological gate==0 config ever exists.
             if (margin > 0 && margin >= static_cast<int32_t>(gate)) {
@@ -2766,7 +2781,11 @@ bool DroneScanner::analyze_spectrum_shape_multi(
                     ? static_cast<size_t>(FFT_DC_SPIKE_START - 1)
                     : static_cast<size_t>(FFT_BIN_COUNT - FFT_EDGE_SKIP - 1);
                 if (!is_crest_bin(shape_data, i, lo, hi)) continue;
-                keep_strongest(candidates, cand_count, SimplePeak{i, spectrum.db[i]});
+                const size_t apex = config_.spectrum_envelope_enabled
+                    ? refine_crest_to_raw_apex(spectrum.db.data(), shape_data, i, lo, hi)
+                    : i;
+                keep_strongest(candidates, cand_count,
+                               SimplePeak{apex, spectrum.db[apex]});
             }
         }
 
@@ -4674,30 +4693,52 @@ void DroneScanner::process_spectrum_sweep(
         SimplePeak candidates[MAX_SWEEP_PEAKS * 2]{};
         size_t cand_count = 0;
 
+        // GATE DOMAIN (envelope audit fix A) + ATRIBUTION (envelope audit
+        // fix B) — sweep parity with the DB fixed-threshold collection: when
+        // the opt-in envelope is active (shape_data != nullptr) the gate is
+        // measured on the ENVELOPE value (env[i] >= raw[i] ⇒ superset of
+        // raw-gated candidates at envelope crests — the "never fewer"
+        // invariant holds end-to-end) and the stored candidate is refined to
+        // the RAW apex of the envelope plateau (exact frequency + power).
+        // Envelope OFF (shape_data == nullptr): gate and apex are the legacy
+        // raw values — byte-identical.
+        const uint8_t* raw_sp = spectrum.db.data();
         for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_DC_SPIKE_START; ++i) {
-            const int32_t bin_val = spectrum.db[i];
-            const int32_t margin = bin_val - static_cast<int32_t>(noise_floor);
+            constexpr size_t LO = FFT_EDGE_SKIP_NARROW;
+            constexpr size_t HI = FFT_DC_SPIKE_START - 1;
+            const int32_t gate_power = (shape_data != nullptr)
+                ? static_cast<int32_t>(shape_data[i])
+                : static_cast<int32_t>(raw_sp[i]);
+            const int32_t margin = gate_power - static_cast<int32_t>(noise_floor);
             if (margin >= static_cast<int32_t>(collect_gate)) {
-                if (!is_crest_bin(shape_data != nullptr ? shape_data : spectrum.db.data(),
-                                  i,
-                                  FFT_EDGE_SKIP_NARROW,
-                                  FFT_DC_SPIKE_START - 1)) {
+                if (!is_crest_bin(shape_data != nullptr ? shape_data : raw_sp,
+                                  i, LO, HI)) {
                     continue;
                 }
-                keep_strongest(candidates, cand_count, SimplePeak{i, spectrum.db[i]});
+                const size_t apex = (shape_data != nullptr)
+                    ? refine_crest_to_raw_apex(raw_sp, shape_data, i, LO, HI)
+                    : i;
+                keep_strongest(candidates, cand_count,
+                               SimplePeak{apex, raw_sp[apex]});
             }
         }
         for (size_t i = FFT_DC_SPIKE_END; i < (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW); ++i) {
-            const int32_t bin_val = spectrum.db[i];
-            const int32_t margin = bin_val - static_cast<int32_t>(noise_floor);
+            constexpr size_t LO = FFT_DC_SPIKE_END;
+            constexpr size_t HI = FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW - 1;
+            const int32_t gate_power = (shape_data != nullptr)
+                ? static_cast<int32_t>(shape_data[i])
+                : static_cast<int32_t>(raw_sp[i]);
+            const int32_t margin = gate_power - static_cast<int32_t>(noise_floor);
             if (margin >= static_cast<int32_t>(collect_gate)) {
-                if (!is_crest_bin(shape_data != nullptr ? shape_data : spectrum.db.data(),
-                                  i,
-                                  FFT_DC_SPIKE_END,
-                                  FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW - 1)) {
+                if (!is_crest_bin(shape_data != nullptr ? shape_data : raw_sp,
+                                  i, LO, HI)) {
                     continue;
                 }
-                keep_strongest(candidates, cand_count, SimplePeak{i, spectrum.db[i]});
+                const size_t apex = (shape_data != nullptr)
+                    ? refine_crest_to_raw_apex(raw_sp, shape_data, i, LO, HI)
+                    : i;
+                keep_strongest(candidates, cand_count,
+                               SimplePeak{apex, raw_sp[apex]});
             }
         }
 

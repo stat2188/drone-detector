@@ -59,6 +59,7 @@ SettingsStruct::SettingsStruct() noexcept
     , shape_sim_threshold_pct(DEFAULT_SHAPE_SIM_THRESHOLD_PCT)
     , shape_bypass_enabled(false)
     , robust_width_floor_enabled(true)
+    , spectrum_envelope_enabled(false)
     , kurtosis_enabled(false)
     , kurtosis_min_x10(20)
     , adaptive_cfar_enabled(false)
@@ -442,6 +443,10 @@ static void parse_settings_line(
         // Audit fix W1 kill switch. MISSING KEY (old settings files) keeps
         // the in-struct default ON — the fix stays active after an upgrade.
         s.robust_width_floor_enabled = parse_bool();
+    } else if (key_matches("spectrum_envelope_enabled")) {
+        // Envelope kill switch. MISSING KEY (old settings files) keeps the
+        // in-struct default OFF — legacy behavior until the user opts in.
+        s.spectrum_envelope_enabled = parse_bool();
 
     // --- Advanced detection (file-only opt-in, not in the settings UI) ---
     } else if (key_matches("kurtosis_enabled")) {
@@ -782,6 +787,9 @@ ErrorCode SettingsFileManager::save(
     // Robust width-anchor floor (audit fix W1, default ON — RbF checkbox)
     wbool(file, "robust_width_floor_enabled", s.robust_width_floor_enabled);
 
+    // Spatial envelope (staircase fix, default OFF — Env checkbox)
+    wbool(file, "spectrum_envelope_enabled", s.spectrum_envelope_enabled);
+
     // Advanced detection (file-only opt-in, not in the settings UI)
     wbool(file, "kurtosis_enabled", s.kurtosis_enabled);
     wl(file, "kurtosis_min_x10", static_cast<int64_t>(s.kurtosis_min_x10));
@@ -838,6 +846,9 @@ void SettingsFileManager::apply_to_config(
 
     // Robust width-anchor floor (audit fix W1, default ON)
     config.robust_width_floor_enabled = s.robust_width_floor_enabled;
+
+    // Spatial envelope (staircase fix, default OFF)
+    config.spectrum_envelope_enabled = s.spectrum_envelope_enabled;
 
     // Advanced detection
     config.kurtosis_enabled = s.kurtosis_enabled;
@@ -1009,6 +1020,9 @@ void SettingsFileManager::extract_from_config(
 
     // Robust width-anchor floor (audit fix W1, default ON)
     s.robust_width_floor_enabled = config.robust_width_floor_enabled;
+
+    // Spatial envelope (staircase fix, default OFF)
+    s.spectrum_envelope_enabled = config.spectrum_envelope_enabled;
 
     // Advanced detection
     s.kurtosis_enabled = config.kurtosis_enabled;

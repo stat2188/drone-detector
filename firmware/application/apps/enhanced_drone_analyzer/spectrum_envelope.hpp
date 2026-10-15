@@ -27,8 +27,11 @@ namespace drone_analyzer {
  * INVARIANTS (relied on by the scanner):
  *  - MONOTONE-RAISING: dst[i] >= src[i] for every i. A margin gate measured on
  *    the envelope is always >= the same gate on raw => no peak can be lost.
- *  - NOTCH-ONLY: a valley of width >= 2 bins keeps its floor (dst uses only the
- *    3-tap window), so two genuinely separate emitters are never merged.
+ *  - NOTCH-ONLY: a valley of width >= 3 bins keeps its floor (dst uses only the
+ *    3-tap window; a width-2 valley IS filled — [H,L,L,H] -> [H,H,H,H]), so
+ *    two genuinely separate emitters >= 3 bins (~234 kHz) apart are never
+ *    merged. Sub-3-bin nulls are the documented smoothing cost (default
+ *    Valley=0 makes this a no-op at shipped settings).
  *  - SEGMENT-LOCAL: the caller invokes this once per sideband; it never reads
  *    across the DC-spike gap or the window edge, so bin indices, the DC
  *    boundary and all frequency mappings stay valid.

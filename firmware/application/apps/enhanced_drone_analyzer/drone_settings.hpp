@@ -157,6 +157,12 @@ private:
     // uncheck to restore the legacy p25 width anchor for A/B field tests)
     ui::Checkbox check_robust_width_floor_;
 
+    // Spatial envelope toggle (staircase fix, default OFF — "Env";
+    // 3-tap max-of-neighbours fed to the shape chain — fills one-bin notches
+    // on jagged slopes so phantom crests stop spawning false detections
+    // inside one physical emission; uncheck = legacy raw path)
+    ui::Checkbox check_spectrum_envelope_;
+
     // Median filter toggle
     ui::Checkbox check_median_enabled_;
 
