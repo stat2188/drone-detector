@@ -415,6 +415,12 @@ private:
     // handler_storage_ is explicitly sized to sizeof(HandlerStorage) — guaranteed safe.
     // Prevents DBLREG hard fault via placement new at runtime.
     static_assert(sizeof(HandlerStorage) <= 256, "HandlerStorage unexpectedly large (>256 bytes)");
+    // Coupling pin: the drain cap and the retune-budget clamp are derived from
+    // SWEEP_CHANNEL_FIFO_DEPTH in constants.hpp — if the M0 FIFO ever changes
+    // size (fifo_k), fail the build here instead of silently under-dropping
+    // stale frames (mixed-frequency leak) or over-dropping live ones.
+    static_assert(SWEEP_CHANNEL_FIFO_DEPTH == (1u << ChannelSpectrumConfigMessage::fifo_k),
+        "SWEEP_CHANNEL_FIFO_DEPTH out of sync with ChannelSpectrumConfigMessage::fifo_k");
     alignas(alignof(HandlerStorage)) uint8_t handler_storage_[sizeof(HandlerStorage)];
     bool handlers_active_{false};
 

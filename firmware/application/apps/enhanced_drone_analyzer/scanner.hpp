@@ -1151,9 +1151,14 @@ public:
      *          persistent array — consumers must NOT assume drones[i] maps
      *          back to tracked_drones_[i] (evictions replace in place, so
      *          insertion order is not preserved).
-     *  @pre Caller holds DATA_MUTEX. Side effect: advances the trend hysteresis
-     *       on the persistent originals BEFORE copying (see get_movement_trend
-     *       hysteresis docs — evaluating on a copy would reset cached_trend_).
+     *  @pre  NONE — this function acquires DATA_MUTEX itself (blocking
+     *        MutexLock). NEVER call it while holding DATA_MUTEX: ChibiOS
+     *        mutexes are non-recursive and a caller honoring the old
+     *        "caller holds DATA_MUTEX" contract self-deadlocked (the
+     *        implementation has always locked internally — see scanner.cpp).
+     *        Side effect: advances the trend hysteresis on the persistent
+     *        originals BEFORE copying (see get_movement_trend hysteresis
+     *        docs — evaluating on a copy would reset cached_trend_).
      *  @note Stack: bool[MAX_TRACKED_DRONES] = 25 B + locals (<512 B cap).
      *        O(select_n x tracked_count_) <= 12 x 25 compares. No heap.
      */
@@ -1196,7 +1201,10 @@ public:
      *  @note The UI polls this on the 100 ms slow tick: when true the status
      *        row briefly shows "Evict", so a displacement that does not change
      *        tracked_count_ is still visible to the operator.
-     *  @pre Caller holds DATA_MUTEX (same lock as the tracker mutation paths).
+     *  @pre  NONE — this function acquires DATA_MUTEX itself (blocking
+     *        MutexLock at the top of the implementation). NEVER call it while
+     *        holding DATA_MUTEX (non-recursive → self-deadlock); the previous
+     *        "@pre Caller holds DATA_MUTEX" contract contradicted the code.
      *  @note Stack: 0 B, no heap.
      */
     [[nodiscard]] bool get_and_clear_eviction_pending() noexcept;
@@ -2905,11 +2913,16 @@ private:
     // sweep_signal_present_). MAX_SWEEP_WINDOWS = invalid ⇒ "never fed", so the
     // first sweep frame after a mode switch is evaluated with window_changed
     // true (harmless: freq_diff is then huge and the ordinary reset fires).
-    // Fires ONLY when window changed AND freq_diff <= SWEEP_FREQ_TOLERANCE_HZ —
-    // i.e. the per-window key claims "unchanged" while the shared buffer still
-    // holds ANOTHER window's frame. NEVER on a bare window change: that would
-    // reset median + waterfall on every visit and re-create the C2 multi-window
-    // regression. See the C3 WINDOW BARRIER block in process_spectrum_sweep().
+    // Fires on the FIRST frame after a window switch when that frame's center
+    // is within SWEEP_FREQ_TOLERANCE_HZ of this window's OWN key — i.e. the
+    // per-window key claims "unchanged" while the shared buffer still holds
+    // ANOTHER window's frame. It can NEVER fire mid-pass (this member is
+    // updated on that same first frame, so window_changed is false for every
+    // later frame of the pass) — the C2 per-window accumulation (drain bursts,
+    // first-slice dwell, single-window cross-pass history) is untouched.
+    // Equivalent full condition: reset iff (window_changed || freq_diff >
+    // tolerance). See the C3 WINDOW BARRIER block in process_spectrum_sweep()
+    // for the derivation.
     // Owned by process_spectrum_sweep() only; reset by reset_sweep_integrators()
     // and clear_lock_state(). SRAM: 1 B.
     uint8_t last_sweep_win_idx_{MAX_SWEEP_WINDOWS};

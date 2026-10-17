@@ -338,9 +338,10 @@ void DroneScannerUI::register_handlers() noexcept {
                             }
                         }
                         ++drained;
-                        // FIFO depth 4: 3 stale + 1 live max — but never leave
-                        // an armed budget unspent while frames are still queued.
-                        if (stale_budget == 0 && drained >= 3) break;
+                        // SWEEP_MAX_DRAIN_PER_TICK (= FIFO depth − 1): 3
+                        // stale + 1 live max — but never leave an armed
+                        // budget unspent while frames are still queued.
+                        if (stale_budget == 0 && drained >= SWEEP_MAX_DRAIN_PER_TICK) break;
                     }
                     if (stale_budget > 0) {
                         // BUDGET RE-ARM: the in-flight straddler may not have
@@ -2319,13 +2320,18 @@ void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) n
     //    straddler drop — one tick/slice, but still an "oldest == straddler"
     //    ASSUMPTION, which is what finally broke (see above).
     // Stack: 0 B. Flash: ~24 B. SRAM: 1 B (the armed counter).
-    // Defensive clamp BEFORE the narrowing cast: the FIFO depth is 4, so any
-    // value beyond that means something upstream is broken and we must still
-    // arm a sane, bounded counter (never a wrapped uint8_t).
+    // Defensive clamp BEFORE the narrowing cast: FIFO::in() refuses at
+    // is_full(), so len() <= SWEEP_CHANNEL_FIFO_DEPTH and pending <= depth + 1
+    // in ALL defined behavior — the clamp is unreachable on healthy input. It
+    // exists for broken upstream (torn/garbage len()): arm at most one full
+    // queue plus the in-flight straddler, never a wrapped uint8_t. The old
+    // literal 32 would have turned a broken len() into 32 dropped LIVE frames
+    // (~200 ms of dead air per retune); depth + 1 bounds that at 5.
     uint8_t budget = SWEEP_RETUNE_MIN_PENDING_FRAMES;
     if (spectrum_fifo_ != nullptr) {
+        constexpr size_t k_max_pending = static_cast<size_t>(SWEEP_CHANNEL_FIFO_DEPTH) + 1;
         const size_t pending = spectrum_fifo_->len() + 1;  // queued + straddler
-        budget = static_cast<uint8_t>((pending > 32) ? 32 : pending);
+        budget = static_cast<uint8_t>((pending > k_max_pending) ? k_max_pending : pending);
     }
     win.retune_pending_frames_ = budget;
     (void)prefix;

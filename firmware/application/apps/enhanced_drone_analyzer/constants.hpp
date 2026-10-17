@@ -942,6 +942,35 @@ constexpr uint16_t SWEEP_PERSISTENCE_DECAY_Q8 = 224;
 constexpr uint8_t SWEEP_RETUNE_MIN_PENDING_FRAMES = 1;
 
 /**
+ * @brief Physical depth of the channel spectrum FIFO in slots.
+ * @note SOURCE: ChannelSpectrumFIFO = FIFO<ChannelSpectrum> sized
+ *       `1 << ChannelSpectrumConfigMessage::fifo_k` (fifo_k = 2 → 4 slots;
+ *       FIFO::in() refuses at is_full(), so len() <= 4 by construction).
+ * @note Single source of truth for the drain-loop cap and the retune-budget
+ *       clamp in DroneScannerUI. The equation is pinned by a static_assert in
+ *       drone_scanner_ui.hpp: changing fifo_k breaks the BUILD, not the
+ *       stale-frame accounting.
+ * Flash: 1 B. SRAM: 0.
+ */
+constexpr uint8_t SWEEP_CHANNEL_FIFO_DEPTH = 4;
+
+/**
+ * @brief Max DRAINED frames consumed by one frame-sync tick in sweep mode
+ *        (the newest frame is popped separately into spectrum_buffer_ for
+ *        on_sweep_spectrum()).
+ * @note DEPTH − 1: three older frames land in spectrum_discard_, the fourth
+ *       pop hands the freshest capture to on_sweep_spectrum(). NOT applied
+ *       while a stale budget is armed — an armed retune_pending_frames_ is
+ *       always spent to zero first (the break is gated on
+ *       `stale_budget == 0`), so no pre-retune frame can slip past the cap.
+ * @note Sensitivity-neutral: identical to the historical literal `3` — one
+ *       tick still feeds up to 3 drained + 1 final = 4 detector charges,
+ *       exactly SWEEP_MAX_DETECTOR_LOOKS_PER_SLICE.
+ * Flash: 1 B. SRAM: 0.
+ */
+constexpr uint8_t SWEEP_MAX_DRAIN_PER_TICK = SWEEP_CHANNEL_FIFO_DEPTH - 1;
+
+/**
  * @brief Hard cap on detector integrations (process_spectrum_sweep calls) per
  *        (sweep window, slice center) per sweep pass.
  * @note DERIVATION (uniform false-alarm rate across the window): one handler

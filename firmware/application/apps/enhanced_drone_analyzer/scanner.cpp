@@ -4561,15 +4561,31 @@ void DroneScanner::process_spectrum_sweep(
     // Feeding it is harmless only when freq_diff > tolerance: the reset above
     // fires anyway.
     //
-    // NEVER fire this unconditionally on a window change: a single extra reset
-    // where the main condition already resets changes nothing, but where
-    // freq_diff <= tolerance it would destroy the very accumulation the
-    // per-window key exists for (median warm at 4, waterfall reaching
-    // TBD_MIN_FRAMES) — re-creating the C2 multi-window regression.
-    // Cross-pass accumulation for each window is untouched: on a normal wrap the
-    // window's own key has moved to its NEXT slice center, so freq_diff >
-    // tolerance, cross_window_stale is false, and only the pre-existing
-    // condition decides.
+    // WHY THE BARRIER IS QUALIFIED (not "fire on any window change" and not
+    // "never fire on a window change") — the full condition below reduces to
+    // (window_changed || freq_diff > tolerance), and BOTH arms are load-bearing:
+    //  - freq_diff > tolerance: this window's OWN center moved — the pre-C2
+    //    reset, unchanged.
+    //  - window_changed (the barrier term): fires ONLY on the FIRST frame of a
+    //    new window when its center is still within tolerance of that window's
+    //    OWN key — the one case where the per-window key claims "unchanged"
+    //    while the shared buffer actually holds the OTHER window's frame
+    //    (round-robin switches at pass completion — on that first frame the
+    //    shared integrators' most recent writes all belong to the OTHER
+    //    window: feeding them mixes foreign content into this window's
+    //    history, and the shared presence bit may already be set — a
+    //    phantom "return" with zero frames of this window seen yet).
+    //  - It CANNOT fire mid-pass: last_sweep_win_idx_ is updated on that same
+    //    first frame (below), so every subsequent frame of this window's pass
+    //    has window_changed == false. The C2 accumulation the per-window key
+    //    exists for (drain bursts + first-slice dwell at identical center →
+    //    freq_diff == 0 → no reset) is therefore untouched — single-window
+    //    sweep never has window_changed at all, so its cross-pass history is
+    //    bit-identical to pre-C3.
+    // A barrier term that ALSO fired when freq_diff > tolerance would be
+    // provably redundant (the main arm already resets); it adds resets exactly
+    // and only in the close-center window-switch case, where skipping the
+    // reset is the false-spike bug. Stack: 0 B.
     const bool window_changed = (win_idx != last_sweep_win_idx_);
     const bool cross_window_stale =
         window_changed && (freq_diff <= SWEEP_FREQ_TOLERANCE_HZ);
@@ -4577,9 +4593,22 @@ void DroneScanner::process_spectrum_sweep(
 
     if (freq_diff > SWEEP_FREQ_TOLERANCE_HZ || cross_window_stale) {
         rssi_median_filter_.reset();
-        // Reset temporal history on significant frequency change.
-        // Across passes at the same step, center_freq is identical → no reset
-        // → waterfall accumulates → TBD fires after 3 passes (~3-9 seconds).
+        // Reset temporal history on significant frequency change (median
+        // above resets with it). The slow integrators advance only BETWEEN
+        // resets:
+        //  - same-tick drain burst: up to 1 + SWEEP_MAX_DRAIN_PER_TICK = 4
+        //    feeds at one center per tick ≥ TBD_MIN_FRAMES (3) and median
+        //    warm (4) — the primary warm-up path;
+        //  - first-slice dwell frames (identical center across ticks);
+        //  - cross-pass revisits at the same step (|diff| ≤ tolerance),
+        //    valid only while the window's whole span from its first slice
+        //    fits in tolerance ((n−1)·step ≤ SWEEP_GAPLESS_STEP_MAX_HZ/2 =
+        //    4.41 MHz — true for EVERY 2-slice window: span = range/2 ≤
+        //    4.41): waterfall then accumulates → TBD fires after 3 passes
+        //    (~3-9 s). A wide window at the max gapless pitch (step 8.83 >
+        //    4.41) hops past tolerance on every slice move and re-clears
+        //    each pass — its warm-up is burst/dwell-only (one full burst
+        //    == warm).
         // NOTE: per-frequency RSSI smoothing (median, window 7, warm at 4)
         // likewise needs several revisit cycles per frequency, so both
         // median_enabled and sweep TBD are slow integrators on wide windows.
