@@ -309,7 +309,9 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     // disjoint from every other rect on the row (focus geometry rule).
     // Same visibility block: set_shape_filter_visibility() gates Env with
     // the rest of the shape section (spectrum_detection_enabled).
-    , check_spectrum_envelope_({UI_POS_X(23), UI_POS_Y(7)}, 4, "Env", false)
+    // small=true (16x16): the row geometry above assumes the small glyph;
+    // the former small=false (24x24) painted past the 240 px screen edge.
+    , check_spectrum_envelope_({UI_POS_X(23), UI_POS_Y(7)}, 4, "Env", true)
     , check_median_enabled_({UI_POS_X(15), UI_POS_Y(8)}, 4, "Md+", true)
     // Threat shelf fields: length 4 — the range includes 4-glyph values
     // ("-120"); a 3-char field would paint outside its rect and leave stale
