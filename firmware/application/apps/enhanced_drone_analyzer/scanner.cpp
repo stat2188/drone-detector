@@ -2432,6 +2432,10 @@ void DroneScanner::clear_lock_state() noexcept {
         last_sweep_freq_per_win_[i] = 0;
         last_hyst_freq_per_win_[i] = 0;
     }
+    // C3 barrier sentinel rides along with the keys: a lock clear must not
+    // leave a stale "window X last fed" behind, or the next ambiguous
+    // cross-window center could be evaluated against dead history.
+    last_sweep_win_idx_ = MAX_SWEEP_WINDOWS;
     if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
         state_ = ScannerState::SCANNING;
     }
@@ -2455,6 +2459,9 @@ void DroneScanner::reset_sweep_integrators() noexcept {
         last_sweep_freq_per_win_[i] = 0;
         last_hyst_freq_per_win_[i] = 0;
     }
+    // C3 barrier invalid ⇒ the first frame of the new mode forces the shared
+    // integrator rebuild (mirrors the per-window keys above being zeroed).
+    last_sweep_win_idx_ = MAX_SWEEP_WINDOWS;
 }
 
 size_t DroneScanner::get_tracked_count() const noexcept {
@@ -4534,7 +4541,41 @@ void DroneScanner::process_spectrum_sweep(
     const FreqHz freq_diff = (center_freq > last_win_freq)
         ? (center_freq - last_win_freq)
         : (last_win_freq - center_freq);
-    if (freq_diff > SWEEP_FREQ_TOLERANCE_HZ) {
+
+    // C3 WINDOW BARRIER — the shared integrators (rssi_median_filter_,
+    // waterfall_history_, sweep_signal_present_) are fed by EVERY window, but
+    // the reset decision above uses only THIS window's key. That key answers
+    // "has THIS window moved since ITS last frame?" — it says NOTHING about what
+    // is actually sitting in the shared buffer, which by then belongs to the
+    // OTHER window (the round-robin runs one full window pass at a time).
+    //
+    // The dangerous combination is therefore: window changed AND freq_diff <=
+    // tolerance. The per-window key then claims "unchanged" while the buffer
+    // really holds another window's frame, so the reset is silently skipped:
+    //   - two windows whose ranges abut/overlap and whose slice centers land
+    //     within SWEEP_FREQ_TOLERANCE_HZ (4.4 MHz) of each other — bin grids
+    //     offset by that amount, so a peak is accumulated into the wrong
+    //     history bin;
+    //   - a window with few slices, which returns to its own last key while the
+    //     other window's frames pushed in between.
+    // Feeding it is harmless only when freq_diff > tolerance: the reset above
+    // fires anyway.
+    //
+    // NEVER fire this unconditionally on a window change: a single extra reset
+    // where the main condition already resets changes nothing, but where
+    // freq_diff <= tolerance it would destroy the very accumulation the
+    // per-window key exists for (median warm at 4, waterfall reaching
+    // TBD_MIN_FRAMES) — re-creating the C2 multi-window regression.
+    // Cross-pass accumulation for each window is untouched: on a normal wrap the
+    // window's own key has moved to its NEXT slice center, so freq_diff >
+    // tolerance, cross_window_stale is false, and only the pre-existing
+    // condition decides.
+    const bool window_changed = (win_idx != last_sweep_win_idx_);
+    const bool cross_window_stale =
+        window_changed && (freq_diff <= SWEEP_FREQ_TOLERANCE_HZ);
+    if (window_changed) last_sweep_win_idx_ = win_idx;
+
+    if (freq_diff > SWEEP_FREQ_TOLERANCE_HZ || cross_window_stale) {
         rssi_median_filter_.reset();
         // Reset temporal history on significant frequency change.
         // Across passes at the same step, center_freq is identical → no reset
@@ -4555,8 +4596,10 @@ void DroneScanner::process_spectrum_sweep(
     // same step. NOTE: this writes ONLY sweep_signal_present_ — the
     // normal-mode signal_present_ is owned by process_spectrum_message() and
     // must never be touched here (cross-mode state leak).
+    // The C3 barrier applies equally: sweep_signal_present_ is a SINGLE shared
+    // bit, so a stale cross-window feed must clear it too.
     FreqHz& last_win_hyst = last_hyst_freq_per_win_[win_idx];
-    if (center_freq != last_win_hyst) {
+    if (center_freq != last_win_hyst || cross_window_stale) {
         sweep_signal_present_ = false;
         last_win_hyst = center_freq;
     }

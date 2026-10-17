@@ -135,7 +135,9 @@ ErrorCode HardwareController::tune_to_frequency(
     // retune straddler deterministically —
     //   - DB scan:  retune-straddle guard in on_channel_spectrum()
     //               (first frame observed after the tuned frequency changes),
-    //   - sweep:    settle_frames counter in SweepWindow::process_bins().
+    //   - sweep:    exact stale-frame budget armed in
+    //               DroneScannerUI::retune_sweep_window() (FIFO level + the
+    //               in-flight straddler), spent by the frame-sync handler.
     // MAX2837/RFFC5072 lock in ~200 µs — far below one frame period — so the
     // FIRST full frame starting after the retune is guaranteed clean, and the
     // settle guarantee is pinned to captured frames, not to wall time.

@@ -203,28 +203,96 @@ private:
         FreqHz bins_hz_acc{0};
         uint16_t pixel_index{0};
         uint8_t pixel_max{0};
-        // Post-retune settle state (armed by retune_sweep_window(), consumed
-        // by the frame-sync handler's sweep_post_retune_action() verdict):
-        // > 0 means "the next tick must be age-checked before any frame of it
-        // is processed". The NORMAL path clears it and drops only the oldest
-        // queued frame (the retune straddler); a YOUNG tick (message burst
-        // after a handler overrun) keeps it armed and discards the whole tick.
-        // process_bins()'s own decrement is a defense-in-depth fallback.
-        uint8_t settle_frames_remaining_{0};
+
+        // ---- RETUNE FRAME BUDGET (replaces the obsolete settle counter) ----
+        // Snapshot of `spectrum_fifo_->len()` taken atomically with the retune
+        // in retune_sweep_window(), PLUS one for the frame in flight inside the
+        // M0 at that instant (the retune straddler). Every frame already queued
+        // at the retune instant COMPLETED before it (FIFO pop order == capture
+        // completion order), so all of them — and only them — are stale.
+        //
+        // This replaces the age predicate (sweep_post_retune_action /
+        // SWEEP_CLEAN_FRAME_MS) plus the "oldest queued frame is the straddler"
+        // assumption. That assumption is FALSE whenever the UI handler spends
+        // more than one FFT frame period between its FIFO drain and the retune:
+        // every frame completing in that interval lands in the FIFO IN FRONT of
+        // the true straddler, so the old code dropped a fully-stale frame and
+        // then PROCESSED the mixed-frequency straddler as live. At a round-robin
+        // window switch (hundreds of MHz jump) that wrote the previous band's
+        // spectrum into the first pixels of the new window and fed it to the
+        // detector under the new window's f_min/f_max — the false spike and the
+        // false detection at the beginning of the window.
+        // SRAM: 1 byte/window.
+        uint8_t retune_pending_frames_{0};
+
+        // ---- DETECTOR LOOK BUDGET (window, center, per pass) ----
+        // Uniform false-alarm rate across the window: no (window, slice center)
+        // may receive more than SWEEP_MAX_DETECTOR_LOOKS_PER_SLICE calls to
+        // process_spectrum_sweep() per pass, regardless of FIFO drain depth,
+        // handler overrun, or the first-slice double dwell. Composite max-hold
+        // is NOT capped — display-only integration stays free.
+        // SRAM: 6 bytes/window (uint8 + FreqHz + uint8).
+        uint8_t detector_looks_{0};
+        FreqHz detector_look_center_{0};
+        uint8_t detector_look_win_{0};
+
         bool enabled{false};
-        // First-slice double-dwell latch (bottom-band sensitivity parity).
+        // First-slice double-dwell latch (bottom-band DISPLAY sensitivity).
         // The window's lowest ~10.6 MHz is covered by ONLY slice 0's upper
         // sideband (no neighbour slice exists below f_min), while every
-        // interior frequency is probed by TWO overlapping sidebands per pass
-        // — half the detector looks, half the TBD votes, and a 1-sample
-        // (not 2-sample) composite max-hold. Armed in on_sweep_spectrum():
-        // the first live tick on f_center_ini runs with progress credit as
-        // usual, then RETURNS without retuning; the next tick re-visits the
-        // same frequency with credit_progress=false (pacing unchanged,
-        // line_full/freq_covered semantics identical) but still feeds the
-        // detector — equalizing per-pass looks to match the interior.
-        // Cleared by reset() at every pass start. SRAM: 1 bit/window.
+        // interior frequency is probed by TWO overlapping sidebands per pass.
+        // Armed in on_sweep_spectrum(): the first live tick on f_center_ini
+        // runs with progress credit as usual, then RETURNS without retuning;
+        // the next tick re-visits the same frequency with credit_progress=false
+        // (pacing unchanged) and reinforces the composite max-hold.
+        // DETECTOR EFFECT: BOUNDED, not doubled — spend_detector_look() charges
+        // the SAME per-pass budget as every other slice, so the revisit is
+        // refused as soon as SWEEP_MAX_DETECTOR_LOOKS_PER_SLICE looks have
+        // accumulated at f_center_ini (the counter does not reset between the
+        // two ticks: same window, same center). Consequences, both directions:
+        //   - the bottom edge can never run ABOVE the uniform cap, so the dwell
+        //     cannot re-create a higher false-alarm rate there (WaterfallHistory
+        //     order statistics and TBD_MIN_FRAMES votes are monotone in the
+        //     per-pass frame count);
+        //   - it can never run BELOW an interior slice either: slice 0 receives
+        //     min(tick1 + tick2, cap) while an interior slice receives
+        //     min(tick1, cap) under identical FIFO conditions, so slice 0 is
+        //     always >= the interior — the dwell keeps its full DISPLAY benefit
+        //     (double composite max-hold at the only single-sideband edge)
+        //     at zero detector cost.
+        // Cleared by reset(). SRAM: 1 bit/window.
         bool first_slice_dwell_done_{false};
+
+        /**
+         * @brief Charge one detector integration against this (window, center)
+         *        slice's per-pass budget.
+         * @param win_idx Sweep window the frame belongs to (active_sweep_idx_).
+         * @param center Slice center the frame was captured at (`fft_freq`).
+         * @return true  — the caller MAY run process_spectrum_sweep();
+         *         false — budget exhausted for this center; composite-only.
+         * @note  The key resets on every (window, center) change, so mid-pass
+         *        slices and window switches always get a fresh budget; only
+         *        REPEATED looks at the same center of the same window are
+         *        bounded. Chronological order is preserved: the drain loop
+         *        charges before on_sweep_spectrum() for the same tick.
+         * @note  Window index is part of the key so two windows whose slice
+         *        centers happen to coincide (overlapping ranges) can never
+         *        inherit each other's remaining budget.
+         * @pre   Called on the UI thread only.
+         * Stack: ~4 B. Flash: ~32 B. SRAM: 0. No heap, no FP, no locks.
+         */
+        [[nodiscard]] bool spend_detector_look(uint8_t win_idx, FreqHz center) noexcept {
+            if (center != detector_look_center_ || win_idx != detector_look_win_) {
+                detector_look_center_ = center;
+                detector_look_win_ = win_idx;
+                detector_looks_ = 0;
+            }
+            if (detector_looks_ >= SWEEP_MAX_DETECTOR_LOOKS_PER_SLICE) {
+                return false;
+            }
+            ++detector_looks_;
+            return true;
+        }
 
         /**
          * @brief Derive the gapless sweep pitch and reset the window.
@@ -239,20 +307,25 @@ private:
         /**
          * @brief Integrate one FFT frame into this window's composite buffer.
          * @param spectrum        256-bin FFT frame from baseband
-         * @param credit_progress true  — full path: progress accumulator and
-         *                        settle counter are consumed (freshest frame
-         *                        per tick, via on_sweep_spectrum);
+         * @param credit_progress true  — full path: progress accumulator is
+         *                        advanced (freshest frame per tick, via
+         *                        on_sweep_spectrum);
          *                        false — display-only integration for the
          *                        extra drained live frames (frame-sync
          *                        handler): composite max-hold is reinforced
          *                        at true RF positions, while pixel_index /
          *                        bins_hz_acc pacing stays one step per retune
          *                        (line_full/freq_covered logic unchanged).
-         * @return true if the frame was processed, false if it was discarded
-         *         as a settle (retune-straddler) frame.
+         * @note  Stale (pre-retune) frames never reach this function — the
+         *        frame-sync handler drops exactly `retune_pending_frames_` of
+         *        them at the TOP of its drain loop, before any live frame is
+         *        integrated. There is therefore no discard path left here; the
+         *        historical settle counter that used to make this return false
+         *        is gone (it could never expire once a retune re-armed it from
+         *        inside on_sweep_spectrum — the "never-expires" loop).
          * @note Stack: ~16 bytes (dummy accumulators in the display-only path).
          */
-        [[nodiscard]] bool process_bins(const ChannelSpectrum& spectrum, bool credit_progress = true) noexcept;
+        void process_bins(const ChannelSpectrum& spectrum, bool credit_progress = true) noexcept;
         // NOTE: rendering is never masked — the sweep window is always drawn
         // fully. Detection-window gating is applied in the scanner only
         // (DroneScanner::is_detection_window_allowed()).
@@ -269,12 +342,6 @@ private:
     FreqHz last_db_frame_freq_{0};        // Capture freq of last processed DB frame (retune-straddle guard)
     AtomicFlag sweep_transition_guard_;   // Prevents concurrent enter/exit
     uint32_t sweep_guard_timestamp_{0};   // Tick when guard was last set (timeout safety)
-    // Tick (chTimeNow(), ms at CH_FREQUENCY 1000) of the most recent
-    // retune_sweep_window() — the clock the frame-sync handler's
-    // sweep_post_retune_action() age check runs against. Armed together
-    // with SweepWindow::settle_frames_remaining_ (invariant: counter > 0
-    // implies this timestamp is valid). Written on the UI thread only.
-    SystemTime last_retune_time_{0};
     AtomicFlag button_debounce_guard_;     // Debounces button_mode_/start_stop rapid taps
     FreqHz last_db_frequency_{0};         // Last DB frequency before sweep
     size_t last_db_index_{0};             // Last DB index before sweep (for exact restore)

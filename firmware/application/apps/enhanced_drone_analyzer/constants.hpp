@@ -926,51 +926,53 @@ constexpr uint8_t MAX_SWEEP_WINDOWS = 4;
 constexpr uint16_t SWEEP_PERSISTENCE_DECAY_Q8 = 224;
 
 /**
- * @brief Number of FFT frames to discard after frequency retune.
- * @note The MAX2837/RFFC5072 lock time is ~200us — far below one FFT frame
- *       period — so discarding the frame that overlaps the retune instant
- *       fully covers the PLL settle window.
- * @note CURRENT consumer (drain-to-newest + guarded straddler drop,
- *       drone_scanner_ui.cpp): the frame-sync handler drains the FIFO to the
- *       NEWEST frame every tick. When a post-retune tick is at least
- *       SWEEP_CLEAN_FRAME_MS past the retune, only the OLDEST queued frame
- *       (the retune straddler, popped first, FIFO order) can predate the
- *       retune — it is dropped alone and everything after it is processed,
- *       so the step cadence is ONE tick. When the tick is younger (message
- *       burst after a handler overrun), EVERY queued frame may predate the
- *       retune: the whole tick is discarded and the counter stays armed
- *       (SWEEP_SETTLE_FRAMES = 1) until a clean-aged tick arrives. The
- *       historical STALE_FIFO_FRAMES = 3 backlog term (old single-out
- *       consumer with a permanently full 4-slot FIFO) is OBSOLETE —
- *       re-arming it would discard 3 LIVE frames per step (~50 ms dead air
- *       per hop) for zero benefit. Full flip-flop history and the correct
- *       combination are documented in DroneScannerUI::retune_sweep_window()
- *       — do NOT change this value without re-reading that block.
+ * @brief Minimum number of frames to drop after a retune when the FIFO level
+ *        could not be snapshotted (streaming not yet started — the UI holds a
+ *        null ChannelSpectrumFIFO pointer).
+ * @note Exactly one frame is in flight inside the M0 at any instant; that
+ *       frame — the retune STRADDLER, whose capture interval contains the
+ *       retune instant — is stale by construction (its bins mix the old and
+ *       the new frequency, and the MAX2837/RFFC5072 needs ~200 us to relock,
+ *       far below one FFT frame period). With no FIFO observation the caller
+ *       can account for that straddler and nothing else.
+ * @note The NORMAL path never uses this floor: DroneScannerUI::
+ *       retune_sweep_window() snapshots the exact count as
+ *       `spectrum_fifo_->len() + 1`. Stack: 0 B.
  */
-constexpr uint8_t SWEEP_SETTLE_FRAMES = 1;
+constexpr uint8_t SWEEP_RETUNE_MIN_PENDING_FRAMES = 1;
 
 /**
- * @brief Minimum age (ms) of a retune before its first post-retune tick may
- *        treat the FIFO's OLDEST frame as the only possible straddler.
- * @note Derivation (ChibiOS 2.6.8, CH_FREQUENCY = 1000 → chTimeNow() ticks
- *       are milliseconds; DisplayFrameSync period ≈ 16.7 ms, FFT frame
- *       period = SWEEP_FFT_TRIGGER × 102.4 µs ≈ 6.45 ms):
- *       the straddler (the frame whose capture interval contains the retune
- *       instant) COMPLETES at most 6.45 ms after the retune, so a tick that
- *       pops at elapsed >= 6.45 ms is guaranteed to find the straddler
- *       already in the FIFO as its oldest entry. SWEEP_CLEAN_FRAME_MS = 10
- *       keeps a 3.5 ms timing margin (tick jitter, handler measurement
- *       slop) on top of that bound. Frames completed after the straddler
- *       START after it ends (continuous M0 streaming), hence after the
- *       retune — everything behind the oldest entry is clean.
- *       An elapsed < 10 ms tick means two DisplayFrameSync messages were
- *       processed back-to-back (handler overrun burst): the FIFO may then
- *       hold ONLY pre-retune frames and no oldest-entry marker exists —
- *       the caller discards the whole tick instead.
- * @note Not a sensitivity gate: the discarded straddler frame was already
- *       discarded wholesale by the pre-guard settle tick. Stack: 0 B.
+ * @brief Hard cap on detector integrations (process_spectrum_sweep calls) per
+ *        (sweep window, slice center) per sweep pass.
+ * @note DERIVATION (uniform false-alarm rate across the window): one handler
+ *       tick delivers at most FOUR detector charges for the same (window,
+ *       center) — up to 3 drained live frames in the frame-sync drain loop
+ *       plus the final frame via on_sweep_spectrum() — and an INTERIOR slice
+ *       is probed by exactly one tick per pass. The cap is therefore calibrated
+ *       to one tick's maximum: a normal slice is NEVER throttled, and the
+ *       constant only binds on look accumulation ACROSS ticks (today: the
+ *       first-slice double dwell). Every temporal integrator the detector feeds
+ *       is STRICTLY MONOTONE in the number of samples it sees per pass:
+ *         - WaterfallHistory::get_max_across_frames() — an order statistic;
+ *         - WaterfallHistory::count_above_threshold() vs TBD_MIN_FRAMES;
+ *         - MedianFilter<int32_t,7>::is_warm() — warm at N/2+1 = 4.
+ *       A slice center that receives more looks than the interior therefore has
+ *       a systematically HIGHER false-alarm rate than the rest of the window.
+ *       The first-slice dwell used to double the tick count at f_center_ini —
+ *       that, plus an unbounded drain, produced the false spike and false
+ *       detection at the window's lower edge.
+ * @note Consumed by SweepWindow::spend_detector_look(). Composite max-hold is
+ *       NOT capped: display-only integration stays free, so the dwell keeps
+ *       its full display benefit while losing only its detector bias.
+ * @note Sensitivity-neutral in BOTH directions: slice 0 receives
+ *       min(tick1 + tick2, cap) versus an interior slice's min(tick1, cap)
+ *       under identical FIFO conditions, so no slice can be throttled below
+ *       what an interior slice already receives — and the first look at any new
+ *       (window, center) is always admitted because the counter resets on every
+ *       key change.
+ * SRAM: 0. Flash: 4 B.
  */
-constexpr uint32_t SWEEP_CLEAN_FRAME_MS = 10;
+constexpr uint8_t SWEEP_MAX_DETECTOR_LOOKS_PER_SLICE = 4;
 
 /**
  * @brief Noise margin for composite display floor subtraction.

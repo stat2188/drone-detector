@@ -398,10 +398,11 @@ Sweep Architecture:
   ┌──────────────────────────────────────────────────────┐
   │  Sweep Cycle:                                         │
   │    1. Tune to f_center                                │
-  │    2. Wait for PLL settle (5ms)                       │
-  │    3. Discard stale frames (STALE_FIFO_FRAMES=3)     │
+  │    2. Arm stale-frame budget = FIFO len() + 1         │
+  │    3. Drop exactly that many stale frames             │
   │    4. Process FFT → composite[240] via SweepProcessor │
-  │    5. Feed to scanner for drone detection             │
+  │    5. Feed scanner (≤ SWEEP_MAX_DETECTOR_LOOKS per    │
+  │       window+slice center per pass)                   │
   │    6. Push to per-window MiniWaterfall                │
   │    7. Advance f_center by step_hz                     │
   │    8. When pixel_index >= 240: pass complete          │
@@ -432,7 +433,8 @@ DB Capture (normal scan mode):
                             threat ladder once. Shape filters are relative
                             (per-frame noise percentile) — no re-tuning.
   SWEEP_PERSISTENCE_DECAY = 224/256 = 0.875 (EMA decay factor)
-  SWEEP_SETTLE_FRAMES     = 1 (discard after retune)
+  SWEEP_RETUNE_MIN_PENDING_FRAMES = 1 (floor when FIFO not observable)
+  SWEEP_MAX_DETECTOR_LOOKS_PER_SLICE = 4 (detector cap per window+center/pass)
   MAX_SWEEP_WINDOWS       = 4
 
 Composite Persistence (EMA):

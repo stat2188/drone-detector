@@ -2900,6 +2900,19 @@ private:
     // be touched from the sweep path (see C2 block).
     FreqHz last_sweep_freq_per_win_[MAX_SWEEP_WINDOWS]{};
     FreqHz last_hyst_freq_per_win_[MAX_SWEEP_WINDOWS]{};
+    // C3 window barrier sentinel: which window last FEED the shared sweep
+    // integrators (rssi_median_filter_ / waterfall_history_ /
+    // sweep_signal_present_). MAX_SWEEP_WINDOWS = invalid ⇒ "never fed", so the
+    // first sweep frame after a mode switch is evaluated with window_changed
+    // true (harmless: freq_diff is then huge and the ordinary reset fires).
+    // Fires ONLY when window changed AND freq_diff <= SWEEP_FREQ_TOLERANCE_HZ —
+    // i.e. the per-window key claims "unchanged" while the shared buffer still
+    // holds ANOTHER window's frame. NEVER on a bare window change: that would
+    // reset median + waterfall on every visit and re-create the C2 multi-window
+    // regression. See the C3 WINDOW BARRIER block in process_spectrum_sweep().
+    // Owned by process_spectrum_sweep() only; reset by reset_sweep_integrators()
+    // and clear_lock_state(). SRAM: 1 B.
+    uint8_t last_sweep_win_idx_{MAX_SWEEP_WINDOWS};
     // Sweep-mode Schmitt presence bit, keyed by (window, slice-step) via the
     // per-window key above. SEPARATE from normal-mode signal_present_: the
     // sweep detection path in this file is RSSI-threshold + tracking (it has
