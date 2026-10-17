@@ -87,7 +87,7 @@ public:
     void focus() override;
 
     std::string title() const override {
-        static const std::string t = "EDA Settings";  // SSO — no heap allocation
+        static const std::string t = "RSA Settings";  // SSO — no heap allocation
         return t;
     }
 

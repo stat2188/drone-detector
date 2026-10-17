@@ -2208,9 +2208,9 @@ constexpr char MOVEMENT_TREND_SYMBOL_UNKNOWN = '-';
 // ============================================================================
 
 /**
- * @brief Status message for no drones detected
+ * @brief Status message shown in the detections zone when nothing is detected
  */
-constexpr const char STATUS_NO_DRONES[] = "No drones detected";
+constexpr const char STATUS_NO_SIGNALS[] = "No signals detected";
 constexpr const char STATUS_SCANNING[] = "Scanning...";
 constexpr const char STATUS_ERROR[] = "Error";
 constexpr const char STATUS_LOADING[] = "Loading...";

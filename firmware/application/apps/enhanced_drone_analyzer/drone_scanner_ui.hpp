@@ -46,7 +46,7 @@ public:
     DroneScannerUI& operator=(const DroneScannerUI&) = delete;
 
     std::string title() const override {
-        static const std::string t = "EDA";  // SSO — no heap allocation for ≤15 chars
+        static const std::string t = "RSA";  // SSO — no heap allocation for ≤15 chars
         return t;
     }
     void paint(Painter& painter) override;
