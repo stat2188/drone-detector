@@ -1023,26 +1023,44 @@ void DroneDisplay::set_composite_data(const uint8_t* data, size_t size) noexcept
     // Apply EMA persistence: keep old data unless new data has a higher peak.
     // Effectively max(raw, old * DECAY), which holds peaks steady between passes
     // while letting noise floor decay toward zero.
+    //
+    // CHANGE-DETECTION: the EMA loop tracks whether any persist byte actually
+    // moved. When nothing changed (duplicate display-only frame, decay fully
+    // converged) the repaint is skipped entirely — update_sweep_pair_display()
+    // pushes the composite on EVERY spectrum frame, so without this gate the
+    // band repainted at frame rate with zero visual delta. The nullptr→data
+    // and size-change transitions force the dirty flag because the spectrum
+    // area layout (show_spec / bar_count) depends on them.
+    bool any_changed = (composite_data_ == nullptr) || (copy_n != composite_data_size_);
     if (!composite_persist_initialized_) {
         for (size_t i = 0; i < copy_n; ++i) {
             s_dd.composite_persist[i] = data[i];
         }
         composite_persist_initialized_ = true;
+        any_changed = true;
     } else {
         for (size_t i = 0; i < copy_n; ++i) {
-            const uint16_t decayed = (static_cast<uint16_t>(s_dd.composite_persist[i])
+            const uint8_t old = s_dd.composite_persist[i];
+            const uint16_t decayed = (static_cast<uint16_t>(old)
                                       * SWEEP_PERSISTENCE_DECAY_Q8) >> 8;
-            s_dd.composite_persist[i] = (data[i] > static_cast<uint8_t>(decayed))
+            const uint8_t next = (data[i] > static_cast<uint8_t>(decayed))
                 ? data[i]
                 : static_cast<uint8_t>(decayed);
+            if (next != old) {
+                s_dd.composite_persist[i] = next;
+                any_changed = true;
+            }
         }
     }
 
     composite_data_ = s_dd.composite_persist;
     composite_data_size_ = copy_n;
-    // Data changed → FULL band repaint (the white envelope line is a
-    // cross-column construct; a per-column diff would leave it stale — see
-    // render_composite_partial_band).
+    if (!any_changed) {
+        return;
+    }
+    // Data changed → incremental neighbour-aware band repaint (the white
+    // envelope line is a cross-column construct — see
+    // render_composite_partial_band for the neighbour-expansion diff).
     dirty_flags_ |= DIRTY_SPEC_DATA;
     set_dirty();
 }
@@ -1133,8 +1151,8 @@ void DroneDisplay::update_noise_floor() noexcept {
     }
     // Noise floor is auto-detected in render_composite_partial_band() via
     // last_noise_floor: if it changed → automatic full band repaint (need_full).
-    // New composite data always triggers a full repaint regardless (envelope
-    // cross-column dependency), so there is no "cheap data diff" path anymore.
+    // New composite data triggers the neighbour-aware INCREMENTAL repaint
+    // (changed columns + their right neighbours), not a full repaint.
     dirty_flags_ |= DIRTY_SPEC_DATA;
     set_dirty();
 }
@@ -1390,55 +1408,61 @@ void DroneDisplay::render_composite_partial_band(
         || band.last_title_start != title_start
         || band.last_title_end != title_end;
 
-    // Data changed → FULL band repaint (never patch the white line column-wise).
-    //
-    // Math — why an incremental per-column diff cannot keep the envelope line
-    // correct: draw_bar_with_envelope() draws the connector for the transition
-    // (i-1 → i) AT COLUMN i, spanning [min(top[i-1],top[i]), max(...)]:
-    //
-    //     connector(i) = f(top[i-1], top[i])   // cross-column dependency
-    //
-    // The incremental diff below is keyed on `p != band.shadow[i]` — column i's
-    // OWN post-noise-floor power. If top[i-1] moves while top[i] stays equal to
-    // shadow[i], column i is not selected for redraw, yet the connector pixels
-    // AT COLUMN i must move. That delta is invisible to a per-column value
-    // diff, so the white line goes stale exactly when a neighbour's top shifts.
-    // (This was the "envelope line doesn't update" defect.) The only correct
-    // response to new data is a full repaint of the band, which recomputes
-    // every connector from the true tops.
-    if (need_full || data_changed) {
+    if (need_full) {
         render_composite_full_band(painter, band, composite_data, composite_size,
                                    start_x, start_y, width, height,
                                    scan_head, noise_floor, title_start, title_end);
         return;
     }
 
-    // ---- Marker-only fast path (data unchanged since last full paint) ----
-    // Old marker column must be restored from shadow (the white marker line is
-    // on screen, but shadow holds the true data pixels for that column). The
-    // marker is a full-height white line, so it also covers the connector at
-    // its own column; that column is fully restored here. The NEW marker column
-    // intentionally covers its own connector (marker draws on top) and will be
-    // restored the next time the marker leaves it. Data is unchanged, so no
-    // other connector on screen can be stale.
+    // ---- NEIGHBOUR-AWARE INCREMENTAL REDRAW (data may have changed) ----
+    //
+    // The white envelope connector for the transition (i-1 → i) is drawn AT
+    // COLUMN i, spanning [min(top[i-1],top[i]), max(...)]:
+    //
+    //     connector(i) = f(top[i-1], top[i])   // cross-column dependency
+    //
+    // A naive per-column diff keyed on `p != shadow[i]` misses the case where
+    // top[i-1] moves while top[i] stays equal — the connector AT COLUMN i
+    // must move but the column is not selected (the old "envelope line goes
+    // stale" defect that motivated a full repaint). The neighbour-aware rule
+    //
+    //     redraw(i) ⟺ Δp[i] ∨ Δp[i-1]
+    //
+    // covers the dependency exactly: a column is redrawn when its OWN top
+    // changed (bar + outgoing connector) OR its LEFT neighbour's top changed
+    // (incoming connector). Δp[i-1] is tracked through loop state
+    // `prev_changed` — zero extra memory. The envelope state below is
+    // replayed over EVERY column (changed or not), mirroring the full-render
+    // loop, so any redrawn column is pixel-identical to a full repaint.
+    //
+    // Old marker column must be restored from shadow (the white marker line
+    // is on screen, but shadow holds the true data pixels for that column).
+    // A column that is both marker-restore AND data-redraw is drawn once
+    // (single branch) with the NEW data; the marker is re-drawn on top below
+    // when the column still hosts the live scan head.
     const int16_t restore_col =
         (band.marker_on_screen != scan_head) ? band.marker_on_screen : -1;
 
     const uint8_t display_threshold = min_color_power_;
 
     // White envelope state — advanced over EVERY column (unchanged ones too),
-    // exactly mirroring the full-render loop in draw_bar_with_envelope(), so the
-    // restored marker column redraws pixel-identical to a full repaint.
-    // (Only reachable for the single restore column: data_changed returned above.)
+    // exactly mirroring the full-render loop in draw_bar_with_envelope(), so
+    // redrawn columns redraw their connector from the true neighbour top.
     // Stack: ~6 bytes.
     const uint16_t envelope_y0 = static_cast<uint16_t>(chart_start_y + chart_height);
     EnvelopeState env{envelope_y0, false, 0};
+
+    bool prev_changed = false;
 
     for (uint16_t i = 0; i < bar_count; ++i) {
         uint8_t p = composite_data[i];
         p = (p > noise_floor) ? static_cast<uint8_t>(p - noise_floor) : static_cast<uint8_t>(0);
 
-        const bool must_redraw = data_changed && (p != band.shadow[i]);
+        const bool changed = (p != band.shadow[i]);
+        // Own top moved (bar + outgoing connector) OR left neighbour moved
+        // (incoming connector at this column depends on top[i-1]).
+        const bool redraw = data_changed && (changed || prev_changed);
         const bool is_restore =
             (restore_col >= 0) && (static_cast<uint16_t>(restore_col) == i);
 
@@ -1446,7 +1470,7 @@ void DroneDisplay::render_composite_partial_band(
         const uint16_t bar_h = (bar_h_raw > 0) ? bar_h_raw : 1;
         const uint16_t y = chart_start_y + chart_height - bar_h;
 
-        if (must_redraw || is_restore) {
+        if (redraw || is_restore) {
             const uint16_t x = chart_start_x + i;
             draw_rectangle(painter, x, chart_start_y, 1, chart_height, COLOR_BACKGROUND);
             if (p >= display_threshold) {
@@ -1463,6 +1487,13 @@ void DroneDisplay::render_composite_partial_band(
                 }
                 draw_rectangle(painter, x, y, 1, 1, COLOR_TEXT);
             }
+            // Live scan-head marker column was just cleared above — re-draw
+            // the white marker ON TOP (full repaint does the same: bars first,
+            // marker last). Shadow keeps the true DATA pixel (marker overdraws
+            // the screen only); restore-on-leave reads it back.
+            if (i == static_cast<uint16_t>(scan_head)) {
+                painter.draw_rectangle({x, chart_start_y, 1, chart_height}, Color::white());
+            }
             band.shadow[i] = p;
         }
 
@@ -1478,6 +1509,7 @@ void DroneDisplay::render_composite_partial_band(
                 env.prev_valid = false;
             }
         }
+        prev_changed = changed;
     }
 
     // Marker diff: at most one white 1×chart_height line per band.
@@ -1616,25 +1648,37 @@ void DroneDisplay::set_sweep2_data(const uint8_t* data, size_t size) noexcept {
     const size_t copy_n = (size < COMPOSITE_SIZE) ? size : COMPOSITE_SIZE;
 
     // Apply EMA persistence for band 2 (same formula as band 1).
+    // CHANGE-DETECTION: same gate as set_composite_data — skip the repaint
+    // when the decay has converged and the pushed composite is a duplicate.
+    bool any_changed = (sweep2_data_ == nullptr) || (copy_n != sweep2_data_size_);
     if (!sweep2_persist_initialized_) {
         for (size_t i = 0; i < copy_n; ++i) {
             s_dd.sweep2_persist[i] = data[i];
         }
         sweep2_persist_initialized_ = true;
+        any_changed = true;
     } else {
         for (size_t i = 0; i < copy_n; ++i) {
-            const uint16_t decayed = (static_cast<uint16_t>(s_dd.sweep2_persist[i])
+            const uint8_t old = s_dd.sweep2_persist[i];
+            const uint16_t decayed = (static_cast<uint16_t>(old)
                                       * SWEEP_PERSISTENCE_DECAY_Q8) >> 8;
-            s_dd.sweep2_persist[i] = (data[i] > static_cast<uint8_t>(decayed))
+            const uint8_t next = (data[i] > static_cast<uint8_t>(decayed))
                 ? data[i]
                 : static_cast<uint8_t>(decayed);
+            if (next != old) {
+                s_dd.sweep2_persist[i] = next;
+                any_changed = true;
+            }
         }
     }
 
     sweep2_data_ = s_dd.sweep2_persist;
     sweep2_data_size_ = copy_n;
-    // Data changed → FULL band repaint (white envelope line is cross-column;
-    // see render_composite_partial_band).
+    if (!any_changed) {
+        return;
+    }
+    // Data changed → incremental neighbour-aware band repaint (white envelope
+    // line is cross-column; see render_composite_partial_band).
     dirty_flags_ |= DIRTY_SPEC_DATA;
     set_dirty();
 }

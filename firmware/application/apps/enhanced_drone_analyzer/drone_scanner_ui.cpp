@@ -975,32 +975,25 @@ void DroneScannerUI::refresh_ui() noexcept {
     if (slow_tick) {
         // Build display data from tracked drones
         // update_display_data() skips the copy+DIRTY_DRONES when data is unchanged
-        // Stack: ~0 bytes (refresh_drones_ is BSS, was 2,304B on stack).
         refresh_display_data_.clear();
 
         {
-            const size_t count = scanner_ptr_->get_tracked_drones(refresh_drones_, MAX_DISPLAYED_DRONES);
-
-            // RENDER GATE: copy only entries at or above DISPLAY_MIN_THREAT into
-            // the render snapshot. Tracking is untouched — a NONE-threat drone
-            // stays alive in the scanner (history, trend, sweep-cycle counters,
-            // decay clocks, Mahalanobis, eviction priority), it just costs zero
-            // render time: no DisplayDroneEntry construction, no sort compares
-            // for it, no 100 Hz memcmp bytes and no gray row on screen.
-            //
-            // Safe either way: order is preserved by stable in-place
-            // compaction. Today get_tracked_drones() runs a selection sort on
-            // threat-first priority, so entries arrive threat-descending and
-            // every skip is already the tail — but the scan deliberately does
-            // NOT break early, so a future change to the scanner's ordering
-            // cannot silently hide a LOW+ drone behind a filtered one.
-            // Stack: ~8 bytes. O(count), count <= MAX_DISPLAYED_DRONES.
-            size_t shown = 0;
-            for (size_t i = 0; i < count; ++i) {
-                if (refresh_drones_[i].threat_level < DISPLAY_MIN_THREAT) continue;
-                refresh_display_data_.drones[shown] = DisplayDroneEntry(refresh_drones_[i]);
-                ++shown;
-            }
+            // DIRECT COMPACT SNAPSHOT: get_display_entries() selects the
+            // top-N by priority and converts each to a 48 B
+            // DisplayDroneEntry under the scanner lock, filtering below
+            // DISPLAY_MIN_THREAT during conversion (threat-descending order
+            // guarantees no qualifying entry is starved out of top-N).
+            // This replaces the old 160 B TrackedDrone round-trip through a
+            // refresh_drones_[] scratch array (~1.9 KB of heap) — the render
+            // snapshot is the compact form from the start. Tracking itself
+            // is unaffected — a NONE-threat drone stays alive in the scanner
+            // (history, trend, sweep-cycle counters, decay clocks,
+            // Mahalanobis, eviction priority), it just costs zero render
+            // time: no sort compares for it, no 100 Hz memcmp bytes and no
+            // gray row on screen.
+            // Stack: ~0 bytes. O(select_n × tracked_count_) <= 12 × 25.
+            const size_t shown = scanner_ptr_->get_display_entries(
+                refresh_display_data_.drones, MAX_DISPLAYED_DRONES, DISPLAY_MIN_THREAT);
             refresh_display_data_.drone_count = shown;
 
             // Sort by COMPOSITE priority descending — threat level first (CRITICAL
@@ -1011,13 +1004,13 @@ void DroneScannerUI::refresh_ui() noexcept {
             // top-N selector (recent_strength()/has_higher_priority()): equal-
             // threat rows rank by current signal, and a drone whose threat just
             // rose climbs to its logical position on the next 100 ms refresh
-            // ("поднятие угрозы в списке"). get_tracked_drones() already returns
-            // priority order, so this mostly stabilizes; the sort is retained as
-            // a defense against out-of-order buffers and MUST use the same key
-            // so it never undoes the scanner's ranking.
-            // Bounded by `shown`, NOT `count`: slots [shown..count-1] were never
-            // written this tick (stale BSS from earlier ticks) and must not be
-            // pulled into the visible range by the sort.
+            // ("поднятие угрозы в списке"). get_display_entries() already
+            // returns priority order, so this mostly stabilizes; the sort is
+            // retained as a defense against out-of-order buffers and MUST use
+            // the same key so it never undoes the scanner's ranking.
+            // Bounded by `shown`: slots beyond shown were never written this
+            // tick (stale BSS from earlier ticks) and must not be pulled into
+            // the visible range by the sort.
             for (size_t i = 1; i < shown; ++i) {
                 const DisplayDroneEntry key = refresh_display_data_.drones[i];
                 size_t j = i;

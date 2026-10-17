@@ -1156,6 +1156,34 @@ public:
         size_t max_count
     ) const noexcept;
 
+    /** @brief Get top-N tracked drones as compact display entries (render path).
+     *  @param out        Pre-allocated output buffer (caller-owned, fixed size).
+     *  @param max_count  Capacity of `out`. Only the highest-priority max_count
+     *                    entries are considered.
+     *  @param min_threat Entries whose threat_level is below this are dropped
+     *                    during conversion (tracking itself is unaffected).
+     *  @return Number of entries written to out[0..n-1] (<= max_count).
+     *  @note Direct 160 B TrackedDrone → 48 B DisplayDroneEntry conversion
+     *        under DATA_MUTEX — replaces the old get_tracked_drones() +
+     *        caller-side TrackedDrone scratch array round-trip (the UI no
+     *        longer needs ~1.9 KB of TrackedDrone[] heap scratch).
+     *  @note Selection key is identical to get_tracked_drones() (threat desc,
+     *        rssi desc, last_seen desc, update_count desc). The
+     *        DisplayDroneEntry constructor evaluates get_movement_trend() on
+     *        the PERSISTENT original — the required hysteresis-advance site
+     *        (see get_tracked_drones hysteresis docs).
+     *  @note Threat-descending order guarantees a sub-min_threat entry can
+     *        never starve a qualifying entry out of the top-N window (all
+     *        >= min_threat entries outrank all < min_threat ones), so the
+     *        early filter cannot hide a displayable drone.
+     *  @note Stack: bool[MAX_TRACKED_DRONES] = 25 B + scalars. No heap.
+     */
+    [[nodiscard]] size_t get_display_entries(
+        DisplayDroneEntry* out,
+        size_t max_count,
+        ThreatLevel min_threat = ThreatLevel::LOW
+    ) const noexcept;
+
     /** @brief Consume-and-reset the "a resident was evicted" notification.
      *  @return true when at least one tracked drone was EVICTED (displaced by
      *          a stronger/fresher detection) since the previous call.

@@ -2055,6 +2055,66 @@ size_t DroneScanner::get_tracked_drones(
     return out_count;
 }
 
+size_t DroneScanner::get_display_entries(
+    DisplayDroneEntry* out,
+    size_t max_count,
+    ThreatLevel min_threat
+) const noexcept {
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+
+    if (out == nullptr || max_count == 0) {
+        return 0;
+    }
+
+    // SELECT-TOP-N + DIRECT COMPACT CONVERSION: same ranking key as
+    // get_tracked_drones() (see its docs — threat desc, rssi desc, last_seen
+    // desc, update_count desc), but each selected original is converted to a
+    // 48 B DisplayDroneEntry in place under the lock. This removes the old
+    // 160 B TrackedDrone round-trip through a caller-side scratch array
+    // (~1.9 KB of DroneScannerUI heap) — the render snapshot is the compact
+    // form from the start.
+    //
+    // The DisplayDroneEntry constructor evaluates get_movement_trend() on the
+    // PERSISTENT original (not a copy), which is the required hysteresis
+    // advance site — same contract as get_tracked_drones() line above.
+    //
+    // min_threat filter runs during conversion: sub-min_threat entries are
+    // dropped without writing. Threat-descending order means every dropped
+    // entry outranks nothing that qualifies (all >= min_threat rank above
+    // all < min_threat), so the filter cannot starve a displayable drone out
+    // of the top-N window.
+    //
+    // Stack: bool[MAX_TRACKED_DRONES] = 25 B + scalars (fits the <512 B cap).
+    // Complexity: O(select_n × tracked_count_) <= 12 × 25 = 300 compares.
+    bool selected[MAX_TRACKED_DRONES] = {};
+    const size_t select_n = tracked_count_ < max_count ? tracked_count_ : max_count;
+    size_t out_count = 0;
+
+    for (size_t rank = 0; rank < select_n; ++rank) {
+        size_t best = SIZE_MAX;
+        for (size_t i = 0; i < tracked_count_; ++i) {
+            if (selected[i]) {
+                continue;
+            }
+            if (best == SIZE_MAX || has_higher_priority(tracked_drones_[i], tracked_drones_[best])) {
+                best = i;
+            }
+        }
+        if (best == SIZE_MAX) {
+            break;  // safety — cannot happen while out_count < tracked_count_
+        }
+        selected[best] = true;
+
+        if (tracked_drones_[best].threat_level < min_threat) {
+            continue;  // render gate — tracking untouched
+        }
+        out[out_count] = DisplayDroneEntry(tracked_drones_[best]);
+        ++out_count;
+    }
+
+    return out_count;
+}
+
 ScannerState DroneScanner::get_state() const noexcept {
     MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
     if (lock.is_locked()) {

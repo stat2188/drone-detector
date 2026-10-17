@@ -1308,21 +1308,23 @@ BSS Allocation:
 Key BSS Structures:
   s_hardware          — HardwareController
   s_database          — DatabaseManager (entries[100])
-  s_scanner           — DroneScanner (tracked_drones_[16])
-  s_scanner_thread    — ScannerThread (wa_[512])
+  s_scanner           — DroneScanner (tracked_drones_[25], incl. envelope_buf_[256])
+  s_scanner_thread    — ScannerThread (wa_[2048])
   g_workspace_cfg     — ScanConfig (368 bytes)
   g_workspace_settings — SettingsStruct (360 bytes)
   spectrum_buffer_    — ChannelSpectrum (256 bytes)
-  refresh_drones_[16] — TrackedDrone array (2,560 bytes)
   sweep_[4]           — SweepWindow array (~1,200 bytes)
   auto_gain_control_  — AutoGainControl (~16 bytes)
+  (refresh_drones_ TrackedDrone scratch REMOVED — drone list snapshot now
+   built directly as compact DisplayDroneEntry[12] via
+   DroneScanner::get_display_entries(), ~1.9 KB heap returned)
 
 Stack-Heavy Functions (monitored):
   CFARDetector::find_peaks()   — ~32 bytes (candidates[16])
   OS-CFAR detect()             - ~152 bytes (cells[128] + locals)
   SpectralKurtosis::compute()  — ~32 bytes (accumulators)
   absorb_from()                — ~128 bytes (merged[12])
-  refresh_ui()                 — uses BSS for refresh_drones_[]
+  refresh_ui()                 — snapshot via get_display_entries() (no scratch array)
   DroneSettingsView ctor       — ~480B (all widgets in class)
 
 ================================================================================
