@@ -497,6 +497,13 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
 
     // Register button callbacks BEFORE any early returns
     // Buttons must always respond, even if init fails
+    //
+    // START/STOP — PRIMARY SWEEP CONTROL. Start ALWAYS means sweep:
+    // idle → enter_sweep_mode() (stops the scanner thread, reconfigures the
+    // baseband for SWEEP_SLICE_BW, starts streaming, sets scanning_ + the
+    // "Stop" label itself); paused sweep (Stop pressed mid-sweep, the mode
+    // stays armed) → resume streaming only. Stop halts whatever runs
+    // (sweep or DB — the DB button can be the active mode).
     button_start_stop_.on_select = [this](ui::Button&) {
         if (initialization_failed_ || scanner_ptr_ == nullptr) {
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
@@ -508,7 +515,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         if (scanning_) {
             // Stop
             if (composite_active_) {
-                // Stop sweep streaming
+                // Stop sweep streaming (mode stays armed — Start resumes it)
                 baseband::spectrum_streaming_stop();
                 scanning_ = false;
                 button_start_stop_.set_text("Start");
@@ -521,40 +528,72 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
                 button_start_stop_.set_text("Start");
             }
         } else {
-            // Start
             if (composite_active_) {
-                // Start sweep streaming
+                // Sweep paused (Stop was pressed earlier) — resume streaming
                 baseband::spectrum_streaming_start();
                 scanning_ = true;
                 button_start_stop_.set_text("Stop");
             } else {
-                // Start normal scanning
-                baseband::spectrum_streaming_start();
-                (void)scanner_ptr_->start_scanning();
-                scanner_thread_->set_scanning(true);
-                scanning_ = true;
-                button_start_stop_.set_text("Stop");
+                // Launch SWEEP — the primary mode (manual, not auto-cycle).
+                // enter_sweep_mode() sets scanning_ = true and the "Stop"
+                // label itself; it no-ops when composite_active_ is already
+                // true (guarded), which cannot happen in this branch.
+                this->sweep_auto_mode_ = false;
+                this->enter_sweep_mode();
             }
         }
         // Clear debounce guard after handling completes
         button_debounce_guard_.clear();
     };
 
+    // DB BUTTON (was "Mode") — NORMAL DATABASE SCAN CONTROL.
+    // DB running → stop it (toggle). Otherwise start DB scanning:
+    // from sweep mode, exit_sweep_mode() first (restores the DB baseband
+    // config) and resume the DB frequency/index saved at sweep entry;
+    // from idle, start from the scanner's current position. The sweep
+    // auto-cycle (exit_sweep_mode's was_auto auto-restart) already starts
+    // DB itself — guarded by the !scanning_ checks below so streaming is
+    // never started twice ("Baseband Send Fail" panic).
     button_mode_.on_select = [this](ui::Button&) {
+        if (initialization_failed_ || scanner_ptr_ == nullptr) {
+            show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
+            return;
+        }
         // Debounce rapid taps that could cause race conditions
         if (!button_debounce_guard_.try_set()) return;
 
-        if (!composite_active_) {
-            // Enter manual sweep mode (enter_sweep_mode handles re-entrancy guard)
-            this->sweep_auto_mode_ = false;
-            this->enter_sweep_mode();
-            if (composite_active_) {
-                button_mode_.set_text("Sweep");
-            }
+        if (scanning_ && !composite_active_) {
+            // DB scan running — stop it
+            scanner_thread_->set_scanning(false);
+            (void)scanner_ptr_->stop_scanning();
+            baseband::spectrum_streaming_stop();
+            scanning_ = false;
+            button_start_stop_.set_text("Start");
         } else {
-            // Exit sweep mode back to normal DB scanning
-            this->exit_sweep_mode();
-            button_mode_.set_text("Mode");
+            const bool from_sweep = composite_active_;
+            if (from_sweep) {
+                // Manual sweep: no auto-restart (sweep_auto_mode_ false on the
+                // Start-button path; an auto-cycle sweep restarts DB itself).
+                this->exit_sweep_mode();
+            }
+            if (!scanning_) {
+                if (from_sweep) {
+                    // Resume the DB position saved when sweep was entered
+                    // (last_db_frequency_ == 0 on cold start → keep the
+                    // scanner's current frequency).
+                    if (last_db_frequency_ != 0) {
+                        scanner_ptr_->set_scan_frequency(last_db_frequency_);
+                    }
+                    if (database_ptr_ != nullptr) {
+                        database_ptr_->set_current_index(last_db_index_);
+                    }
+                }
+                baseband::spectrum_streaming_start();
+                (void)scanner_ptr_->start_scanning();
+                scanner_thread_->set_scanning(true);
+                scanning_ = true;
+                button_start_stop_.set_text("Stop");
+            }
         }
         // Clear debounce guard after state transition completes
         button_debounce_guard_.clear();
@@ -1374,7 +1413,7 @@ void DroneScannerUI::init_sweep_window(
 }
 
 void DroneScannerUI::enter_sweep_mode() noexcept {
-    // Prevent re-entrant entry (double-tap on Mode button)
+    // Prevent re-entrant entry (double-tap on Start button / auto-cycle re-entry)
     if (composite_active_) return;
     if (!sweep_transition_guard_.try_set()) return;
     sweep_guard_timestamp_ = chTimeNow();

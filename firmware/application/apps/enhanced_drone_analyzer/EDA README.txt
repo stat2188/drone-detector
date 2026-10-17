@@ -495,8 +495,10 @@ The EDA follows the standard Mayhem UI pattern:
     ├── RFAmpField field_rf_amp_         — RF amplifier toggle
     ├── AudioVolumeField field_volume_   — headphone volume
     ├── NumberField field_rssi_dec_cyc_  — RSSI decrease cycles
-    ├── Button button_start_stop_        — Start/Stop scanning
-    ├── Button button_mode_              — Toggle sweep mode
+    ├── Button button_start_stop_        — Start/Stop SWEEP (primary mode; from idle always
+    │                                      enters sweep mode; Stop also halts DB scan)
+    ├── Button button_mode_ ("DB")       — Start/Stop normal DB scan; from sweep mode exits
+    │                                      sweep and resumes the DB position saved at entry
     ├── Button button_load_              — Load database file
     ├── Button button_settings_          — Open settings view
     └── Button button_swp_               — Open sweep settings

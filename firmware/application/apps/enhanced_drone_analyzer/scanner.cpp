@@ -2131,7 +2131,7 @@ bool DroneScanner::is_scanning() const noexcept {
 
 void DroneScanner::get_config(ScanConfig& out) const noexcept {
     // M-2 FIX (audit): was a BLOCKING MutexLock - every UI-thread call site
-    // (settings/SWP/Mode buttons, enter/exit sweep) could stall up to one full
+    // (settings/SWP/DB buttons, enter/exit sweep) could stall up to one full
     // scan cycle (SPI tune + DB walk holding DATA_MUTEX) inside the 60 Hz
     // event loop. All other UI readers here use MutexTryLock fail-open;
     // get_config now joins them instead of being the one blocking outlier.

@@ -103,8 +103,14 @@ private:
         {{UI_POS_X_RIGHT(9), UI_POS_Y(0)}, "cy", Color::white()},
     };
 
+    // PRIMARY action button: starts/stops SWEEP scanning (the main mode).
+    // When idle, pressing it ALWAYS launches sweep (enter_sweep_mode);
+    // when paused mid-sweep it resumes streaming.
     ui::Button button_start_stop_{{UI_POS_X(0), 284, UI_POS_WIDTH(6), 28}, "Start"};
-    ui::Button button_mode_{{UI_POS_X(7), 284, UI_POS_WIDTH(5), 28}, "Mode"};
+    // DB action button (was "Mode"): starts/stops normal database scan.
+    // Pressing it from sweep mode exits sweep and resumes the DB position
+    // saved at sweep entry.
+    ui::Button button_mode_{{UI_POS_X(7), 284, UI_POS_WIDTH(5), 28}, "DB"};
     ui::Button button_load_{{UI_POS_X(13), 284, UI_POS_WIDTH(4), 28}, "Load"};
     ui::Button button_settings_{{UI_POS_X(18), 284, UI_POS_WIDTH(4), 28}, "Set"};
     ui::Button button_swp_{{UI_POS_X(23), 284, UI_POS_WIDTH(5), 28}, "SWP"};
