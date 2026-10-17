@@ -199,6 +199,19 @@ private:
         uint8_t pixel_max{0};
         uint8_t settle_frames_remaining_{0};  // frames to skip after retune
         bool enabled{false};
+        // First-slice double-dwell latch (bottom-band sensitivity parity).
+        // The window's lowest ~10.6 MHz is covered by ONLY slice 0's upper
+        // sideband (no neighbour slice exists below f_min), while every
+        // interior frequency is probed by TWO overlapping sidebands per pass
+        // — half the detector looks, half the TBD votes, and a 1-sample
+        // (not 2-sample) composite max-hold. Armed in on_sweep_spectrum():
+        // the first live tick on f_center_ini runs with progress credit as
+        // usual, then RETURNS without retuning; the next tick re-visits the
+        // same frequency with credit_progress=false (pacing unchanged,
+        // line_full/freq_covered semantics identical) but still feeds the
+        // detector — equalizing per-pass looks to match the interior.
+        // Cleared by reset() at every pass start. SRAM: 1 bit/window.
+        bool first_slice_dwell_done_{false};
 
         /**
          * @brief Derive the gapless sweep pitch and reset the window.

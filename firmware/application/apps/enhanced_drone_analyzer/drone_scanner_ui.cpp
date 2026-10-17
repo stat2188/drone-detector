@@ -1588,7 +1588,15 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum, bool dis
     if (win.step_hz == 0) {
         win.pixel_index = COMPOSITE_SIZE;
     } else {
-        const bool processed = win.process_bins(spectrum);
+        // FIRST-SLICE DOUBLE DWELL — revisit tick runs WITHOUT progress credit
+        // (identical discipline to the drained live frames, C2): pixel_index /
+        // bins_hz_acc / line_full / scan-head pacing stay at exactly one step
+        // per retune, while the composite max-hold and the detector below get
+        // the second look at f_center_ini. See SweepWindow::
+        // first_slice_dwell_done_ for the full sensitivity rationale.
+        const bool first_slice_revisit =
+            win.first_slice_dwell_done_ && (win.f_center == win.f_center_ini);
+        const bool processed = win.process_bins(spectrum, !first_slice_revisit);
 
         // FIX: When the settle counter is active, process_bins() discards the frame
         // (stale data from the previous frequency). We must NOT advance f_center or
@@ -1635,6 +1643,25 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum, bool dis
     const bool line_full = (win.pixel_index >= COMPOSITE_SIZE);
     const bool freq_covered = (win.f_center + (SWEEP_SLICE_BW / 2)) >= win.f_max;
     if (!(line_full && freq_covered)) {
+        // FIRST-SLICE DOUBLE DWELL — arming: the first live frame at
+        // f_center_ini has now been fully integrated (composite + detector);
+        // stay tuned ONE extra tick on the SAME frequency instead of advancing.
+        // The next tick captures a fresh frame at f_center_ini (the radio never
+        // left), processes it with credit=false (see the top of this function)
+        // and then falls through to the normal advance below. Net: two
+        // consecutive live ticks of detector integration at the window's
+        // bottom edge, equalizing the per-pass look count with the interior
+        // (which is probed by two overlapping sidebands). The revisit tick
+        // does NOT reset the TBD waterfall / median filter (same center →
+        // freq_diff == 0), so its votes stack on the first visit's history —
+        // TBD_MIN_FRAMES now warms within ONE pass at the bottom edge instead
+        // of requiring cross-pass accumulation. Gated on
+        // f_center == f_center_ini so mid-pass slices advance normally; the
+        // degenerate-window branch (step_hz == 0) never reaches this code.
+        if (win.f_center == win.f_center_ini && !win.first_slice_dwell_done_) {
+            win.first_slice_dwell_done_ = true;
+            return;  // stay on f_center_ini; the next tick is the revisit
+        }
         // Normal step: advance frequency within current window
         win.f_center += win.step_hz;
         retune_sweep_window(win, nullptr);
@@ -1981,6 +2008,7 @@ void DroneScannerUI::SweepWindow::reset() noexcept {
     pixel_max = 0;
     bins_hz_acc = 0;
     settle_frames_remaining_ = 0;
+    first_slice_dwell_done_ = false;
 }
 
 bool DroneScannerUI::SweepWindow::process_bins(
