@@ -77,19 +77,18 @@ struct ScanConfig {
     bool confirm_count_enabled{true};   // Require multiple confirmations before creating drone
     bool noise_blacklist_enabled{true}; // Skip frequencies with persistent noise
     bool spectrum_detection_enabled{true}; // Detect drone signals by spectrum shape (U/V peaks)
-    bool median_enabled{false};              // Median filter for RSSI spike rejection (OFF by default — opt-in)
+    bool median_enabled{true};               // Median filter for RSSI spike rejection (ON by default)
     // SPATIAL ENVELOPE (3-tap max-of-neighbours) for the SHAPE pipeline.
-    // When OFF (default): crest collection + apply_shape_filters read the RAW
-    //   bins byte-for-byte — the legacy path, unchanged.
-    // When ON: a monotone-RAISING envelope (dst[i] >= src[i], see
+    // When ON (default): a monotone-RAISING envelope (dst[i] >= src[i], see
     //   spectrum_envelope.hpp) is computed once per frame and fed to the crest
     //   test and the shape chain's width-walk / emission-extent / valley /
     //   flatness / symmetry / kurtosis. It fills ONE-bin notches on jagged
     //   slopes (the "staircase" that spawns phantom crests and truncated peak
     //   edges) but can never lower a peak, shrink the Step-3 margin, or move a
-    //   crest bin — so RSSI / frequency / waterfall stay on RAW. Field kill
-    //   switch: uncheck to A/B.
-    bool spectrum_envelope_enabled{false};   // Default OFF — opt-in spatial smoothing
+    //   crest bin — so RSSI / frequency / waterfall stay on RAW.
+    // When OFF: crest collection + apply_shape_filters read the RAW bins
+    //   byte-for-byte — the legacy path. Field kill switch: uncheck to A/B.
+    bool spectrum_envelope_enabled{true};    // Default ON — spatial smoothing
     uint8_t spectrum_margin{DEFAULT_SPECTRUM_MARGIN};            // Peak margin above noise (5 ≈ 1 dB; CFAR + post-filters do FP rejection)
     uint8_t spectrum_min_width{DEFAULT_SPECTRUM_MIN_WIDTH};      // Min signal width in bins (rejects narrow noise spikes)
     uint8_t spectrum_max_width{DEFAULT_SPECTRUM_MAX_WIDTH};            // Max signal width (reject flat U/I shapes)
@@ -100,12 +99,12 @@ struct ScanConfig {
     uint8_t spectrum_symmetry{DEFAULT_SPECTRUM_SYMMETRY};              // Left/right width symmetry % (reject asymmetric noise)
 
     // Mahalanobis Gate Filter
-    bool mahalanobis_enabled{false};                                    // USER DEFAULT: OFF (was true, FPV-optimized)
+    bool mahalanobis_enabled{true};                                     // Default ON
     uint8_t mahalanobis_threshold_x10{DEFAULT_MAHALOBIS_THRESHOLD_X10};  // Mahalanobis threshold ×10
 
     // New anti-false-positive features
     int32_t neighbor_margin_db{DEFAULT_NEIGHBOR_MARGIN_DB};  // 0=disabled, 2=FPV default
-    bool rssi_variance_enabled{false};                        // USER DEFAULT: OFF (was true, analog FM RSSI stability)
+    bool rssi_variance_enabled{true};                        // Default ON (analog FM RSSI stability)
     uint8_t confirm_count{DEFAULT_CONFIRM_COUNT};             // Configurable confirm count
     uint8_t miss_tolerance{DEFAULT_MISS_TOLERANCE};           // Consecutive misses before breaking lock (independent of confirm_count)
 
@@ -151,7 +150,7 @@ struct ScanConfig {
                                          // unconditionally). Not persisted.
     // Sensitive ("Sens") mode — ADAPTIVE shape: the chain keeps RUNNING,
     // its thresholds self-tune to the observed SNR (constants.hpp
-    // SHAPE_ADAPT_* contract). When ON:
+    // SHAPE_ADAPT_* contract). When ON (default):
     //   - the Step-3 gate becomes noise-adaptive: clamp(3σ_IQR, 10,
     //     spectrum_margin − 2) — opens in clean noise, capped by the user
     //     value so Sens is never STRICTER than asked (±5..10 on "Mar"
@@ -161,9 +160,9 @@ struct ScanConfig {
     //     marginal peaks are judged gently, strong peaks (gate + 4 dB) by
     //     the full user thresholds. Sharp/Valley/Flat/Sym/Kurt therefore
     //     still protect against WiFi in Sens mode — just proportionally.
-    // When OFF (default): w = 100 forces every eased formula to the exact
+    // When OFF: w = 100 forces every eased formula to the exact
     // user value — the legacy strict chain, byte-identical.
-    bool sensitive_mode{false};          // Default OFF — opt-in for adaptive shape
+    bool sensitive_mode{true};           // Default ON — adaptive shape
 
     // Minimum SHARE (%) of the ARMED shape-similarity steps that must agree
     // for a candidate to pass while sensitive_mode is ON ("Shape score" in
@@ -2935,7 +2934,7 @@ private:
     static constexpr size_t SPECTRUM_SORT_BUF_SIZE = 256;
     mutable uint8_t spectrum_sort_buf_[SPECTRUM_SORT_BUF_SIZE];
 
-    // SPATIAL ENVELOPE scratch (opt-in, config_.spectrum_envelope_enabled).
+    // SPATIAL ENVELOPE scratch (config_.spectrum_envelope_enabled, default ON).
     // Holds the 3-tap max-of-neighbours envelope of the current frame's 256
     // bins. Written once per frame at the top of process_spectrum_message /
     // process_spectrum_sweep; read by the crest test and apply_shape_filters

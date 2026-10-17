@@ -1132,20 +1132,20 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
            wideband guard at defaults]. Guards RSSI-only and TBD paths
            unconditionally; with PERMISSIVE defaults it also guards
            shape-validated verdicts [audit D-B]: otherwise DB scan has
-           NO wideband gate at defaults, since Step 6c is sweep-only and
-           Mahalanobis / RSSI-variance default OFF)
+            NO wideband gate at defaults, since Step 6c is sweep-only and
+            Mahalanobis / RSSI-variance then defaulted OFF)
     center freq must exceed strongest neighbor within 10 MHz by
     neighbor_margin_db (default 2 dB)
     → Rejects wideband noise (WiFi, BT, microwave)
 
   Step 14: Mahalanobis Gate (SWEEP mode only, inside apply_sweep_tracking)
     D²_M must be < mahalanobis_threshold_x10 / 10 (default 40 → 4.0)
-    → Rejects statistical outliers (noise, spurs); default OFF (opt-in)
+    → Rejects statistical outliers (noise, spurs); default ON
 
   Step 15: RSSI Variance (BOTH modes — runs LAST, inside the tracker update,
            after Step 13 in DB / Step 14 in sweep)
     calculate_rssi_variance() must be <= 100 (DEFAULT_RSSI_VARIANCE_THRESHOLD)
-    → Rejects chaotic noise (real drones have stable RSSI); default OFF;
+    → Rejects chaotic noise (real drones have stable RSSI); default ON;
       a rejected sample still refreshes history — only the threat upgrade
       is withheld (observe_rssi)
 

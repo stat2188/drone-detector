@@ -372,7 +372,7 @@ ScanConfig::ScanConfig() noexcept
     , confirm_count_enabled(true)
     , noise_blacklist_enabled(true)
     , spectrum_detection_enabled(true)
-    , median_enabled(false)
+    , median_enabled(true)
     , spectrum_margin(DEFAULT_SPECTRUM_MARGIN)
     , spectrum_min_width(DEFAULT_SPECTRUM_MIN_WIDTH)
     , spectrum_max_width(DEFAULT_SPECTRUM_MAX_WIDTH)
@@ -382,11 +382,11 @@ ScanConfig::ScanConfig() noexcept
     , spectrum_flatness(DEFAULT_SPECTRUM_FLATNESS)
     , spectrum_symmetry(DEFAULT_SPECTRUM_SYMMETRY)
     , neighbor_margin_db(DEFAULT_NEIGHBOR_MARGIN_DB)
-    , rssi_variance_enabled(false)
+    , rssi_variance_enabled(true)
     , confirm_count(DEFAULT_CONFIRM_COUNT)
-    , sensitive_mode(false) {
+    , sensitive_mode(true) {
     // sweep2/3/4 fields use in-class defaults: disabled
-    // mahalanobis_enabled uses in-class default (false, USER DEFAULT)
+    // mahalanobis_enabled uses in-class default (true)
 }
 
 ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
@@ -403,7 +403,7 @@ ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
     , confirm_count_enabled(true)
     , noise_blacklist_enabled(true)
     , spectrum_detection_enabled(true)
-    , median_enabled(false)
+    , median_enabled(true)
     , spectrum_margin(DEFAULT_SPECTRUM_MARGIN)
     , spectrum_min_width(DEFAULT_SPECTRUM_MIN_WIDTH)
     , spectrum_max_width(DEFAULT_SPECTRUM_MAX_WIDTH)
@@ -413,11 +413,11 @@ ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
     , spectrum_flatness(DEFAULT_SPECTRUM_FLATNESS)
     , spectrum_symmetry(DEFAULT_SPECTRUM_SYMMETRY)
     , neighbor_margin_db(DEFAULT_NEIGHBOR_MARGIN_DB)
-    , rssi_variance_enabled(false)
+    , rssi_variance_enabled(true)
     , confirm_count(DEFAULT_CONFIRM_COUNT)
-    , sensitive_mode(false) {
+    , sensitive_mode(true) {
     // sweep2/3/4 fields use in-class defaults: disabled
-    // mahalanobis_enabled uses in-class default (false, USER DEFAULT)
+    // mahalanobis_enabled uses in-class default (true)
 }
 
 
@@ -1225,7 +1225,8 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         // (MaxW >= 114 = no measurable cap, Sharp <= 100 = math dead-band,
         // Flat = 0) a WiFi/BT flat-top passes Steps 3-12 trivially, so the
         // old unconditional skip left DB scan with NO wideband gate at all
-        // (Step 6c is sweep-only; Mahalanobis / RSSI-variance default OFF),
+        // (Step 6c is sweep-only; Mahalanobis / RSSI-variance historically
+        // defaulted OFF),
         // while constants.hpp promises DB flat-top rejection to exactly this
         // post-filter. When the chain is DISARMED the check now also runs for
         // shape-validated verdicts; arming Flat/MaxW/Sharp restores the
@@ -2589,7 +2590,7 @@ bool DroneScanner::analyze_spectrum_shape_impl(
     const uint8_t* shape_data
 ) noexcept {
     // shape_data == nullptr → legacy raw path (byte-for-byte). Non-null →
-    // the opt-in spatial envelope (config_.spectrum_envelope_enabled), whose
+    // the spatial envelope (config_.spectrum_envelope_enabled, default ON), whose
     // monotone-raising property means the Step-3 margin (derived from the RAW
     // raw_peak the caller measured) can only widen the walk, never tighten it.
     const uint8_t* data = (shape_data != nullptr) ? shape_data : spectrum.db.data();
@@ -2635,7 +2636,7 @@ bool DroneScanner::analyze_spectrum_shape_multi(
 
     const int32_t total_gain = get_current_total_gain();
 
-    // SPATIAL ENVELOPE (opt-in, config_.spectrum_envelope_enabled).
+    // SPATIAL ENVELOPE (config_.spectrum_envelope_enabled, default ON).
     // Computed ONCE per frame over the two sidebands (DC gap never bridged).
     // shape_data selects it for the crest TOPOLOGY test and the shape chain's
     // width-walk / extent / valley / flatness / symmetry / kurtosis. The
@@ -4598,7 +4599,7 @@ void DroneScanner::process_spectrum_sweep(
     const uint8_t collect_gate =
         config_.spectrum_detection_enabled ? cfg_margin : uint8_t{0};
 
-    // SPATIAL ENVELOPE (opt-in, config_.spectrum_envelope_enabled) — SWEEP
+    // SPATIAL ENVELOPE (config_.spectrum_envelope_enabled, default ON) — SWEEP
     // parity with the DB path (analyze_spectrum_shape_multi). Computed ONCE
     // per frame over the two narrow-edge sidebands (DC gap never bridged).
     // shape_data below feeds the crest TOPOLOGY test and the shape chain via

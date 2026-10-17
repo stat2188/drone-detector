@@ -303,7 +303,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     // visibility block: set_shape_filter_visibility() already gates RbF
     // with the rest of the shape section (spectrum_detection_enabled).
     , check_robust_width_floor_({UI_POS_X(16), UI_POS_Y(7)}, 4, "RbF", true)
-    // Spatial envelope toggle (staircase fix, DEFAULT OFF — "Env"). Row 7
+    // Spatial envelope toggle (staircase fix, DEFAULT ON — "Env"). Row 7
     // right of RbF: RbF ends at X(16)+48 = 176, Env at X(23) = 184..232
     // with the layout's usual 8 px gutter, within the 240 px edge —
     // disjoint from every other rect on the row (focus geometry rule).
@@ -637,7 +637,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         settings_dirty_ = true;
     };
 
-    // Spatial envelope toggle (staircase fix, default OFF). Check = the
+    // Spatial envelope toggle (staircase fix, default ON). Check = the
     // 3-tap max-of-neighbours envelope feeds the crest topology test and the
     // shape chain (fills one-bin notches on jagged slopes); uncheck = the
     // legacy raw path, byte-for-byte.

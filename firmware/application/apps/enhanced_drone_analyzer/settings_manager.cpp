@@ -32,7 +32,7 @@ SettingsStruct::SettingsStruct() noexcept
     , confirm_count_enabled(true)
     , noise_blacklist_enabled(true)
     , spectrum_detection_enabled(true)
-    , median_enabled(false)
+    , median_enabled(true)
     , spectrum_margin(DEFAULT_SPECTRUM_MARGIN)
     , spectrum_min_width(DEFAULT_SPECTRUM_MIN_WIDTH)  // 2 bins ≈ 156 kHz («проходят и узкие»)
     , spectrum_max_width(DEFAULT_SPECTRUM_MAX_WIDTH)
@@ -51,15 +51,15 @@ SettingsStruct::SettingsStruct() noexcept
     , os_cfar_k_percent(DEFAULT_OS_CFAR_K_PERCENT)
     , vi_cfar_threshold_x10(DEFAULT_VI_CFAR_THRESHOLD_X10)
     , neighbor_margin_db(DEFAULT_NEIGHBOR_MARGIN_DB)
-    , rssi_variance_enabled(false)
+    , rssi_variance_enabled(true)
     , confirm_count(DEFAULT_CONFIRM_COUNT)
-    , mahalanobis_enabled(false)
+    , mahalanobis_enabled(true)
     , mahalanobis_threshold_x10(DEFAULT_MAHALOBIS_THRESHOLD_X10)
-    , sensitive_mode(false)
+    , sensitive_mode(true)
     , shape_sim_threshold_pct(DEFAULT_SHAPE_SIM_THRESHOLD_PCT)
     , shape_bypass_enabled(false)
     , robust_width_floor_enabled(true)
-    , spectrum_envelope_enabled(false)
+    , spectrum_envelope_enabled(true)
     , kurtosis_enabled(false)
     , kurtosis_min_x10(20)
     , adaptive_cfar_enabled(false)
@@ -445,7 +445,7 @@ static void parse_settings_line(
         s.robust_width_floor_enabled = parse_bool();
     } else if (key_matches("spectrum_envelope_enabled")) {
         // Envelope kill switch. MISSING KEY (old settings files) keeps the
-        // in-struct default OFF — legacy behavior until the user opts in.
+        // in-struct default ON — the staircase fix stays active after an upgrade.
         s.spectrum_envelope_enabled = parse_bool();
 
     // --- Advanced detection (file-only opt-in, not in the settings UI) ---
@@ -787,7 +787,7 @@ ErrorCode SettingsFileManager::save(
     // Robust width-anchor floor (audit fix W1, default ON — RbF checkbox)
     wbool(file, "robust_width_floor_enabled", s.robust_width_floor_enabled);
 
-    // Spatial envelope (staircase fix, default OFF — Env checkbox)
+    // Spatial envelope (staircase fix, default ON — Env checkbox)
     wbool(file, "spectrum_envelope_enabled", s.spectrum_envelope_enabled);
 
     // Advanced detection (file-only opt-in, not in the settings UI)
@@ -847,7 +847,7 @@ void SettingsFileManager::apply_to_config(
     // Robust width-anchor floor (audit fix W1, default ON)
     config.robust_width_floor_enabled = s.robust_width_floor_enabled;
 
-    // Spatial envelope (staircase fix, default OFF)
+    // Spatial envelope (staircase fix, default ON)
     config.spectrum_envelope_enabled = s.spectrum_envelope_enabled;
 
     // Advanced detection
@@ -1021,7 +1021,7 @@ void SettingsFileManager::extract_from_config(
     // Robust width-anchor floor (audit fix W1, default ON)
     s.robust_width_floor_enabled = config.robust_width_floor_enabled;
 
-    // Spatial envelope (staircase fix, default OFF)
+    // Spatial envelope (staircase fix, default ON)
     s.spectrum_envelope_enabled = config.spectrum_envelope_enabled;
 
     // Advanced detection

@@ -48,7 +48,7 @@ struct SettingsStruct {
     bool confirm_count_enabled;
     bool noise_blacklist_enabled;
     bool spectrum_detection_enabled;
-    bool median_enabled{false};  // Median filter (Md+) — OFF by default, opt-in
+    bool median_enabled{true};  // Median filter (Md+) — ON by default
 
     // Spectrum shape filter
     uint8_t spectrum_margin;
@@ -75,16 +75,16 @@ struct SettingsStruct {
 
     // Anti-false-positive
     int32_t neighbor_margin_db;
-    bool rssi_variance_enabled;
+    bool rssi_variance_enabled{true};
     uint8_t confirm_count;
     uint8_t miss_tolerance{DEFAULT_MISS_TOLERANCE};  // Consecutive misses before breaking lock
 
     // Mahalanobis Gate Filter
-    bool mahalanobis_enabled;
+    bool mahalanobis_enabled{true};
     uint8_t mahalanobis_threshold_x10;
 
     // Sensitive mode — relaxes shape filters for weak/long-range signals
-    bool sensitive_mode{false};
+    bool sensitive_mode{true};
     // Minimum SHARE (%) of the ARMED shape-similarity steps that must agree
     // while sensitive_mode is ON ("Shape score" in the settings UI).
     // 100 (DEFAULT, audit D-FULL-PASS) = strict AND — every armed gate must
@@ -105,16 +105,15 @@ struct SettingsStruct {
     // the key and load the default (ON).
     bool robust_width_floor_enabled{true};
 
-    // Spatial envelope kill switch (default OFF — opt-in staircase fix) —
+    // Spatial envelope kill switch (default ON — staircase fix) —
     // mirrors ScanConfig::spectrum_envelope_enabled. When ON, a 3-tap
     // max-of-neighbours envelope (spectrum_envelope.hpp) is fed to the crest
     // topology test and the shape chain, filling one-bin notches on jagged
     // slopes so phantom crests and truncated peak edges stop spawning false
     // detections inside one physical emission. When OFF, the raw bins are
     // read byte-for-byte (legacy path). UI: "Env" checkbox. Old settings
-    // files lack the key and load the default (OFF — field behavior
-    // unchanged until the user opts in).
-    bool spectrum_envelope_enabled{false};
+    // files lack the key and load the default (ON).
+    bool spectrum_envelope_enabled{true};
 
     // Advanced detection — persisted for round-trip but NOT exposed in the
     // settings UI (file-only opt-in; defaults preserve previous behavior)
