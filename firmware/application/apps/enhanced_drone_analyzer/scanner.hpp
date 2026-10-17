@@ -72,6 +72,13 @@ struct ScanConfig {
     FreqHz sweep4_step_freq{SWEEP_GAPLESS_STEP_MAX_HZ};
     bool sweep4_enabled{false};
 
+    // User shelf offset (units, -9..+9) — single source of truth shared by the
+    // DISPLAY shelf (DroneDisplay composite-floor subtraction) and the
+    // DETECTOR shelf (process_spectrum_sweep p25 noise + width anchor). See
+    // constants.hpp SWEEP_SHELF_OFFSET_* for the full display/detector
+    // coupling contract. Persisted via settings_manager (sweep_shelf_offset).
+    int8_t sweep_shelf_offset{SWEEP_SHELF_OFFSET_DEFAULT};
+
     // Advanced detection features (ON by default — matches constructor)
     bool dwell_enabled{true};           // Stay on frequency when signal detected
     bool confirm_count_enabled{true};   // Require multiple confirmations before creating drone
@@ -1292,6 +1299,29 @@ public:
      * @note Stack: ~8 B. No heap, no FP.
      */
     [[nodiscard]] uint8_t sweep_tbd_threshold_units_try() const noexcept;
+
+    /**
+     * @brief User shelf offset (units) WITHOUT blocking (sweep fast path).
+     * @return ScanConfig::sweep_shelf_offset, or SWEEP_SHELF_OFFSET_MIN when the
+     *         mutex is contended — fail-OPEN in the sensitivity direction: the
+     *         minimum offset yields the LOWEST drain shelf, so both UI-side
+     *         gates (half-gate prefilter, TBD reachability) are maximally
+     *         permissive. A contended read can therefore only ADD frames to
+     *         analysis, never drop one — the same policy as the 0-margin and
+     *         0-units fallbacks above.
+     * @details Companion to shape_gate_margin_try()/sweep_tbd_threshold_units_try():
+     *   the UI drain prefilter must gate on clamp(min_bin + off) exactly like the
+     *   detector gates on clamp(p25 + off). Sharing ONE offset keeps
+     *   min + off <= p25 + off under the monotone [0,255] clamp, which is what
+     *   makes the documented "UI test is a strict SUBSET of the detector test"
+     *   proof hold for EVERY offset — including the negative ones, where the
+     *   un-biased min shelf used to sit ABOVE the detector's p25 + off shelf
+     *   and silently cost the frame its TBD vote.
+     * @note Validated/clamped to [SWEEP_SHELF_OFFSET_MIN, SWEEP_SHELF_OFFSET_MAX]
+     *       by set_config() and by the parse path, re-clamped here as belt-and-braces.
+     * @note Stack: ~4 B. No heap, no FP.
+     */
+    [[nodiscard]] int8_t sweep_shelf_offset_try() const noexcept;
 
     /**
      * @brief Get sweep step frequency in Hz

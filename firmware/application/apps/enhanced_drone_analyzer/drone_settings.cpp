@@ -743,6 +743,10 @@ bool DroneSettingsView::commit_to_scanner() noexcept {
     settings_.sweep4_end_freq = g_workspace_cfg.sweep4_end_freq;
     settings_.sweep4_step_freq = g_workspace_cfg.sweep4_step_freq;
     settings_.sweep4_enabled = g_workspace_cfg.sweep4_enabled;
+    // Shelf offset is LIVE (edited from the main screen dial): stash it so a
+    // Settings-view commit/save cannot clobber the user's value with the
+    // ctor-snapshot default (apply_to_config below re-pushes it too).
+    settings_.sweep_shelf_offset = g_workspace_cfg.sweep_shelf_offset;
     for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
         for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
             // Both sides store the MHz mirror — direct POD copy.

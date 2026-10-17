@@ -310,6 +310,13 @@ static void parse_settings_line(
     } else if (key_matches("sweep4_enabled")) {
         s.sweep4_enabled = parse_bool();
 
+    // --- User shelf offset (signed; old files lack the key → default 0) ---
+    } else if (key_matches("sweep_shelf_offset")) {
+        const int32_t v = parse_signed_int();
+        s.sweep_shelf_offset = static_cast<int8_t>(
+            (v < SWEEP_SHELF_OFFSET_MIN) ? SWEEP_SHELF_OFFSET_MIN
+            : (v > SWEEP_SHELF_OFFSET_MAX ? SWEEP_SHELF_OFFSET_MAX : v));
+
     // --- Sweep detection windows (5 ranges per window; MHz; 0/0 = disabled) ---
     } else if (key_matches("sw1_dw0_start_mhz")) { s.sweep_det_win_start_mhz[0][0] = parse_mhz_clamped();
     } else if (key_matches("sw1_dw0_end_mhz")) { s.sweep_det_win_end_mhz[0][0] = parse_mhz_clamped();
@@ -713,6 +720,9 @@ ErrorCode SettingsFileManager::save(
     wl(file, "sweep4_step_khz", static_cast<int64_t>(s.sweep4_step_freq / 1000ULL));
     wbool(file, "sweep4_enabled", s.sweep4_enabled);
 
+    // User shelf offset (signed — parse_signed_int on load)
+    wl(file, "sweep_shelf_offset", static_cast<int64_t>(s.sweep_shelf_offset));
+
     // Sweep detection windows (4 windows x 5 ranges; MHz; only active slots written)
     static const char* dw_keys_start[4][DETECTION_WINDOWS_PER_WINDOW] = {
         {"sw1_dw0_start_mhz", "sw1_dw1_start_mhz", "sw1_dw2_start_mhz", "sw1_dw3_start_mhz", "sw1_dw4_start_mhz"},
@@ -909,6 +919,7 @@ void SettingsFileManager::apply_to_config(
     config.sweep4_end_freq = s.sweep4_end_freq;
     config.sweep4_step_freq = s.sweep4_step_freq;
     config.sweep4_enabled = s.sweep4_enabled;
+    config.sweep_shelf_offset = s.sweep_shelf_offset;
 
     // Sweep detection windows (MHz mirror — direct POD copy)
     for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
@@ -995,6 +1006,7 @@ void SettingsFileManager::extract_from_config(
     s.sweep4_end_freq = config.sweep4_end_freq;
     s.sweep4_step_freq = config.sweep4_step_freq;
     s.sweep4_enabled = config.sweep4_enabled;
+    s.sweep_shelf_offset = config.sweep_shelf_offset;
 
     // Sweep detection windows (MHz mirror — direct POD copy)
     for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {

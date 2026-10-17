@@ -282,7 +282,13 @@ void DroneDisplay::paint(Painter& painter) {
                 const bool data   = full || (dirty_flags_ & DIRTY_SPEC_DATA) != 0;
                 const bool marker = data || (dirty_flags_ & DIRTY_SPEC_MARKER) != 0;
                 if (marker) {
-                    const uint8_t nf1 = composite_noise_floor_valid_ ? composite_noise_floor_ : 0;
+                    // Offset only a MEASURED floor: an invalid floor means
+                    // "no percentile pass yet" → subtract nothing, exactly the
+                    // pre-offset behaviour (biasing 0 would suppress the band
+                    // for one sweep pass after every persistence reset).
+                    const uint8_t nf1 = composite_noise_floor_valid_
+                        ? apply_shelf_offset(composite_noise_floor_)
+                        : uint8_t{0};
                     render_composite_partial_band(painter, band1_, composite_data_, composite_data_size_,
                                                   ox, y_offset, w, layout.spec_h,
                                                   scan_head_position_[0], nf1, data,
@@ -1157,6 +1163,13 @@ void DroneDisplay::update_noise_floor() noexcept {
     set_dirty();
 }
 
+uint8_t DroneDisplay::apply_shelf_offset(uint8_t nf) const noexcept {
+    const int16_t v = static_cast<int16_t>(nf) + static_cast<int16_t>(shelf_offset_);
+    if (v < 0) return 0;
+    if (v > 255) return 255;
+    return static_cast<uint8_t>(v);
+}
+
 // ============================================================================
 // Shared envelope bar drawing (DRY: used by render_composite + render_multi_zone)
 // ============================================================================
@@ -1737,9 +1750,14 @@ void DroneDisplay::render_dual_composite(
 
     // Band 1 (top half) — upper band scan head, band 1 noise floor.
     // Band 2 (bottom half) — band 2 freq range as title override and its own
-    // independently computed noise floor.
-    const uint8_t nf1 = composite_noise_floor_valid_ ? composite_noise_floor_ : 0;
-    const uint8_t nf2 = sweep2_noise_floor_valid_ ? sweep2_noise_floor_ : 0;
+    // independently computed noise floor. Both VALID floors get the same user
+    // shelf offset (SWEEP_SHELF_OFFSET_* coupling, see set_shelf_offset); an
+    // invalid floor stays 0 — offsetting "unknown" would bias a band until its
+    // first percentile pass.
+    const uint8_t nf1 = composite_noise_floor_valid_
+        ? apply_shelf_offset(composite_noise_floor_) : uint8_t{0};
+    const uint8_t nf2 = sweep2_noise_floor_valid_
+        ? apply_shelf_offset(sweep2_noise_floor_) : uint8_t{0};
 
     if (full) {
         render_composite_full_band(painter, band1_, composite_data_, composite_data_size_,

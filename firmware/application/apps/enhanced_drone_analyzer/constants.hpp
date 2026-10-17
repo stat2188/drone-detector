@@ -960,6 +960,36 @@ constexpr uint8_t SWEEP_DISPLAY_NOISE_MARGIN = 8;
  */
 constexpr uint8_t SWEEP_NOISE_FLOOR_PERCENTILE = 15;
 
+/**
+ * @brief User shelf offset (units, -9..+9, default 0) applied to the sweep
+ *        noise shelf in BOTH the display and the detector.
+ * @note Display side: DroneDisplay subtracts (15th-percentile composite floor
+ *       + offset) from every bar before the margin/color gates — the dial
+ *       reveals or suppresses weak peaks on the spectrum.
+ * @note Detector side: process_spectrum_sweep biases its per-frame p25 noise
+ *       shelf AND the width-anchor shelf by the SAME offset, so the Step-3
+ *       margin gate, shape chain, fast prefilter and TBD elevation all move
+ *       with the displayed shelf — what the user reveals is what the relative
+ *       gates admit. The absolute RSSI gate (Sens knob, rssi_threshold_dbm)
+ *       and the dBm-domain tracking/RSSI path are intentionally NOT biased.
+ * @note RAW exceptions (offset must NOT reach them): the σ/IQR estimate in
+ *       update_auto_gate (its contract is IQR = p75 - p25, and the DB path
+ *       already feeds it the RAW p25 — biasing it would cancel most of a
+ *       negative dial position inside the Step-3 gate and desync DB vs sweep)
+ *       and AdaptiveThreshold's floor_dBm (must share the RAW-peak dBm domain
+ *       of the rssi it classifies against).
+ * @note UI drain parity: the drain prefilter gates on clamp(min_bin + offset)
+ *       via DroneScanner::sweep_shelf_offset_try() so the documented "UI gate
+ *       ⊆ detector gate" proof survives every offset (incl. negative); the
+ *       accessor fails OPEN to SWEEP_SHELF_OFFSET_MIN on mutex contention.
+ * @note Semantics: effective_shelf = auto_N + offset. The automatic percentile
+ *       keeps running every pass (tracks AGC gain steps and range changes);
+ *       the user's RELATIVE adjustment never gets recalculated away.
+ */
+constexpr int8_t SWEEP_SHELF_OFFSET_MIN = -9;
+constexpr int8_t SWEEP_SHELF_OFFSET_MAX = 9;
+constexpr int8_t SWEEP_SHELF_OFFSET_DEFAULT = 0;
+
 // ============================================================================
 // Mini Waterfall Constants
 // ============================================================================

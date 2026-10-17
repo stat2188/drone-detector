@@ -593,6 +593,10 @@ SettingsStruct fields (all persisted):
 
   // Misc
   rssi_decrease_cycles, freq_match_radius_mhz
+  sweep_shelf_offset (int8, -9..+9, default 0; same key in the file and in
+      ScanConfig — biases the sweep noise shelf in display AND relative
+      detector gates; σ/IQR estimate, dBm paths and the absolute Sens gate
+      stay RAW)
 
 SettingsManager Flow:
   1. Load: SettingsFileManager::load(settings) → read /EDA/SETTINGS.TXT
@@ -730,8 +734,14 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
     [noise + floor, gate/2) therefore still reach the integrator instead of
     being cut outright — the weak-signal regression this contract restores.
     The UI drain loop applies the SAME two-condition test with its min-based
-    shelf (<= p25), a strict subset of the detector's p25 gate: it can never
-    drop a frame the detector would keep. Mutex contention on the RSSI/gain
+    shelf clamp(min + SWEEP_SHELF_OFFSET), a strict subset of the detector's
+    clamp(p25 + SWEEP_SHELF_OFFSET) gate: the clamp is monotone, so
+    min <= p25 survives the shared offset and the UI can never drop a frame
+    the detector would keep (this was FALSE for negative offsets before both
+    sides shared the offset — the un-biased min shelf then sat above the
+    detector's p25 + off shelf and silently cost such frames their TBD vote).
+    Contention on the shelf-offset accessor fails OPEN to the MINIMUM offset
+    (lowest shelf = loosest UI gate). Mutex contention on the RSSI/gain
     snapshot fails OPEN (units 0 → only the noise floor applies): contention
     can only ADD frames, never cut sensitivity.
 

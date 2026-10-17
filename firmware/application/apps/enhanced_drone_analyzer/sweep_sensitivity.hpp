@@ -14,10 +14,13 @@ namespace drone_analyzer {
  *        not apply there — threshold tracking owns every frame (parity
  *        with the detector-side bypass in process_spectrum_sweep).
  * @param peak_power Max usable-bin power of the slice (already scanned).
- * @param noise_floor Noise shelf of the SAME slice: min at the UI drain
- *        level, 25th-percentile inside the detector. min <= p25 always
- *        holds, so the UI gate is a strict SUBSET of the detector gate —
- *        it can never drop a frame the detector would have accepted.
+ * @param noise_floor Noise shelf of the SAME slice: clamp(min + off) at the UI
+ *        drain level, clamp(p25 + off) inside the detector — BOTH carry the
+ *        SAME ScanConfig::sweep_shelf_offset (SWEEP_SHELF_OFFSET_*). The clamp
+ *        is monotone, so min <= p25 implies clamp(min+off) <= clamp(p25+off)
+ *        and the UI gate is a strict SUBSET of the detector gate for EVERY
+ *        offset (with off = 0 this reduces to min <= p25): it can never drop
+ *        a frame the detector would have accepted.
  * @param shape_margin Full Step-3 gate (shape_gate_margin()); 0 on mutex
  *        contention or when the user disabled the margin => fail-open.
  * @return true iff slice deserves heavy analysis or TBD integration.
@@ -105,10 +108,12 @@ namespace drone_analyzer {
  * @param shape_detect_on ScanConfig::spectrum_detection_enabled snapshot.
  *        FALSE (RSSI-only mode) => never gate: threshold tracking owns it.
  * @param frame_peak_power Max usable-bin power of the slice (already scanned).
- * @param noise_floor Noise shelf of the SAME slice: min at the UI drain level,
- *        25th percentile inside the detector. min <= p25 always holds, so the
- *        UI-side test is a strict SUBSET of the detector-side one and can
- *        never drop a frame the detector would have offered to TBD.
+ * @param noise_floor Noise shelf of the SAME slice: clamp(min + off) at the UI
+ *        drain level, clamp(p25 + off) inside the detector — SAME
+ *        SWEEP_SHELF_OFFSET on both sides (see sweep_fast_prefilter above), so
+ *        the monotone clamp preserves min <= p25 and the UI-side test is a
+ *        strict SUBSET of the detector-side one for EVERY offset: it can never
+ *        drop a frame the detector would have offered to TBD.
  * @param rssi_threshold_units Output of sweep_tbd_threshold_units(); 0 on
  *        mutex contention (fail-open: the noise floor still applies).
  * @return true iff the frame must still be offered to the TBD integrator.

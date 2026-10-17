@@ -282,6 +282,31 @@ public:
     void update_noise_floor() noexcept;
 
     /**
+     * @brief Set the user shelf offset (-9..+9 units, SWEEP_SHELF_OFFSET_*).
+     * @note Biases the auto-computed composite floor at RENDER time:
+     *       effective_floor = clamp(composite_noise_floor_ + offset, 0, 255).
+     *       The raw percentile keeps updating every pass (update_noise_floor);
+     *       only the user's relative adjustment is sticky.
+     * @note Coupled to the detector: the scanner applies the SAME offset to
+     *       its per-frame p25 shelf (ScanConfig::sweep_shelf_offset), so
+     *       revealed peaks are also revealed to the relative detection gates.
+     * @note Raises DIRTY_SPEC_DATA: the incremental renderer stores
+     *       floor-subtracted values in band.shadow, so a floor change must
+     *       invalidate every column — render_composite_partial_band detects
+     *       the new floor via last_noise_floor and forces a full repaint.
+     * @note Clamped to [SWEEP_SHELF_OFFSET_MIN, SWEEP_SHELF_OFFSET_MAX];
+     *       unchanged value is a no-op. UI thread only.
+     */
+    void set_shelf_offset(int8_t offset) noexcept {
+        if (offset < SWEEP_SHELF_OFFSET_MIN) offset = SWEEP_SHELF_OFFSET_MIN;
+        if (offset > SWEEP_SHELF_OFFSET_MAX) offset = SWEEP_SHELF_OFFSET_MAX;
+        if (offset == shelf_offset_) return;
+        shelf_offset_ = offset;
+        dirty_flags_ |= DIRTY_SPEC_DATA;
+        set_dirty();
+    }
+
+    /**
      * @brief Set real-time scan-head position for the upper and lower composite bands.
      * @param upper Pixel index 0..COMPOSITE_SIZE-1, or -1 to hide on upper band.
      * @param lower Pixel index 0..COMPOSITE_SIZE-1, or -1 to hide on lower band.
@@ -552,6 +577,20 @@ private:
     // Auto-computed noise floor for composite display noise floor subtraction.
     uint8_t composite_noise_floor_{0};
     bool composite_noise_floor_valid_{false};
+
+    // User shelf offset (-9..+9 units) — biases the render-time floor for
+    // BOTH bands (single + dual sweep). Raw percentile values above stay
+    // unbiased; apply_shelf_offset() is applied at the render call sites.
+    // Coupled to ScanConfig::sweep_shelf_offset (detector shelf) via the UI.
+    int8_t shelf_offset_{SWEEP_SHELF_OFFSET_DEFAULT};
+
+    /**
+     * @brief Apply the user shelf offset to one band's raw noise floor.
+     * @param nf Raw auto-computed floor (15th percentile of the persist buf).
+     * @return clamp(nf + shelf_offset_, 0, 255) — the floor the render
+     *         subtracts (bar value = composite - result).
+     */
+    [[nodiscard]] uint8_t apply_shelf_offset(uint8_t nf) const noexcept;
 
     // sweep2_persist_buf_, sweep2_sort_buf_ moved to file-scope static
     // (drone_display.cpp) — saves 480 bytes of heap per DroneDisplay instance.

@@ -108,6 +108,15 @@ private:
     ui::Button button_load_{{UI_POS_X(13), 284, UI_POS_WIDTH(4), 28}, "Load"};
     ui::Button button_settings_{{UI_POS_X(18), 284, UI_POS_WIDTH(4), 28}, "Set"};
     ui::Button button_swp_{{UI_POS_X(23), 284, UI_POS_WIDTH(5), 28}, "SWP"};
+    // Sweep shelf offset dial (-9..+9 units, default 0) — 2-char NumberField
+    // in the 16 px free right of SWP (SWP ends at x=223, field = 224..239),
+    // vertically centred in the 28 px button row (y=290..305). Encoder
+    // adjusts when focused; "−9".." 9". Biases BOTH the display composite
+    // floor and the detector's per-frame p25 shelf
+    // (ScanConfig::sweep_shelf_offset) so revealed peaks are also admitted
+    // by the relative detection gates. Persisted with the sweep settings.
+    ui::NumberField field_shelf_offset_{{UI_POS_X(28), 290}, 2,
+        {SWEEP_SHELF_OFFSET_MIN, SWEEP_SHELF_OFFSET_MAX}, 1, ' '};
 
     FreqHz current_frequency_{0};
     void set_current_frequency_safe(FreqHz freq) noexcept;

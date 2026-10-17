@@ -144,6 +144,13 @@ struct SettingsStruct {
     FreqHz sweep4_step_freq;
     bool sweep4_enabled;
 
+    // User shelf offset (-9..+9 units, default 0) — biases the sweep noise
+    // shelf in BOTH the display (composite floor subtraction) and the
+    // detector (per-frame p25 floor + width anchor). Mirrors
+    // ScanConfig::sweep_shelf_offset; file key "sweep_shelf_offset".
+    // Old settings files lack the key and load the default (0 = pure auto).
+    int8_t sweep_shelf_offset{SWEEP_SHELF_OFFSET_DEFAULT};
+
     // Sweep detection windows — MHz file-format mirror (keeps sizeof ≤ 512B).
     // Slot i of window w is ACTIVE iff start>0 && end>0 && start<=end.
     // When ALL 5 slots of a window are 0 (default), detection runs over the

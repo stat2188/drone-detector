@@ -2261,6 +2261,22 @@ uint8_t DroneScanner::sweep_tbd_threshold_units_try() const noexcept {
                                      get_current_total_gain());
 }
 
+int8_t DroneScanner::sweep_shelf_offset_try() const noexcept {
+    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    // Fail-OPEN on contention (see the header contract): the MINIMUM offset
+    // gives the drain shelf clamp(min + MIN) <= clamp(p25 + off) for every
+    // legal off, so the UI gate can never be stricter than the detector's —
+    // a contended read only adds frames to the heavy path (CPU), it cannot
+    // cost sensitivity or a TBD vote.
+    if (!lock.is_locked()) {
+        return SWEEP_SHELF_OFFSET_MIN;
+    }
+    const int8_t off = config_.sweep_shelf_offset;
+    if (off < SWEEP_SHELF_OFFSET_MIN) return SWEEP_SHELF_OFFSET_MIN;
+    if (off > SWEEP_SHELF_OFFSET_MAX) return SWEEP_SHELF_OFFSET_MAX;
+    return off;
+}
+
 ErrorCode DroneScanner::set_config(const ScanConfig& config) noexcept {
     ErrorCode validate_result = validate_config_internal(config);
     if (validate_result != ErrorCode::SUCCESS) {
@@ -2354,7 +2370,19 @@ ErrorCode DroneScanner::validate_config_internal(const ScanConfig& config) const
     if (config.cfar_ref_cells < config.cfar_guard_cells + 2) {
         return ErrorCode::INVALID_PARAMETER;
     }
-    
+
+    // User shelf offset: enforce the SWEEP_SHELF_OFFSET_* contract at the
+    // config boundary. The use-site clamps (display apply_shelf_offset,
+    // detector nf/wf clamp) already make an out-of-range value memory-safe,
+    // but rejecting it here keeps set_config() all-or-nothing and stops a
+    // hand-edited/corrupt config from reaching the drain-vs-detector shelf
+    // asymmetry in the first place. Third layer: NumberField range,
+    // file-parse clamp, this check.
+    if (config.sweep_shelf_offset < SWEEP_SHELF_OFFSET_MIN ||
+        config.sweep_shelf_offset > SWEEP_SHELF_OFFSET_MAX) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
+
     return ErrorCode::SUCCESS;
 }
 
@@ -4574,14 +4602,55 @@ void DroneScanner::process_spectrum_sweep(
     // p25 shelf + width-anchor shelf (select_shape_floors, audit fix W1).
     const ShapeFloors sweep_floors =
         select_shape_floors(usable, idx, config_.robust_width_floor_enabled);
-    const uint8_t noise_floor = sweep_floors.noise;
-    const uint8_t width_floor = sweep_floors.width;
+
+    // USER SHELF OFFSET (display/detector coupling, SWEEP_SHELF_OFFSET_*):
+    // bias BOTH shelves by the same user dial value so the detector's relative
+    // gates move with the displayed shelf (the display subtracts
+    // composite_floor + offset). Both floors shift by the same delta on
+    // purpose:
+    //   - the width-anchor kill switch (p25 - p10 >= CONTAM_DELTA) already
+    //     decided inside select_shape_floors — a common delta preserves the
+    //     p25-p10 difference, so the W1 decision is offset-invariant;
+    //   - every downstream RELATIVE gate (cfg_margin Step-3 subtraction,
+    //     sweep_fast_prefilter, collect gate, sweep_tbd_pass elevation, the
+    //     shape chain's noise-relative margins) sees ONE consistent shelf,
+    //     so "what the user reveals is what the gates admit" holds by
+    //     exactly `offset` units in both directions.
+    // NOT biased — RAW shelf (raw_noise_floor / raw p25-p10, below), by design:
+    //   - update_auto_gate(): its contract is IQR = p75 - p25 (SHAPE_ADAPT_*
+    //     #1) and the DB path already feeds it the RAW p25. Feeding the biased
+    //     shelf would inflate the measured IQR by |offset| — at the default
+    //     SENS config that cancels ~9 units of a -9 dial position down to ~1
+    //     (the adaptive gate re-absorbs what the shelf gave away) while a +9
+    //     position passes through untouched: an asymmetric, near-dead control.
+    //   - the dBm-domain path: adaptive_threshold_'s floor_dBm (must stay in
+    //     the SAME domain as the raw peak rssi it is compared against),
+    //     the median feed and apply_sweep_tracking RSSI;
+    //   - the absolute Sens gate (sweep_tbd_threshold_units from
+    //     rssi_threshold_dbm) — the offset moves the relative shelf only,
+    //     never the user's dBm contract.
+    // CFAR's local reference-cell adaptivity is inherently shelf-independent;
+    // its peaks still clear the shifted Step-3/shape gates below.
+    // Clamp: floor is uint8; -9 floors at 0 (max sensitivity), +9 caps at 255
+    // (everything suppressed — the intentional "raise the shelf" direction;
+    // the uint8 power - noise_floor guards downstream already test
+    // power > noise_floor before subtracting, so no underflow).
+    const uint8_t raw_noise_floor = sweep_floors.noise;  // RAW p25: σ/IQR + dBm only
+    const int8_t shelf_off = config_.sweep_shelf_offset;
+    const int16_t nf_adj = static_cast<int16_t>(sweep_floors.noise) + shelf_off;
+    const int16_t wf_adj = static_cast<int16_t>(sweep_floors.width) + shelf_off;
+    const uint8_t noise_floor = static_cast<uint8_t>(
+        (nf_adj < 0) ? 0 : (nf_adj > 255) ? 255 : nf_adj);
+    const uint8_t width_floor = static_cast<uint8_t>(
+        (wf_adj < 0) ? 0 : (wf_adj > 255) ? 255 : wf_adj);
 
     // SENS ADAPTIVE GATE (SHAPE_ADAPT_*): measure this frame's noise-driven
     // Step-3 gate NOW — cfg_margin below and every later shape_gate_margin()
     // read of this frame must see the fresh value (reading it before Step 1
     // would return the previous frame's measurement / the 0 sentinel).
-    update_auto_gate(spectrum, FFT_EDGE_SKIP_NARROW, noise_floor);
+    // RAW shelf on purpose (see the NOT-biased list above): the σ estimate
+    // must stay p75 - p25 and must match the DB path byte-for-byte.
+    update_auto_gate(spectrum, FFT_EDGE_SKIP_NARROW, raw_noise_floor);
 
     // P0-2: hoist the gain read out of the per-peak loop — the LNA/VGA/RF
     // state is stable inside one frame, so one cached total_gain replaces
@@ -4725,7 +4794,12 @@ void DroneScanner::process_spectrum_sweep(
         // thread that runs process_spectrum_message; scanner thread never
         // touches adaptive_threshold_.
         if (config_.adaptive_cfar_enabled) {
-            const int32_t floor_dBm = spectrum_value_to_dbm(noise_floor, frame_total_gain);
+            // RAW shelf (dBm domain, see the NOT-biased list at Step 1):
+            // AdaptiveThreshold classifies `rssi < floor_dBm + 20 dB` and the
+            // rssi argument is the RAW peak in dBm — the floor must be in the
+            // same, offset-independent domain or the user's dial would skew
+            // the false-alarm rate by 0.2 dB * offset (±1.8 dB at ±9).
+            const int32_t floor_dBm = spectrum_value_to_dbm(raw_noise_floor, frame_total_gain);
             if (peak_count > 0) {
                 adaptive_threshold_.update(
                     true,

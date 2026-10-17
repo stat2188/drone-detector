@@ -167,10 +167,16 @@ void DroneScannerUI::register_handlers() noexcept {
                             // FIFO frames (= sensitivity loss).
                             // Peak/noise scanned here: one 236-bin min/max
                             // pass, stack ~8 B, no quickselect. The scan is
-                            // min-based and min <= p25 always holds, so this
-                            // gate is a strict SUBSET of the detector's
-                            // 25th-percentile gate — it can never drop a
-                            // frame the detector would have accepted.
+                            // min-based: min <= p25 holds, and BOTH shelves
+                            // carry the SAME SWEEP_SHELF_OFFSET (sweep_shelf_
+                            // offset_try), so clamp(min+off) <= clamp(p25+off)
+                            // under the monotone clamp — this gate stays a
+                            // strict SUBSET of the detector's 25th-percentile
+                            // gate for EVERY offset (the un-biased min shelf
+                            // used to sit ABOVE p25+off for off < 0 and drop
+                            // frames — with their TBD votes — the detector
+                            // would have kept). It can never drop a frame the
+                            // detector would have accepted.
                             // TBD REACHABILITY (sensitivity parity): a frame
                             // that fails the half-gate is still ADMITTED when
                             // it could contribute a weak-signal vote to the
@@ -218,16 +224,29 @@ void DroneScannerUI::register_handlers() noexcept {
                                 }
                                 const bool d_shape_on =
                                     this->scanner_ptr_->is_spectrum_shape_enabled_try();
+                                // SHELF PARITY (SWEEP_SHELF_OFFSET_*): gate on
+                                // the SAME biased shelf the detector uses —
+                                // clamp(min + off) vs clamp(p25 + off) keeps the
+                                // subset proof above valid for every offset; a
+                                // contention on the accessor fails OPEN to the
+                                // MINIMUM offset (lowest shelf = loosest gate).
+                                // Stack: ~8 B (int16 temp). No heap, no FP.
+                                const int16_t d_nf_biased =
+                                    static_cast<int16_t>(d_nf) + static_cast<int16_t>(
+                                        this->scanner_ptr_->sweep_shelf_offset_try());
+                                const uint8_t d_nf_shelf = static_cast<uint8_t>(
+                                    (d_nf_biased < 0) ? 0
+                                    : (d_nf_biased > 255 ? 255 : d_nf_biased));
                                 drain_detect = sweep_fast_prefilter(
                                     d_shape_on,
                                     d_peak,
-                                    d_nf,
+                                    d_nf_shelf,
                                     this->scanner_ptr_->shape_gate_margin_try());
                                 if (!drain_detect) {
                                     drain_detect = sweep_tbd_frame_reachable(
                                         d_shape_on,
                                         d_peak,
-                                        d_nf,
+                                        d_nf_shelf,
                                         this->scanner_ptr_->sweep_tbd_threshold_units_try());
                                 }
                             }
@@ -362,7 +381,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         &button_mode_,
         &button_load_,
         &button_settings_,
-        &button_swp_
+        &button_swp_,
+        &field_shelf_offset_
     });
 
     // "cy" field (rssi_decrease_cycles): live decay-tuning from the main screen.
@@ -386,6 +406,27 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         g_workspace_cfg.rssi_decrease_cycles = static_cast<uint8_t>(v);  // 1..50, fits uint8_t
         // Cannot fail here: only rssi_decrease_cycles mutated (no validation
         // on it), all other fields byte-identical to the accepted config.
+        (void)scanner_ptr_->set_config(g_workspace_cfg);
+    };
+
+    // Shelf offset dial (SWEEP_SHELF_OFFSET_*): ONE value drives BOTH the
+    // display floor (DroneDisplay::set_shelf_offset — render-time bias of the
+    // 15th-percentile composite floor) and the detector shelf
+    // (ScanConfig::sweep_shelf_offset — biases the per-frame p25 noise floor
+    // and width anchor in process_spectrum_sweep). The coupling is what makes
+    // "see it ⇒ relative gates admit it" hold: without the scanner half the
+    // user would reveal peaks the Step-3/shape/TBD chain still rejected.
+    // Out of range is impossible (NumberField range {-9,+9}); the double
+    // clamp in set_shelf_offset / the scanner is belt-and-braces for
+    // hand-edited settings.
+    // Persistence: session config + SD via the standard extract/deposit
+    // paths (same policy as "cy" — no per-tick SD write).
+    field_shelf_offset_.on_change = [this](int32_t v) {
+        const int8_t off = static_cast<int8_t>(v);
+        drone_display_.set_shelf_offset(off);
+        if (scanner_ptr_ == nullptr) return;
+        scanner_ptr_->get_config(g_workspace_cfg);
+        g_workspace_cfg.sweep_shelf_offset = off;
         (void)scanner_ptr_->set_config(g_workspace_cfg);
     };
 
@@ -727,6 +768,15 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     // get_config/set_config round-trip.
     field_rssi_dec_cyc_.set_value(
         static_cast<int32_t>(g_workspace_cfg.rssi_decrease_cycles), false);
+
+    // Initial shelf offset from the loaded config (apply_to_config above
+    // copied sweep_shelf_offset from the SD settings). Display push is
+    // trigger-free (setter clamps + raises dirty only on change); the
+    // NumberField update must not fire on_change (scanner already has the
+    // value — same rationale as the "cy" field above).
+    field_shelf_offset_.set_value(
+        static_cast<int32_t>(g_workspace_cfg.sweep_shelf_offset), false);
+    drone_display_.set_shelf_offset(g_workspace_cfg.sweep_shelf_offset);
 }
 
 DroneScannerUI::~DroneScannerUI() noexcept {
