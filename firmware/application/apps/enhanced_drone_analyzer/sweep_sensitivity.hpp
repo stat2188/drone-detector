@@ -130,6 +130,45 @@ namespace drone_analyzer {
         sweep_tbd_effective_threshold(rssi_threshold_units, noise_floor);
 }
 
+/**
+ * @brief Post-retune tick classification for the drain-to-newest consumer.
+ * @details ONE tick after a retune the FIFO holds, in pop order: the retune
+ *   STRADDLER (the frame whose capture interval contains the retune instant;
+ *   it COMPLETES at most one FFT frame period after the retune), then frames
+ *   that completed later — which, under continuous M0 streaming, STARTED
+ *   after the straddler ended, i.e. after the retune — plus possibly a few
+ *   pre-retune frames when the tick itself ran too soon (message burst after
+ *   a handler overrun: DisplayFrameSync messages queue while the handler is
+ *   busy, and the next handler invocation can start well inside one frame
+ *   period of the retune).
+ * @param elapsed_ms chTimeNow() delta since the retune (ticks == ms at
+ *        CH_FREQUENCY 1000). Use the SAME clock domain as last_retune_time_.
+ * @return DropAll — every queued frame may predate the retune: discard the
+ *         whole tick and keep the settle counter armed (re-evaluate next
+ *         tick). StraddlerDrop — the oldest queued frame is the straddler;
+ *         drop IT ALONE and process everything behind it.
+ * @note SINGLE SOURCE: the frame-sync handler consumes this verdict so the
+ *       SWEEP_CLEAN_FRAME_MS bound (constants.hpp — derives 6.45 ms frame
+ *       period + 3.5 ms margin) exists exactly once, and a unit test can
+ *       pin the truth table without the UI class.
+ * @note Sensitivity contract: StraddlerDrop admits every frame the old
+ *       FULL-settle cadence's LIVE tick would have admitted, one tick
+ *       earlier (the old settle tick discarded all of them); DropAll is
+ *       byte-identical to the old settle tick. The straddler itself was
+ *       discarded by BOTH cadences — no detection decision changes.
+ * Stack: 0 B (inlined). Flash: ~24 B. SRAM: 0. No heap, no FP, no locks.
+ */
+enum class SweepTickAction : uint8_t {
+    DropAll,        // young tick: burst safety, full old settle behavior
+    StraddlerDrop,  // normal tick: drop oldest queued frame only
+};
+
+[[nodiscard]] inline SweepTickAction sweep_post_retune_action(
+    uint32_t elapsed_ms) noexcept {
+    return (elapsed_ms < SWEEP_CLEAN_FRAME_MS) ? SweepTickAction::DropAll
+                                               : SweepTickAction::StraddlerDrop;
+}
+
 }  // namespace drone_analyzer
 
 #endif  // SWEEP_SENSITIVITY_HPP

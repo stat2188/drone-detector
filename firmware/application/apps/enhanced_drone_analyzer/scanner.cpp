@@ -2657,10 +2657,12 @@ bool DroneScanner::analyze_spectrum_shape_multi(
 
     // SENS ADAPTIVE GATE (SHAPE_ADAPT_*): measure this frame's noise-driven
     // Step-3 gate BEFORE any consumer (CFAR veto, fixed-branch collection,
-    // the chain itself) reads shape_gate_margin(). Reuses spectrum_sort_buf_
-    // (the p25 quickselect above destroyed it) — sequential, same thread;
-    // Step 12 kurtosis re-fills it later as before.
-    update_auto_gate(spectrum, FFT_EDGE_SKIP, noise_floor);
+    // the chain itself) reads shape_gate_margin(). Passes spectrum_sort_buf_
+    // DIRECTLY (P0/O3): the p25/p10 quickselects above permuted it but kept
+    // the multiset, so the p75 is byte-identical to the old refill — minus
+    // the redundant 236-bin re-extraction. Step 12 kurtosis re-fills the
+    // scratch later as before.
+    update_auto_gate(sorted, sort_count, noise_floor);
 
     const int32_t total_gain = get_current_total_gain();
 
@@ -3014,8 +3016,8 @@ uint8_t DroneScanner::shape_gate_margin() const noexcept {
 }
 
 void DroneScanner::update_auto_gate(
-    const ChannelSpectrum& spectrum,
-    size_t edge_skip,
+    uint8_t* cells,
+    size_t count,
     uint8_t noise_floor
 ) noexcept {
     // SENS ADAPTIVE GATE measurement (constants.hpp SHAPE_ADAPT_* contract #1):
@@ -3028,29 +3030,29 @@ void DroneScanner::update_auto_gate(
     //                      is never stricter than the user asked;
     //   base < floor (user tightened Mar below 10) → base wins — explicit
     //                      tightening is always respected.
-    // Refills spectrum_sort_buf_ (the Step-1 p25 quickselect destroyed it)
-    // over the SAME cell set (edge_skip..end minus the DC spike); Step 12
-    // kurtosis re-fills the scratch later — sequential, one thread.
+    // CELL SOURCE (P0/O3): the caller passes its Step-1 scratch buffer —
+    // the SAME usable-bin cell set select_shape_floors() consumed, already
+    // permuted by that quickselect. Quickselect partitions in place but
+    // preserves the multiset, so p75 over `cells` is byte-identical to the
+    // p75 the old refill-from-spectrum.db computed; the redundant 236-bin
+    // refill + re-extraction is gone (SENS frames only). The buffer's ORDER
+    // is dead after this call — both callers re-fill from scratch later
+    // (Step 12 kurtosis / next frame's Step 1), contract documented in
+    // scanner.hpp.
     // @pre Called right after Step 1 extracted noise_floor, before any
     //      shape_gate_margin() read of this frame (DB: analyze at the top;
-    //      sweep: before cfg_margin below).
+    //      sweep: before cfg_margin below). `cells` non-null when count > 0.
     // Stack: ~20 bytes (counters + uint16 temps, registers). SRAM: 1 byte
     //        (auto_gate_, class member). Flash: ~150 bytes. No FP, no locks.
     if (!config_.sensitive_mode) {
         auto_gate_ = 0;  // keep the sentinel exact while the mode is off
         return;
     }
-    uint8_t* buf = spectrum_sort_buf_;
-    size_t count = 0;
-    for (size_t i = edge_skip; i < FFT_BIN_COUNT - edge_skip; ++i) {
-        if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-        buf[count++] = spectrum.db[i];
-    }
-    if (count == 0) {
+    if (cells == nullptr || count == 0) {
         auto_gate_ = 0;
         return;
     }
-    const uint8_t p75 = quickselect_percentile(buf, count, 75);
+    const uint8_t p75 = quickselect_percentile(cells, count, 75);
     const uint8_t iqr = (p75 > noise_floor)
         ? static_cast<uint8_t>(p75 - noise_floor)
         : static_cast<uint8_t>(0);
@@ -4650,7 +4652,12 @@ void DroneScanner::process_spectrum_sweep(
     // would return the previous frame's measurement / the 0 sentinel).
     // RAW shelf on purpose (see the NOT-biased list above): the σ estimate
     // must stay p75 - p25 and must match the DB path byte-for-byte.
-    update_auto_gate(spectrum, FFT_EDGE_SKIP_NARROW, raw_noise_floor);
+    // P0/O3: pass sweep_usable_buf_ directly — select_shape_floors permuted
+    // it (multiset preserved), so p75 is byte-identical to the old refill
+    // from spectrum.db, minus the redundant 236-bin re-extraction. The
+    // buffer's order is dead after this call (nothing else reads it this
+    // frame; it is re-filled at Step 1 of the next frame).
+    update_auto_gate(usable, idx, raw_noise_floor);
 
     // P0-2: hoist the gain read out of the per-peak loop — the LNA/VGA/RF
     // state is stable inside one frame, so one cached total_gain replaces

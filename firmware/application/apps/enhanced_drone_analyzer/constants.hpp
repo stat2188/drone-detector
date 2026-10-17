@@ -930,18 +930,47 @@ constexpr uint16_t SWEEP_PERSISTENCE_DECAY_Q8 = 224;
  * @note The MAX2837/RFFC5072 lock time is ~200us — far below one FFT frame
  *       period — so discarding the frame that overlaps the retune instant
  *       fully covers the PLL settle window.
- * @note CURRENT consumer (drain-to-newest, drone_scanner_ui.cpp): the
- *       DisplayFrameSync handler drains the FIFO to the NEWEST frame every
- *       tick, so at most ONE queued frame can predate a retune. Effective
- *       discard per step is therefore SWEEP_SETTLE_FRAMES (= 1) and NOTHING
- *       else. The historical STALE_FIFO_FRAMES = 3 backlog term (old
- *       single-out consumer with a permanently full 4-slot FIFO) is OBSOLETE
- *       — re-arming it would discard 3 LIVE frames per step (~50 ms dead air
+ * @note CURRENT consumer (drain-to-newest + guarded straddler drop,
+ *       drone_scanner_ui.cpp): the frame-sync handler drains the FIFO to the
+ *       NEWEST frame every tick. When a post-retune tick is at least
+ *       SWEEP_CLEAN_FRAME_MS past the retune, only the OLDEST queued frame
+ *       (the retune straddler, popped first, FIFO order) can predate the
+ *       retune — it is dropped alone and everything after it is processed,
+ *       so the step cadence is ONE tick. When the tick is younger (message
+ *       burst after a handler overrun), EVERY queued frame may predate the
+ *       retune: the whole tick is discarded and the counter stays armed
+ *       (SWEEP_SETTLE_FRAMES = 1) until a clean-aged tick arrives. The
+ *       historical STALE_FIFO_FRAMES = 3 backlog term (old single-out
+ *       consumer with a permanently full 4-slot FIFO) is OBSOLETE —
+ *       re-arming it would discard 3 LIVE frames per step (~50 ms dead air
  *       per hop) for zero benefit. Full flip-flop history and the correct
  *       combination are documented in DroneScannerUI::retune_sweep_window()
  *       — do NOT change this value without re-reading that block.
  */
 constexpr uint8_t SWEEP_SETTLE_FRAMES = 1;
+
+/**
+ * @brief Minimum age (ms) of a retune before its first post-retune tick may
+ *        treat the FIFO's OLDEST frame as the only possible straddler.
+ * @note Derivation (ChibiOS 2.6.8, CH_FREQUENCY = 1000 → chTimeNow() ticks
+ *       are milliseconds; DisplayFrameSync period ≈ 16.7 ms, FFT frame
+ *       period = SWEEP_FFT_TRIGGER × 102.4 µs ≈ 6.45 ms):
+ *       the straddler (the frame whose capture interval contains the retune
+ *       instant) COMPLETES at most 6.45 ms after the retune, so a tick that
+ *       pops at elapsed >= 6.45 ms is guaranteed to find the straddler
+ *       already in the FIFO as its oldest entry. SWEEP_CLEAN_FRAME_MS = 10
+ *       keeps a 3.5 ms timing margin (tick jitter, handler measurement
+ *       slop) on top of that bound. Frames completed after the straddler
+ *       START after it ends (continuous M0 streaming), hence after the
+ *       retune — everything behind the oldest entry is clean.
+ *       An elapsed < 10 ms tick means two DisplayFrameSync messages were
+ *       processed back-to-back (handler overrun burst): the FIFO may then
+ *       hold ONLY pre-retune frames and no oldest-entry marker exists —
+ *       the caller discards the whole tick instead.
+ * @note Not a sensitivity gate: the discarded straddler frame was already
+ *       discarded wholesale by the pre-guard settle tick. Stack: 0 B.
+ */
+constexpr uint32_t SWEEP_CLEAN_FRAME_MS = 10;
 
 /**
  * @brief Noise margin for composite display floor subtraction.

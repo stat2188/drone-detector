@@ -197,7 +197,14 @@ private:
         FreqHz bins_hz_acc{0};
         uint16_t pixel_index{0};
         uint8_t pixel_max{0};
-        uint8_t settle_frames_remaining_{0};  // frames to skip after retune
+        // Post-retune settle state (armed by retune_sweep_window(), consumed
+        // by the frame-sync handler's sweep_post_retune_action() verdict):
+        // > 0 means "the next tick must be age-checked before any frame of it
+        // is processed". The NORMAL path clears it and drops only the oldest
+        // queued frame (the retune straddler); a YOUNG tick (message burst
+        // after a handler overrun) keeps it armed and discards the whole tick.
+        // process_bins()'s own decrement is a defense-in-depth fallback.
+        uint8_t settle_frames_remaining_{0};
         bool enabled{false};
         // First-slice double-dwell latch (bottom-band sensitivity parity).
         // The window's lowest ~10.6 MHz is covered by ONLY slice 0's upper
@@ -256,6 +263,12 @@ private:
     FreqHz last_db_frame_freq_{0};        // Capture freq of last processed DB frame (retune-straddle guard)
     AtomicFlag sweep_transition_guard_;   // Prevents concurrent enter/exit
     uint32_t sweep_guard_timestamp_{0};   // Tick when guard was last set (timeout safety)
+    // Tick (chTimeNow(), ms at CH_FREQUENCY 1000) of the most recent
+    // retune_sweep_window() — the clock the frame-sync handler's
+    // sweep_post_retune_action() age check runs against. Armed together
+    // with SweepWindow::settle_frames_remaining_ (invariant: counter > 0
+    // implies this timestamp is valid). Written on the UI thread only.
+    SystemTime last_retune_time_{0};
     AtomicFlag button_debounce_guard_;     // Debounces button_mode_/start_stop rapid taps
     FreqHz last_db_frequency_{0};         // Last DB frequency before sweep
     size_t last_db_index_{0};             // Last DB index before sweep (for exact restore)

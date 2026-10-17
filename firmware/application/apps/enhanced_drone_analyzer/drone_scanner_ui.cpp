@@ -88,13 +88,18 @@ void DroneScannerUI::register_handlers() noexcept {
                 // integrated anyway) but hands the pipeline the FRESHEST
                 // capture, so after a retune the settle window covers only the
                 // frames that can physically be stale (see retune_sweep_window):
-                // the step cadence drops from 5 ticks to 2 (1 settle + 1 live).
+                // the step cadence is ONE tick in the normal case (guarded
+                // straddler drop — see SETTLE-TICK CLASSIFICATION below) and
+                // degrades to the old 2-tick full-settle only during handler
+                // overrun bursts.
                 // DB-scan mode is UNTOUCHED (single out(), same cadence and the
                 // same retune-straddle guard in on_channel_spectrum) — the
                 // drain runs only while composite_active_ (sweep) is true.
-                // Detection sensitivity is UNCHANGED: the processed frame is
-                // still exactly one full 6.5 ms FFT integration (trigger 63);
-                // only its AGE changes (freshest instead of oldest-queued).
+                // Detection sensitivity is PER-UNIT-TIME POSITIVE: the
+                // analyzed frames are still full 6.5 ms FFT integrations
+                // (trigger 63), only younger (post-retune instead of
+                // next-tick), and the per-second detector/TBD look count
+                // rises with the 2x slice cadence.
                 // Threading: single consumer (this UI handler); M0 is the sole
                 // producer. FIFO::out() is the consumer-side primitive; the
                 // loop is bounded (FIFO depth is 4) so it cannot spin.
@@ -104,22 +109,68 @@ void DroneScannerUI::register_handlers() noexcept {
                 if (this->composite_active_) {
                     ChannelSpectrum& discard = this->spectrum_discard_;
                     uint8_t drained = 0;
-                    // SETTLE-TICK DETECTION: while the settle counter is armed
-                    // (frames right after a retune) or the first post-entry FFT
-                    // is due (skip_next_fft_), EVERY queued frame can predate
-                    // the retune instant — all of them must be dropped. In a
-                    // live tick all queued frames were captured at the CURRENT
-                    // slice center, so none is stale.
+                    bool straddler_dropped = false;  // latched for the fallback guard
+                    // SETTLE-TICK CLASSIFICATION (guarded straddler drop —
+                    // sweep_post_retune_action() in sweep_sensitivity.hpp,
+                    // SWEEP_CLEAN_FRAME_MS derivation in constants.hpp):
+                    //  - entry_skip (corrupt idx / first post-entry FFT via
+                    //    skip_next_fft_): EVERY queued frame is suspect —
+                    //    exact old full-settle semantics (drained dropped,
+                    //    final frame handed to on_sweep_spectrum).
+                    //  - settle armed + YOUNG tick (elapsed < 10 ms — two
+                    //    DisplayFrameSync messages processed back-to-back
+                    //    after a handler overrun): the FIFO may hold ONLY
+                    //    pre-retune frames and no straddler marker exists —
+                    //    drop the whole tick, KEEP the counter armed so the
+                    //    NEXT tick re-checks the age (strictly stronger than
+                    //    the old decrement-once discipline under bursts).
+                    //  - settle armed + CLEAN-aged tick (normal cadence —
+                    //    ONE tick per slice step): the oldest queued frame is
+                    //    the retune straddler (FIFO pop order = completion
+                    //    order); it is dropped ALONE and everything behind it
+                    //    STARTED after the retune (continuous M0 streaming) —
+                    //    processed normally. This is the 2x sweep-speed path:
+                    //    the old cadence discarded this ENTIRE tick.
                     const bool idx_ok = (this->active_sweep_idx_ < MAX_SWEEP_WINDOWS);
-                    const bool settle_tick =
-                        !idx_ok ||
-                        this->skip_next_fft_ ||
-                        (this->sweep_[this->active_sweep_idx_].settle_frames_remaining_ > 0);
+                    const bool entry_skip = !idx_ok || this->skip_next_fft_;
+                    bool drop_oldest_as_straddler = false;
+                    if (!entry_skip &&
+                        this->sweep_[this->active_sweep_idx_].settle_frames_remaining_ > 0) {
+                        if (sweep_post_retune_action(
+                                chTimeNow() - this->last_retune_time_) ==
+                            SweepTickAction::DropAll) {
+                            (void)this->spectrum_fifo_->out(spectrum);  // keep draining
+                            this->refresh_ui();
+                            return;  // counter stays armed — re-evaluated next tick
+                        }
+                        drop_oldest_as_straddler = true;
+                        this->sweep_[this->active_sweep_idx_].settle_frames_remaining_ = 0;
+                    }
+                    const bool settle_tick = entry_skip;
                     // Keep the newest: pop older frames into the discard buffer
                     // (same BSS class as spectrum_buffer_, NOT the stack —
                     // ChannelSpectrum is ~272 bytes), then pop the final frame
                     // into spectrum_buffer_ for processing.
                     while (this->spectrum_fifo_->out(discard)) {
+                        if (drop_oldest_as_straddler) {
+                            // THE retune straddler (oldest queued frame — FIFO
+                            // pop order is completion order): its capture
+                            // interval contains the retune instant, so its bins
+                            // mix old- and new-frequency power. Same fate as
+                            // the old full-settle discard — no composite write,
+                            // no Hz credit, no detector feed (the frame never
+                            // reaches process_bins). Every frame BEHIND it in
+                            // the FIFO started after the straddler ended, i.e.
+                            // after the retune + PLL lock (~200 µs) — processed
+                            // as live below. Sensitivity: this frame was
+                            // discarded by the OLD cadence too (whole settle
+                            // tick); the live frames behind it were processed
+                            // by the old NEXT tick — one tick earlier now.
+                            drop_oldest_as_straddler = false;
+                            straddler_dropped = true;
+                            ++drained;
+                            continue;
+                        }
                         // C2 SENSITIVITY FIX: a drained live frame is a full
                         // 6.5 ms FFT capture at the current frequency — it must
                         // not be thrown away. Integrate it into the composite
@@ -128,14 +179,15 @@ void DroneScannerUI::register_handlers() noexcept {
                         // ~60% of RF integration budget the unconditional
                         // drain used to discard (~+4 dB equivalent hold).
                         // Detection: drained live frames now feed the sweep
-                        // detector too (see S1 below); settle ticks drop
+                        // detector too (see S1 below); entry_skip ticks drop
                         // everything (above).
                         if (!settle_tick) {
                             (void)this->sweep_[this->active_sweep_idx_].process_bins(discard, false);
                             // S1 SENSITIVITY FIX: drained live frames are full
                             // 6.5 ms FFT captures at the CURRENT slice center
                             // (in a live tick every queued frame postdates the
-                            // last retune — see SETTLE-TICK DETECTION above),
+                            // last retune — see SETTLE-TICK CLASSIFICATION
+                            // above),
                             // yet only the final frame reached the detector.
                             // Feed them to the sweep detector as well: the
                             // tracker and waterfall_history_ (TBD) now see the
@@ -146,7 +198,10 @@ void DroneScannerUI::register_handlers() noexcept {
                             // Chronological order holds: out() pops FIFO order
                             // (oldest first), so these samples precede the
                             // final frame's sample — the median filter and the
-                            // per-window waterfall stay time-ordered.
+                            // per-window waterfall stay time-ordered. The
+                            // straddler (when dropped above) is OLDER still —
+                            // discarding it keeps the processed subsequence
+                            // time-ordered too.
                             // PREFILTER (CPU fix): pure-noise drained slices
                             // skip detector entry (quickselect + waterfall
                             // push + CFAR + 12-step shape + TBD scan) instead
@@ -282,7 +337,17 @@ void DroneScannerUI::register_handlers() noexcept {
                     // a retune is pending — detection/drop semantics unchanged,
                     // only the idle-tick display stall is removed.
                     // Stack: ChannelSpectrum copy ~272 B BSS-to-BSS, no stack.
-                    if (!have_frame && drained > 0) {
+                    // STRADDLER FALLBACK GUARD: reuse is valid only when the
+                    // last drained frame was a PROCESSED live frame (its
+                    // re-write is an idempotent max-hold + the one progress
+                    // credit for the tick — see the fallback comment above).
+                    // When the ONLY popped frame was the straddler itself,
+                    // reuse would write its mixed-frequency bins into the
+                    // composite (the fd4da6b "SWEEP рисуется неправильно"
+                    // regression class) and credit a stale frame — suppressed;
+                    // the next tick carries clean frames anyway.
+                    const bool only_straddler = straddler_dropped && (drained == 1);
+                    if (!have_frame && drained > 0 && !only_straddler) {
                         spectrum = discard;
                         have_frame = true;
                         fallback_display_only = true;
@@ -1598,11 +1663,15 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum, bool dis
             win.first_slice_dwell_done_ && (win.f_center == win.f_center_ini);
         const bool processed = win.process_bins(spectrum, !first_slice_revisit);
 
-        // FIX: When the settle counter is active, process_bins() discards the frame
-        // (stale data from the previous frequency). We must NOT advance f_center or
-        // call retune_sweep_window() here — doing so resets settle_frames_remaining_
-        // back to 2, creating an infinite loop where the counter never expires and
-        // process_bins() never processes data. Just wait for the next frame.
+        // SETTLE-COUNTER GUARD: process_bins() returns false only when the
+        // settle counter was still armed at entry — i.e. this is the final
+        // frame of an entry_skip tick (first post-entry FFT / corrupt idx;
+        // the normal post-retune path is CLASSIFIED and cleared in the
+        // frame-sync handler BEFORE on_sweep_spectrum runs). The frame is
+        // stale: do NOT advance f_center, do NOT retune here — the skip path
+        // above / the round-robin advance owns the retune, and re-arming
+        // settle from within this function is exactly the historical
+        // never-expires loop. Just wait for the next frame.
         if (!processed) {
             return;
         }
@@ -1675,7 +1744,10 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum, bool dis
 
     // PER-WINDOW WATERFALL PUSH: Push this window's composite immediately
     // instead of waiting for pair_complete. This gives the user instant
-    // visual feedback for each sweep pass (~0.3s per window vs ~0.67s per pair).
+    // visual feedback for each sweep pass (default 300 MHz window = 35
+    // slices at the gapless 8.83 MHz pitch: ~0.58 s per window at the
+    // 1-tick guarded-straddler cadence, ~1.17 s under an overrun burst —
+    // vs ~0.67 s per pair at the historical 2-tick cadence).
     // When WF is disabled (timeline_visible_==false), skip push: the render
     // path short-circuits but push still compresses 240 bytes → 12 bytes,
     // advances the ring buffer, and sets DIRTY_WATERFALL — pure CPU waste.
@@ -2092,6 +2164,10 @@ void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) n
     radio::set_tuning_frequency(rf::Frequency(win.f_center));
     set_current_frequency_safe(win.f_center);
     last_tuned_freq_ = win.f_center;
+    // Age anchor for the frame-sync handler's sweep_post_retune_action()
+    // verdict (invariant: settle_frames_remaining_ > 0 implies this is
+    // valid — both are written here, on the UI thread, together).
+    last_retune_time_ = chTimeNow();
 
     // Frame-based settling replaces the old 5ms wall-clock sleep + streaming
     // restart. Streaming is continuous, so frames already queued in the channel
@@ -2103,15 +2179,24 @@ void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) n
     // pinned to captured frames, not to wall time, and the UI event loop no
     // longer blocks for 5ms on every sweep step.
     //
-    // C1 SETTLE DISCIPLINE (drain-to-newest consumer — see frame-sync handler):
-    // the handler now drains the FIFO to the NEWEST frame every tick, so at
-    // the instant of a retune at most ONE queued frame can predate the retune
-    // (the frame currently being written by the M0 / the single frame that
-    // arrived between the last drain and this retune). All older backlog is
-    // already gone — popped by the per-tick drain, not left rotting in the
-    // queue. The settle window therefore covers exactly:
-    //   SWEEP_SETTLE_FRAMES (= 1): the frame overlapping the retune instant
-    //     (PLL unlocked mid-capture, straddles old+new frequency).
+    // C1 SETTLE DISCIPLINE (drain-to-newest + GUARDED STRADDLER DROP — see
+    // the frame-sync handler and sweep_post_retune_action()): the handler
+    // drains the FIFO to the NEWEST frame every tick, so at the instant of a
+    // retune at most ONE queued frame can predate the retune (the frame
+    // currently being written by the M0). All older backlog is already gone
+    // — popped by the per-tick drain, not left rotting in the queue. The
+    // next post-retune tick is then AGE-CHECKED against last_retune_time_:
+    //   - Clean-aged (elapsed >= SWEEP_CLEAN_FRAME_MS, the normal case —
+    //     one full DisplayFrameSync period): the straddler has LANDED in the
+    //     FIFO as its OLDEST entry (it completes at most one 6.45 ms frame
+    //     period after the retune; 10 ms keeps a 3.5 ms jitter margin), and
+    //     every frame behind it started after the retune. The straddler
+    //     alone is dropped; the tick PROCESSES — cadence = 1 tick/slice.
+    //   - Young (elapsed < 10 ms — queued-message burst after a handler
+    //     overrun): the FIFO may hold ONLY pre-retune frames and no
+    //     straddler marker exists — the WHOLE tick is dropped, counter
+    //     stays armed (byte-identical to the old settle tick, re-checked
+    //     every tick instead of decremented once).
     // The old STALE_FIFO_FRAMES = 3 backlog term is OBSOLETE under the new
     // consumer: keeping it would discard 3 LIVE frames per step (the freshest
     // captures on the new frequency) — pure sensitivity loss AND 3 wasted
@@ -2139,14 +2224,18 @@ void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) n
     //    in the same commit → "3-BROKE SWEEP" observation. Confounding: the
     //    credit broke it, STALE=3 was innocent.
     //  - bf018832/aa01fc92: reverted both again.
-    // CORRECT COMBINATION (this commit): drain-to-newest consumer + settle =
-    // SWEEP_SETTLE_FRAMES (1) AND no Hz credit during settle. Cost: 1
-    // discarded frame (~6.5 ms RF dwell) per slice step — the step cadence
-    // drops from 5 ticks to 2 (1 settle + 1 live); composite mapping is
-    // unaffected because discarded frames advance neither bins_hz_acc nor
-    // pixel_index. Detection sensitivity is UNCHANGED: the live frame is one
-    // full 6.5 ms FFT integration (trigger 63), only fresher (newest-queued
-    // instead of oldest-queued).
+    // CORRECT COMBINATION (current): drain-to-newest consumer + GUARDED
+    // straddler drop (age check via sweep_post_retune_action; counter =
+    // SWEEP_SETTLE_FRAMES = 1) AND no Hz credit during the straddler drop.
+    // Cost: 1 discarded frame (the straddler, ~6.5 ms mixed-capture RF) per
+    // slice step — the step cadence is ONE tick in the normal case (was 2
+    // under the unconditional full-settle tick: 1 settle + 1 live, i.e. a
+    // whole tick of dead air); composite mapping is unaffected because the
+    // dropped straddler advances neither bins_hz_acc nor pixel_index. The
+    // frames processed on the clean-aged post-retune tick are the SAME
+    // freshness class the old cadence processed one tick later — sensitivity
+    // per unit time RISES (more detector looks and TBD votes per second),
+    // revisit period per pass halves.
     static constexpr uint8_t STALE_FIFO_FRAMES = 3;
     (void)STALE_FIFO_FRAMES;  // backlog term: obsolete under drain-to-newest
     win.settle_frames_remaining_ = SWEEP_SETTLE_FRAMES;

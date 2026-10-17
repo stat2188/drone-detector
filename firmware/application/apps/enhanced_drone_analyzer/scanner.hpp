@@ -2235,12 +2235,21 @@ private:
 
     /**
      * @brief Measure this frame's noise-adaptive Step-3 gate (Sens mode).
-     * @param spectrum Raw 256-bin FFT frame (same data as Step 1)
-     * @param edge_skip Usable-cell edge skip: FFT_EDGE_SKIP (DB) /
-     *        FFT_EDGE_SKIP_NARROW (sweep) — SAME cell set as Step 1.
+     * @param cells Caller's Step-1 scratch buffer holding this frame's usable
+     *        bins (spectrum_sort_buf_ for DB / sweep_usable_buf_ for sweep) —
+     *        the SAME cell set Step 1 fed to select_shape_floors(), already
+     *        permuted by its quickselect. Quickselect is destructive but
+     *        MULTISET-preserving, so p75 computed here is byte-identical to
+     *        a p75 over the pristine extraction — the refill this function
+     *        used to make from spectrum.db (~236 redundant bin reads per
+     *        SENS frame) is gone.
+     * @param count Number of cells in `cells` (usable-bin count).
      * @param noise_floor This frame's p25 shelf (Step 1 output)
-     * @note Refills spectrum_sort_buf_ (the p25 quickselect destroyed it),
-     *       takes p75 → IQR → 3σ, clamps to
+     * @note Consumes `cells` in place (one more quickselect partition).
+     *       Callers MUST NOT reuse the buffer's ORDER afterwards — both
+     *       current callers re-fill it from scratch later (Step 12 kurtosis,
+     *       next frame's Step 1), so the contract holds.
+     * @note Takes p75 → IQR → 3σ, clamps to
      *       [SHAPE_ADAPT_GATE_FLOOR, effective_spectrum_margin()] and stores
      *       auto_gate_. Call immediately AFTER Step 1, i.e. strictly before
      *       this frame's candidate gates / shape chain / TBD anchors read
@@ -2253,8 +2262,8 @@ private:
      * Stack: ~20 bytes. SRAM: +1 byte (auto_gate_). No heap, no FP, no locks.
      */
     void update_auto_gate(
-        const ChannelSpectrum& spectrum,
-        size_t edge_skip,
+        uint8_t* cells,
+        size_t count,
         uint8_t noise_floor
     ) noexcept;
 
