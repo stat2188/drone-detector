@@ -172,7 +172,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         // Row 6 — shape filter: sharpness / valley / min width
         {{UI_POS_X(0), UI_POS_Y(6)}, "Shrp:", Color::white()},
         {{UI_POS_X(8), UI_POS_Y(6)}, "Vly:", Color::white()},
-        {{UI_POS_X(15), UI_POS_Y(6)}, "Min:", Color::white()},
+        {{UI_POS_X(15), UI_POS_Y(6)}, "MinW:", Color::white()},
         // Row 7 — shape filter: flatness / symmetry
         {{UI_POS_X(0), UI_POS_Y(7)}, "Flat:", Color::white()},
         {{UI_POS_X(8), UI_POS_Y(7)}, "Sym:", Color::white()},
@@ -267,7 +267,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
           {SHAPE_SIM_THRESHOLD_MIN_PCT, SHAPE_SIM_THRESHOLD_MAX_PCT},
           SHAPE_SIM_THRESHOLD_STEP_PCT, ' ')
     , field_spectrum_margin_({UI_POS_X(19), UI_POS_Y(5)}, 3, {5, 200}, 5, ' ')
-    , field_spectrum_min_width_({UI_POS_X(19), UI_POS_Y(6)}, 3, {1, 100}, 1, ' ')
+    , field_spectrum_min_width_({UI_POS_X(20), UI_POS_Y(6)}, 3, {1, 100}, 1, ' ')
     , field_spectrum_max_width_({UI_POS_X(5), UI_POS_Y(5)}, 3, {2, 255}, 1, ' ')
     , field_spectrum_peak_sharpness_({UI_POS_X(5), UI_POS_Y(6)}, 3, {50, 250}, 5, ' ')
     , field_spectrum_peak_ratio_({UI_POS_X(12), UI_POS_Y(5)}, 3, {0, 255}, 5, ' ')

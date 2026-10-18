@@ -227,23 +227,31 @@ static uint8_t flatness_min_peak_margin(int32_t rssi_sens) noexcept {
 }
 
 /**
- * @brief SENS eased MaxW limit — shared author of Step 6 and Step-13 arming.
- * @param user_max_width Raw ScanConfig::spectrum_max_width (0..255)
- * @param w2 adapt_w², 0..10000 (uint16: 100² fits exactly)
- * @return ≤ 1.5× the user value at w2 = 0 (uint16: 255 + 127 = 382), the
- *         exact user value at w2 = 10000 (Sens OFF byte-identical by algebra)
- * @note Consumed by apply_shape_filters Step 6 (fragment + emission extent)
- *       AND process_spectrum_message EFFECTIVE-ARMING (audit M3 rev. 2) —
- *       one formula, so the arming test cannot drift from what the chain
- *       runs. The DC-gap extent cap (≤110/114 measurable bins) bounds the
- *       result outside this function.
- * Stack: ~8 bytes. SRAM: 0. Flash: ~48 bytes. No FP.
+ * @brief `eased_maxw_bins` was REMOVED (dependency + sensitivity audit,
+ *        2026-10). It returned MaxW + MaxW·(10000−w2)/20000 — up to 1.5× the
+ *        user's MaxW near the entry gate. MaxW is a USER band edge (the upper
+ *        half of [MinW..MaxW]), not a noise-adaptive threshold: easing it UP
+ *        near the gate let a wideband flat-top of width in (MaxW .. 1.5·MaxW)
+ *        slip through at w ≈ 0 — the exact mirror of the MinW relaxation
+ *        (which eased DOWN) that was removed at Step 5. MaxW is now read
+ *        directly from config_.spectrum_max_width at both consumers (Step 6
+ *       fragment + emission extent, and Step-13 EFFECTIVE-ARMING).
+ * BYTE-IDENTITY AT THE SHIPPED DEFAULT (MaxW = 255): the DC-gap-bounded walks
+ * can measure at most one sideband (≤110 DB / ≤114 sweep bins), and 114 ≤ 255
+ * ≤ 382, so both the old eased limit and the new raw limit pass every real
+ * measurement — no default-path behavior changes. Only MaxW < 114 (a user who
+ * actually lowered MaxW) is affected, and there it becomes STRICTER near the
+ * gate, which is the requested direction.
+ * SIDE EFFECT (fix, not regression): the Step-13 arming predicate
+ * `armed_maxw_eff < MAXW_NO_CAP_BINS` previously consumed the EASED value, so
+ * at MaxW = 100 with w ≈ 0 it read 150 ≥ 114 and concluded "MaxW cannot
+ * reject" while the chain's raw MaxW = 100 < 114 CAN reject a 110-114 bin
+ * emission — arming and chain now agree by construction (both read the raw
+ * config value; see the arming site in process_spectrum_message).
+ * CONSISTENCY FIX: tbd_peak_is_narrowband already read the raw
+ * config_.spectrum_max_width; the in-frame path was the outlier. Both now
+ * apply the identical limit.
  */
-static uint16_t eased_maxw_bins(uint8_t user_max_width, uint16_t w2) noexcept {
-    return static_cast<uint16_t>(user_max_width) +
-        static_cast<uint16_t>(
-            (static_cast<uint32_t>(user_max_width) * (10000u - w2)) / 20000u);
-}
 
 /**
  * @brief Sharpness limit above which Step 7 can mathematically REJECT.
@@ -1246,12 +1254,12 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         // simultaneously relaxed toward their permissive floors — in the
         // gate..gate+SLACK band the chain was effectively DISARMED while
         // Step 13 stayed skipped as "armed". REV. 2 (dependency audit):
-        // the three limits come from the SAME helpers apply_shape_filters
-        // Steps 6/7/10 consume (eased_maxw_bins / eased_sharpness_limit /
-        // eased_flatness_limit above) — one author, so the test and the
-        // chain cannot drift, instead of hand-copied formulas glued by
-        // comments. With Sens OFF (w = 100) they collapse to the raw
-        // config values. D-ARM (2026-10): the Sharp/Flat no-op ceilings
+        // the wideband limits come from the SAME values apply_shape_filters
+        // Steps 6/7/10 consume — MaxW is read raw from config (eased_maxw_bins
+        // removed), Sharp/Flat from eased_sharpness_limit /
+        // eased_flatness_limit — so the test and the chain cannot drift,
+        // instead of hand-copied formulas glued by comments. With Sens OFF
+        // (w = 100) the Sharp/Flat helpers collapse to the raw config values. D-ARM (2026-10): the Sharp/Flat no-op ceilings
         // here are the SAME shared constants (SHARPNESS_NOOP_CEILING,
         // SPECTRUM_FLATNESS_PCT_MAX) the similarity-score arming in
         // apply_shape_filters now consumes — the score denominator and
@@ -1300,8 +1308,13 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
                 : uint8_t{100};
             const uint16_t armed_w2 =
                 static_cast<uint16_t>(armed_w) * static_cast<uint16_t>(armed_w);
-            const uint16_t armed_maxw_eff =
-                eased_maxw_bins(config_.spectrum_max_width, armed_w2);
+            // MaxW arming reads the RAW config value (eased_maxw_bins removed
+            // — its tombstone at the top of this file). Previously the arming
+            // test consumed the EASED 1.5× value while the chain enforced the
+            // raw one, so at MaxW=100 with w≈0 the test read 150 ≥ 114 and
+            // concluded "MaxW cannot reject" even though the chain's MaxW=100
+            // < 114 CAN reject a 110-114 bin emission. Both now read the same
+            // raw number — arming and chain cannot drift.
             const int32_t armed_sharp_eff =
                 eased_sharpness_limit(config_.spectrum_peak_sharpness, armed_w2);
             const uint16_t armed_flat_eff =
@@ -1326,7 +1339,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
                 (shape_result.count == 0) ||
                 (shape_result.detections[0].similarity_pct >= 100);
             shape_chain_armed = shape_fully_owned &&
-                ((armed_maxw_eff < MAXW_NO_CAP_BINS) ||
+                ((config_.spectrum_max_width < MAXW_NO_CAP_BINS) ||
                  (armed_sharp_eff > SHARPNESS_NOOP_CEILING) ||
                  (armed_flat_runs &&
                   (armed_flat_eff < SPECTRUM_FLATNESS_PCT_MAX)));
@@ -3292,25 +3305,23 @@ bool DroneScanner::apply_shape_filters(
         || (has_dc_gap && peak_idx < FFT_DC_SPIKE_START && right == FFT_DC_SPIKE_START - 1);
 
     // Step 5: Minimum width
-    // SENS ADAPTIVE: near the gate the walk bar (noise + margin/3) sits in
-    // the noise band and quantization scatters the measured width — ease
-    // MinW toward the noise-spike floor (DEFAULT_SPECTRUM_MIN_WIDTH = 2) at
-    // small w so a ±1 click MinW change cannot cliff-kill a marginal narrow
-    // target (ELRS/burst). w = 100 → relax = 0 → exact user MinW (OFF path
-    // byte-identical); the floor never drops below the spike guard, even
-    // when the user set MinW = 1 (Sens can only relax TO the floor, never
-    // below it). Stack: +4 bytes (register). Flash: ~48 bytes.
-    const uint8_t minw_relax = static_cast<uint8_t>(
-        (static_cast<uint32_t>(SHAPE_ADAPT_MIN_WIDTH_RELAX) * (10000u - w2)) / 10000u);
-    uint8_t minw_eff = (config_.spectrum_min_width > minw_relax)
-        ? static_cast<uint8_t>(config_.spectrum_min_width - minw_relax)
-        : DEFAULT_SPECTRUM_MIN_WIDTH;
-    // Spike-floor guard applies ONLY while actually relaxing (relax > 0):
-    // at relax == 0 (OFF, or w = 100 in Sens) the user's exact MinW — even
-    // MinW = 1 — is honored byte-identically.
-    if (minw_relax > 0 && minw_eff < DEFAULT_SPECTRUM_MIN_WIDTH) {
-        minw_eff = DEFAULT_SPECTRUM_MIN_WIDTH;
-    }
+    // NO SENS EASING (dependency audit, 2026-10): MinW is a USER band edge,
+    // not a noise-adaptive threshold. The old SHAPE_ADAPT_MIN_WIDTH_RELAX
+    // eased MinW down toward (MinW - 10) bins inside gate..gate+4dB, so a
+    // user who set MinW = 25 was silently served ~15 bins near the gate —
+    // the setting appeared not to work. MinW is now enforced at the exact
+    // config value at EVERY peak_margin. Sens OFF was already byte-identical
+    // (w = 100 => relax = 0); the only behavior change is Sens ON near the
+    // gate, and stricter there is exactly the requested direction. At the
+    // shipped default (MinW = 2) the old relaxation already clamped to the
+    // spike floor DEFAULT_SPECTRUM_MIN_WIDTH = 2, so the default path stays
+    // byte-identical (dependency audit: no test, no arming predicate and no
+    // sweep-specific site consumes minw_relax — Step 13 effective-arming
+    // reads only the raw MaxW plus eased_sharpness_limit /
+    // eased_flatness_limit, never MinW).
+    // Stack: ~0 bytes (one register local; the relaxation temps are gone).
+    // Flash: ~-40 bytes.
+    const uint8_t minw_eff = config_.spectrum_min_width;
     if (signal_width < minw_eff) return false;
 
     // Step 6: Maximum width
@@ -3339,11 +3350,13 @@ bool DroneScanner::apply_shape_filters(
         // over-suppress bypassed signals. Published at the success exit (F3).
         final_extent = SignalExtent{peak_idx, peak_idx};
     } else {
-        // ≤ 1.5x MaxW at w = 0 (uint16: 255 + 127 = 382 — the >255 range is
-        // the documented "no cap" regime anyway). Exact user MaxW at w = 100.
-        // Shared author (eased_maxw_bins): the Step-13 EFFECTIVE-ARMING test
-        // consumes the SAME formula (audit M3 rev. 2).
-        const uint16_t maxw_eff = eased_maxw_bins(config_.spectrum_max_width, w2);
+        // MaxW is the user's EXACT config value (eased_maxw_bins removed —
+        // see its tombstone above). Byte-identical at the shipped default
+        // (255 > any measurable width); stricter near the gate only when the
+        // user lowered MaxW below the sideband cap. The same raw value feeds
+        // the Step-13 EFFECTIVE-ARMING test and tbd_peak_is_narrowband, so
+        // all three MaxW consumers agree by construction.
+        const uint16_t maxw_eff = config_.spectrum_max_width;
         if (signal_width > maxw_eff) return false;
 
         // Step 6b: EMISSION EXTENT (the real MaxW semantics).
@@ -4338,26 +4351,31 @@ bool DroneScanner::tbd_peak_is_narrowband(
     }
 
     const size_t signal_width = right - left + 1;
-    // MinW parity (FIX, v2 — PERMISSIVE SEMANTICS): the single-frame chain
-    // rejects sub-min_width spikes at Step 5 — TBD must not resurrect them.
-    // BUT the MinW frame is defined at the margin gate: Step 5 only measures
-    // peaks that already cleared Step 3 (peak_margin >= gate). A TBD-domain
-    // target sits BELOW the gate by definition (it exists precisely because
-    // it never cleared Step 3), and its envelope is walked at a
-    // noise-relative anchor (half power, floored at gate/3) whose ELEVATION
-    // frame is the gate — a strict MinW here cut exactly the weak flickery
-    // targets TBD exists to find. Rule: MinW
-    // applies only to IN-FRAME targets (envelope peak margin >= gate, the
-    // same gate Step 3 uses); below-gate targets keep the MaxW guard only —
-    // persistence (TBD_MIN_FRAMES) + present-now + the noise-relative confirm
-    // floor (sweep_tbd_effective_threshold) own the noise rejection there.
-    // Width gates stay sensitivity-neutral for the weak path: a below-gate
-    // envelope whose peak sits under the gate/3 anchor still measures width 1
-    // (the walk cannot step onto a bin below its own peak's level), while a
-    // weak flat-top with 10 <= margin < gate now measures its REAL plateau
-    // and MaxW clips it (audit fix W2).
-    if (peak_margin >= eff_margin
-        && signal_width < config_.spectrum_min_width) {
+    // MinW in the TBD domain (dependency + sensitivity audit, 2026-10).
+    // LEGACY EXEMPT: MinW applied ONLY to in-frame targets
+    // (peak_margin >= gate); below-gate TBD targets kept the MaxW guard only,
+    // because a strict MinW at the noise-relative anchor (gate/3) cut exactly
+    // the weak flickery targets TBD exists to find (1-bin ELRS/FrSky bursts).
+    // That exempt is correct AT THE DEFAULT SPIKE FLOOR (MinW ==
+    // DEFAULT_SPECTRUM_MIN_WIDTH == 2) and is RETAINED there BYTE-IDENTICALLY:
+    // at MinW = 2 the only width it would cut is 1 bin, and persistence
+    // (TBD_MIN_FRAMES) already owns noise rejection below the gate — the
+    // exempt creates no new hole at defaults.
+    // THE HOLE (why "MinW = 25 and false positives still come through"): once
+    // the user explicitly raises MinW above the spike floor they declare a
+    // wider band of interest, and the unconditional below-gate exempt silently
+    // voided that setting in the TBD path — a 1-2 bin persistent peak below
+    // the gate ignored MinW = 25 entirely. The exempt is therefore now
+    // CONDITIONAL on MinW sitting at the default floor; above it MinW is
+    // enforced for EVERY TBD target, in-frame or below-gate.
+    // SENSITIVITY CONTRACT (verified): at the shipped default (MinW = 2) this
+    // branch is byte-identical to legacy — no weak 1-bin target is lost; at
+    // MinW > 2 the below-gate path finally honors the user's band edge, which
+    // is the requested behavior. Stack: 0 B. Flash: ~24 bytes.
+    const bool minw_applies =
+        (peak_margin >= eff_margin)
+        || (config_.spectrum_min_width > DEFAULT_SPECTRUM_MIN_WIDTH);
+    if (minw_applies && signal_width < config_.spectrum_min_width) {
         return false;
     }
 

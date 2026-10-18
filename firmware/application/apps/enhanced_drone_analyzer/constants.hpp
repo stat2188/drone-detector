@@ -1495,7 +1495,12 @@ static_assert(TBD_WIDTH_ANCHOR_GATE_DIV > 0,
 // confirm_count, NMS and the TBD resurrection veto are all unchanged.
 constexpr uint8_t SHAPE_ADAPT_GATE_FLOOR = 10;      // auto-gate floor (units): 2 dB ≈ 5σ at σ≈2
 constexpr uint8_t SHAPE_ADAPT_SLACK_UNITS = 20;     // w ramp width above the gate (4 dB)
-constexpr uint8_t SHAPE_ADAPT_MIN_WIDTH_RELAX = 10; // max MinW relaxation at w = 0 (bins)
+// SHAPE_ADAPT_MIN_WIDTH_RELAX was REMOVED (dependency audit, 2026-10): MinW is
+// a user band edge, not a noise-adaptive threshold. Easing it toward
+// (MinW - 10) near the gate meant a user-set MinW = 25 was served ~15 bins —
+// "the setting appears not to work". MinW is enforced at the exact config
+// value now (apply_shape_filters Step 5 and the TBD narrowband guard both read
+// spectrum_min_width directly). No other consumer existed (grep-verified).
 constexpr uint8_t SHAPE_ADAPT_SIGMA3_NUM = 22;      // 3σ ≈ IQR × 22/10 (σ ≈ IQR/1.349)
 constexpr uint8_t SHAPE_ADAPT_SIGMA3_DEN = 10;
 
@@ -1508,8 +1513,6 @@ static_assert(SHAPE_ADAPT_SLACK_UNITS > 0,
     "SHAPE_ADAPT_SLACK_UNITS must be non-zero (weight division)");
 static_assert(SHAPE_ADAPT_SIGMA3_DEN > 0,
     "SHAPE_ADAPT_SIGMA3_DEN must be non-zero (sigma division)");
-static_assert(SHAPE_ADAPT_MIN_WIDTH_RELAX < 255,
-    "SHAPE_ADAPT_MIN_WIDTH_RELAX must stay representable in the uint8 MinW math");
 
 // ============================================================================
 // SENS = PARALLEL SHAPE EVALUATION (sensitive_mode ON) — constants
@@ -2004,10 +2007,12 @@ constexpr int32_t MAHALANOBIS_RSSI_MAX_DBM = -20;
  *       the Flat = 100 no-op (pct > 100 unreachable ⇒ not armed) and the
  *       flat run-guards below; Flat = 0 keeps the disarmed reading that
  *       D-B relies on at defaults.
- * @note EFFECTIVE ARMING rev. 2 (dependency audit): the three limits are
- *       computed by the SHARED eased_maxw_bins / eased_sharpness_limit /
- *       eased_flatness_limit helpers (scanner.cpp) that Steps 6/7/10 also
- *       consume — test and chain cannot drift. The Flat arm further
+ * @note EFFECTIVE ARMING rev. 2 (dependency audit): the limits are the raw
+ *       MaxW (read straight from config; the eased_maxw_bins helper was
+ *       removed — see its tombstone in scanner.cpp) plus the SHARED
+ *       eased_sharpness_limit / eased_flatness_limit helpers (scanner.cpp)
+ *       that Steps 7/10 also consume — test and chain cannot drift. The Flat
+ *       arm further
  *       mirrors THE THREE OUTER Step-10 run guards (Flat > 0, peak margin
  *       >= flatness_min_peak_margin(rssi_sens) — 40 when rssi_sens <= 0,
  *       Sens <= 75 —, adapt_w > 0; the step's inner narrowband-width
