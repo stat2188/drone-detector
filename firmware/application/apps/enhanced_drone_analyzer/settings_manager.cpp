@@ -66,16 +66,20 @@ SettingsStruct::SettingsStruct() noexcept
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
     , sweep_step_freq(SWEEP_GAPLESS_STEP_MAX_HZ)  // round-trip only; init() auto-derives
-    , sweep2_start_freq(2400000000ULL)
-    , sweep2_end_freq(2500000000ULL)
+    // Factory sweep windows — MUST match ScanConfig (scanner.hpp): this table
+    // is what a FRESH install loads, and the two used to drift (W3 was the
+    // GSM900 junk band, W4 duplicated 1.2 GHz and dropped sub-GHz entirely).
+    // Shared constants in constants.hpp are the single source of truth.
+    , sweep2_start_freq(SWEEP2_DEFAULT_START_HZ)
+    , sweep2_end_freq(SWEEP2_DEFAULT_END_HZ)
     , sweep2_step_freq(SWEEP_GAPLESS_STEP_MAX_HZ)  // round-trip only; init() auto-derives
     , sweep2_enabled(false)
-    , sweep3_start_freq(900000000ULL)
-    , sweep3_end_freq(1000000000ULL)
+    , sweep3_start_freq(SWEEP3_DEFAULT_START_HZ)
+    , sweep3_end_freq(SWEEP3_DEFAULT_END_HZ)
     , sweep3_step_freq(SWEEP_GAPLESS_STEP_MAX_HZ)  // round-trip only; init() auto-derives
     , sweep3_enabled(false)
-    , sweep4_start_freq(1200000000ULL)
-    , sweep4_end_freq(1300000000ULL)
+    , sweep4_start_freq(SWEEP4_DEFAULT_START_HZ)
+    , sweep4_end_freq(SWEEP4_DEFAULT_END_HZ)
     , sweep4_step_freq(SWEEP_GAPLESS_STEP_MAX_HZ)  // round-trip only; init() auto-derives
     , sweep4_enabled(false) {
 }

@@ -2093,6 +2093,31 @@ constexpr uint8_t NOISE_BLACKLIST_THRESHOLD = 3;
 constexpr FreqHz SWEEP_DEFAULT_START_HZ = 5645000000;   // 5.645 GHz - full 5.8 GHz FPV band
 constexpr FreqHz SWEEP_DEFAULT_END_HZ = 5945000000;     // 5.945 GHz - 300 MHz span
 
+/**
+ * @brief Factory-default sweep-window bounds for windows 2..4 (Hz)
+ * @note SINGLE SOURCE OF TRUTH — referenced by ScanConfig (scanner.hpp),
+ *       SettingsStruct (settings_manager.cpp) and the DRONES sweep preset
+ *       (sweep_presets.hpp). The two config tables used to drift apart here:
+ *       SettingsStruct shipped W3 = 900..1000 MHz (the GSM900 downlink —
+ *       pure cellular junk) and W4 = 1200..1300 MHz (a duplicate of the
+ *       1.2 GHz FPV band, dropping the sub-GHz control/telemetry band
+ *       entirely). The band plan below is the drone-relevant one:
+ *       W3 = 1.2 GHz long-range FPV, W4 = 433/868/915 MHz ISM control links.
+ * @note W2 end is 2483 MHz, not the 2483.5 MHz ISM edge: every path that edits
+ *       or persists a window bound is MHz-quantized (the SWP NumberFields step
+ *       by 1 MHz, the settings file stores whole MHz), so a .5 default was
+ *       floored to 2483 on the first round trip. That left three disagreeing
+ *       values — an unsaved default swept 500 kHz wider than a saved one while
+ *       the NumberField showed 2483 — so the default is declared here as the
+ *       value that actually survives quantization: default, UI and file agree.
+ */
+constexpr FreqHz SWEEP2_DEFAULT_START_HZ = 2400000000;   // 2.4 GHz ISM (drones, Wi-Fi)
+constexpr FreqHz SWEEP2_DEFAULT_END_HZ = 2483000000;     // …to 2483 MHz (quantization-safe)
+constexpr FreqHz SWEEP3_DEFAULT_START_HZ = 1120000000;   // 1.2 GHz long-range FPV
+constexpr FreqHz SWEEP3_DEFAULT_END_HZ = 1360000000;
+constexpr FreqHz SWEEP4_DEFAULT_START_HZ = 433000000;    // 433/868/915 MHz ISM: RC, telemetry
+constexpr FreqHz SWEEP4_DEFAULT_END_HZ = 928000000;
+
 // ============================================================================
 // Sweep Detection Window Constants
 // ============================================================================

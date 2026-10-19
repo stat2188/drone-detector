@@ -43,7 +43,7 @@ spectrum shape, signal strength, movement trends, and statistical properties.
 
 Key Capabilities:
   - Wideband spectrum analysis across 1 MHz - 7.2 GHz
-  - 4-window sweep mode covering up to 300 MHz per window
+  - 4-window sweep mode: 5.8 GHz FPV, 2.4 GHz, 1.2 GHz FPV, 433-928 MHz
   - Real-time drone tracking with threat classification (NONE/LOW/MEDIUM/HIGH/CRITICAL)
   - CFAR (Constant False Alarm Rate) detection with 7 algorithm variants
   - Mahalanobis gate filter for statistical outlier rejection
@@ -119,7 +119,7 @@ Lock Ordering (deadlock prevention):
   MUST be acquired in ascending order only.
 
 ================================================================================
-3. FILE INVENTORY (42 files)
+3. FILE INVENTORY (43 files)
 ================================================================================
 
   File                          Lines   Purpose
@@ -135,6 +135,8 @@ Lock Ordering (deadlock prevention):
   drone_settings.cpp            ~711    Settings view with all callbacks
   drone_sweep_view.hpp          ~161    Sweep settings view
   drone_sweep_view.cpp          ~378    Sweep settings implementation
+  sweep_presets.hpp             ~273    Sweep band-plan presets + validators
+  range_names.hpp               ~113    Detection-range label table (SWP)
   scanner.hpp                   ~1400+  DroneScanner class, CFAR detector
   scanner.cpp                   ~1000+  Scanner logic, spectrum processing
   scanner_thread.hpp            ~52     ScannerThread declaration
@@ -158,6 +160,7 @@ Lock Ordering (deadlock prevention):
   spectral_kurtosis.hpp         ~202    Higher-order statistics computation
   sweep_processor.hpp           ~89     FFT bin → composite pixel mapping
   sweep_processor.cpp           ~200+   Process frame, reorder frame
+  spectrum_envelope.hpp         ~114    3-tap FFT envelope helper
   sweep_sensitivity.hpp         ~247    Sweep prefilter + TBD-reachability helpers
   mini_waterfall.hpp            ~166    Compact scrolling waterfall
   waterfall_history.hpp         ~174    Multi-frame FFT ring buffer
@@ -165,7 +168,7 @@ Lock Ordering (deadlock prevention):
   spectrum_preview_widget.cpp   ~100+   Preview rendering
   freqman_types.hpp             ~23     freqman_type enum
 
-Total: ~42 files, ~7,000+ lines of C++ code.
+Total: 43 files, ~26,000 lines of C++ code.
 
 ================================================================================
 4. HARDWARE CONSTRAINTS & MEMORY BUDGET
@@ -370,8 +373,19 @@ The detection pipeline processes each FFT frame through multiple stages:
 7. SWEEP MODE (Looking Glass Pattern)
 ================================================================================
 
-Sweep mode scans wide frequency ranges (up to 4 windows × 300 MHz) by stepping
-the radio through 20 MHz slices, similar to the Looking Glass app.
+Sweep mode scans wide frequency ranges (4 windows; the factory band plan
+totals 1118 MHz — 300 + 83 + 240 + 495, every span user-editable) by
+stepping the radio through 20 MHz slices, similar to the Looking Glass app.
+
+Preset band plans (SWEEP_PRESETS, sweep_presets.hpp):
+  The SWP tab's DANGER DRONES button applies a factory band plan to all four
+  windows at once: the window span, the Enabled flag, and the detection
+  ranges — each labelled from RANGE_NAMES, unused slots left 0/0 (off).
+  Like DEFAULTS it is a UI-side edit: nothing is written until SAVE. The
+  table lives in Flash and is validated at compile time (name fits the
+  button SSO, spans inside the hardware range, every slot inside its own
+  window, no two slots overlapping beyond their shared boundary), so an
+  invalid preset fails the build instead of shipping.
 
 Sweep Architecture:
   ┌──────────────────────────────────────────────────────┐
@@ -522,7 +536,9 @@ The EDA follows the standard Mayhem UI pattern:
     ├── SweepWindowView (reusable, 1 instance)
     │   ├── Start/End NumberFields
     │   ├── Enabled Checkbox
-    │   └── 5×2 Det-Win NumberFields (From/To, MHz)
+    │   ├── 5×2 Det-Win NumberFields (From/To, MHz)
+    │   ├── RangeNameSelector field_label_name_ — per-slot label
+    │   └── button_preset_ — applies DANGER DRONES (see section 7)
     ├── OptionsField window_select_ — switch window 1-4
     └── Save/Defaults buttons
 

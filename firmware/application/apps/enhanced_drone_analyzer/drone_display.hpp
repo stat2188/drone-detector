@@ -207,8 +207,6 @@ public:
 
     void set_composite_mode(bool enabled) noexcept { composite_mode_ = enabled; dirty_flags_ = DIRTY_ALL; set_dirty(); }
     void set_composite_data(const uint8_t* data, size_t size) noexcept;
-    void set_multi_zone_data(const uint8_t buffers[][240], uint8_t zone_count, size_t buffer_size,
-                             const FreqHz* freq_starts, const FreqHz* freq_ends) noexcept;
     void set_sweep_range(FreqHz start, FreqHz end) noexcept {
         sweep_freq_start_ = start;
         sweep_freq_end_ = end;
@@ -598,16 +596,10 @@ private:
     uint8_t sweep2_noise_floor_{0};
     bool sweep2_noise_floor_valid_{false};
 
-    // Multi-zone sweep (4 zones)
-    static constexpr uint8_t MAX_ZONES = 4;
-    const uint8_t* multi_zone_data_[MAX_ZONES]{};
-    FreqHz zone_freq_start_[MAX_ZONES]{};
-    FreqHz zone_freq_end_[MAX_ZONES]{};
-    uint8_t multi_zone_count_{0};
-
     /**
      * @brief Envelope state for connecting bar tops with a white trace.
-     * @note Eliminates code duplication between render_composite() and render_multi_zone().
+     * @note Used by render_composite_full_band(); the partial-band path
+     *       mirrors the same draw order inline.
      * @note Stack: ~6 bytes when embedded in caller.
      */
     struct EnvelopeState {
@@ -721,14 +713,6 @@ private:
         uint8_t noise_floor = 0,
         FreqHz freq_start_override = 0,
         FreqHz freq_end_override = 0
-    ) noexcept;
-
-    void render_multi_zone(
-        Painter& painter,
-        uint16_t start_x,
-        uint16_t start_y,
-        uint16_t width,
-        uint16_t height
     ) noexcept;
 
     void render_dual_composite(

@@ -271,12 +271,6 @@ void DroneDisplay::paint(Painter& painter) {
             }
             if (dual_sweep_mode_ && sweep2_data_ != nullptr && sweep2_data_size_ > 0) {
                 render_dual_composite(painter, ox, y_offset, w, layout.spec_h);
-            } else if (multi_zone_count_ > 1) {
-                // Multi-zone has no shadow machinery — full repaint only
-                // (its setters raise DIRTY_SPEC, never the incremental bits).
-                if (dirty_flags_ & DIRTY_SPEC) {
-                    render_multi_zone(painter, ox, y_offset, w, layout.spec_h);
-                }
             } else {
                 const bool full   = (dirty_flags_ & DIRTY_SPEC) != 0;
                 const bool data   = full || (dirty_flags_ & DIRTY_SPEC_DATA) != 0;
@@ -1171,7 +1165,8 @@ uint8_t DroneDisplay::apply_shelf_offset(uint8_t nf) const noexcept {
 }
 
 // ============================================================================
-// Shared envelope bar drawing (DRY: used by render_composite + render_multi_zone)
+// Envelope bar drawing (render_composite_full_band; the partial path mirrors
+// the same draw order inline)
 // ============================================================================
 
 void DroneDisplay::draw_bar_with_envelope(
@@ -1559,96 +1554,6 @@ void DroneDisplay::render_composite(
     render_composite_full_band(painter, band1_, composite_data, composite_size,
                                start_x, start_y, width, height,
                                scan_head, noise_floor, title_start, title_end);
-}
-
-void DroneDisplay::set_multi_zone_data(const uint8_t buffers[][240], uint8_t zone_count, size_t /*buffer_size*/,
-                                       const FreqHz* freq_starts, const FreqHz* freq_ends) noexcept {
-    if (zone_count > MAX_ZONES) zone_count = MAX_ZONES;
-    multi_zone_count_ = zone_count;
-    for (uint8_t z = 0; z < zone_count; ++z) {
-        multi_zone_data_[z] = buffers[z];
-        zone_freq_start_[z] = freq_starts[z];
-        zone_freq_end_[z] = freq_ends[z];
-    }
-    dirty_flags_ |= DIRTY_SPEC;
-    set_dirty();
-}
-
-void DroneDisplay::render_multi_zone(
-    Painter& painter,
-    uint16_t start_x,
-    uint16_t start_y,
-    uint16_t width,
-    uint16_t height
-) noexcept {
-    if (multi_zone_count_ == 0 || height < WF_HEADER_H + 6) return;
-
-    // Divide height into equal zones with 1px separator
-    const uint16_t zone_h = height / multi_zone_count_;
-    const uint16_t sep_h = 1;
-
-    for (uint8_t z = 0; z < multi_zone_count_; ++z) {
-        const uint16_t zone_y = start_y + z * (zone_h + sep_h);
-        const uint8_t* data = multi_zone_data_[z];
-
-        // Background
-        draw_rectangle(painter, start_x, zone_y, width, zone_h, COLOR_BACKGROUND);
-
-        // Separator line at top (except first zone)
-        if (z > 0) {
-            draw_rectangle(painter, start_x, zone_y - sep_h, width, sep_h, COLOR_UNKNOWN_THREAT);
-        }
-
-        // Title: zone frequency range
-        if (data != nullptr) {
-            char title[16];
-            const uint32_t mhz_lo = static_cast<uint32_t>(zone_freq_start_[z] / 1000000ULL);
-            const uint32_t mhz_hi = static_cast<uint32_t>(zone_freq_end_[z] / 1000000ULL);
-            char* dst = title;
-            size_t rem = sizeof(title);
-            write_uint(dst, rem, mhz_lo);
-            write_str(dst, rem, "-");
-            write_uint(dst, rem, mhz_hi);
-            write_str(dst, rem, "M");
-            *dst = '\0';
-            draw_text_small(painter, title, start_x + 2, zone_y + 1, COLOR_TEXT);
-
-            // Bar chart + white envelope via shared method (DRY).
-            // Stack: ~6 bytes (EnvelopeState).
-            constexpr uint16_t bar_width = 1;
-            // Guard BEFORE subtraction: zone_h - (WF_HEADER_H + 2) must not
-            // underflow uint16_t (previously produced chart_h = 65534 for
-            // 3-4 zones and drew garbage bars).
-            if (zone_h < WF_HEADER_H + 6) continue;
-            const uint16_t chart_y = zone_y + WF_HEADER_H;
-            const uint16_t chart_h = zone_h - WF_HEADER_H - 2;
-            if (chart_h < 4) continue;
-
-            const uint16_t envelope_y0 = static_cast<uint16_t>(chart_y + chart_h);
-            EnvelopeState envelope{envelope_y0, false, 0};
-
-            for (uint16_t i = 0; i < width - 4 && i < 240; ++i) {
-                const uint8_t power = data[i];
-
-                // Skip below-threshold bins (consistent with render_composite).
-                uint32_t color = COLOR_BACKGROUND;
-                if (power >= min_color_power_) {
-                    if (power > 200) color = COLOR_CRITICAL_THREAT;
-                    else if (power > 150) color = COLOR_HIGH_THREAT;
-                    else if (power > 100) color = COLOR_MEDIUM_THREAT;
-                    else color = COLOR_LOW_THREAT;
-                }
-
-                const uint16_t bar_h = (static_cast<uint16_t>(power) * chart_h) >> 8;
-                if (bar_h == 0 && color == COLOR_BACKGROUND) continue;
-
-                const uint16_t x = start_x + 2 + i * bar_width;
-                const uint16_t y = chart_y + chart_h - bar_h;
-
-                draw_bar_with_envelope(painter, x, y, bar_h, color, envelope);
-            }
-        }
-    }
 }
 
 void DroneDisplay::set_sweep2_data(const uint8_t* data, size_t size) noexcept {

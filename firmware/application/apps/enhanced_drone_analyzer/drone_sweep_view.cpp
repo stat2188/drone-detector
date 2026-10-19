@@ -7,6 +7,7 @@
 #include "scanner.hpp"
 #include "constants.hpp"
 #include "range_names.hpp"
+#include "sweep_presets.hpp"
 #include "ui_receiver.hpp"
 #include "file.hpp"
 #include "file_path.hpp"
@@ -284,6 +285,7 @@ SweepWindowView::SweepWindowView(NavigationView& nav, const Rect parent_rect, Dr
         &labels_name_,                        // r8 Range:, r9 Name:
         &field_label_slot_,                   // r8 slot selector R1..R5
         &field_label_name_,                   // r9 label selector (RANGE_NAMES)
+        &button_preset_,                      // r11 "DANGER DRONES" preset loader
     });
 
     // on_select callbacks route through the bound window index.
@@ -364,6 +366,12 @@ SweepWindowView::SweepWindowView(NavigationView& nav, const Rect parent_rect, Dr
         bound_data_->name_idx[slot] =
             (v >= 0 && v < static_cast<int32_t>(RANGE_NAME_COUNT))
                 ? static_cast<uint8_t>(v) : 0U;
+    };
+
+    // Preset loader — forwards to the parent DroneSweepView (on_preset). The
+    // closure is [this] = 4 B → std::function inline storage, ZERO heap.
+    button_preset_.on_select = [this](ui::Button&) {
+        if (on_preset) on_preset();
     };
 }
 
@@ -659,6 +667,13 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     button_defaults_.on_select = [this](ui::Button&) {
         apply_defaults();
     };
+
+    // Preset loader (child button of sweep_view_, see SweepWindowView) —
+    // applies the Flash-resident DANGER DRONES band plan to all 4 windows.
+    // Closure [this] = 4 B → std::function inline storage, zero heap.
+    sweep_view_.on_preset = [this]() {
+        apply_sweep_preset(SWEEP_PRESET_DANGER_DRONES);
+    };
 }
 
 DroneSweepView::~DroneSweepView() noexcept {
@@ -784,6 +799,42 @@ void DroneSweepView::apply_defaults() noexcept {
         }
     }
 
+    sweep_view_.sync_to_widgets();
+}
+
+void DroneSweepView::apply_sweep_preset(const uint8_t preset_index) noexcept {
+    if (preset_index >= SWEEP_PRESET_COUNT) return;
+
+    // Flash: the whole preset table is .rodata (constexpr) — zero stack, zero
+    // heap, zero SRAM. Every window is rewritten from the table, so the
+    // widgets' unsaved edits are deliberately NOT read back first (unlike a
+    // window switch, where they still belong to the current window).
+    const SweepPreset& preset = SWEEP_PRESETS[preset_index];
+
+    for (uint8_t w = 0; w < NUM_WINDOWS; ++w) {
+        const SweepWindowPreset& win = preset.windows[w];
+        windows_[w].start_freq = win.start_hz;
+        windows_[w].end_freq = win.end_hz;
+        windows_[w].step_freq = SWEEP_GAPLESS_STEP_MAX_HZ;  // honest gapless pitch
+        windows_[w].enabled = win.enabled || (w == 0);      // Window 1 is always on
+        for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
+            windows_[w].det_windows[i].start_hz =
+                static_cast<FreqHz>(win.slots[i].from_mhz) * MHZ;
+            windows_[w].det_windows[i].end_hz =
+                static_cast<FreqHz>(win.slots[i].to_mhz) * MHZ;
+            windows_[w].name_idx[i] = win.slots[i].label_idx;
+        }
+    }
+
+    // The table is statically validated (sweep_presets.hpp static_asserts:
+    // every active slot inside its window span, ordered, fully labelled) —
+    // this pass is the runtime belt for any future table edit and keeps the
+    // "ranges always live inside the window" invariant before the widgets
+    // ever see the values.
+    sanitize_window_det_ranges();
+
+    // Same contract as apply_defaults(): data + widgets only. SAVE is what
+    // pushes ScanConfig to the scanner and writes the settings file.
     sweep_view_.sync_to_widgets();
 }
 

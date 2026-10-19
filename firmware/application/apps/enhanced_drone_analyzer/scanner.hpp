@@ -53,22 +53,22 @@ struct ScanConfig {
     //       pitch is auto-derived gapless in SweepWindow::init() (any other
     //       pitch recreates blind notches). Defaults aligned to the real pitch
     //       so the SWP editor shows an honest value.
-    FreqHz sweep2_start_freq{2400000000ULL};
-    FreqHz sweep2_end_freq{2483500000ULL};
+    FreqHz sweep2_start_freq{SWEEP2_DEFAULT_START_HZ};
+    FreqHz sweep2_end_freq{SWEEP2_DEFAULT_END_HZ};
     FreqHz sweep2_step_freq{SWEEP_GAPLESS_STEP_MAX_HZ};
     bool sweep2_enabled{false};
 
     // Sweep range (Hz) — window 3 (1.2 GHz: long-range FPV)
     // NOTE: disabled by default to match SettingsStruct defaults.
-    FreqHz sweep3_start_freq{1120000000ULL};
-    FreqHz sweep3_end_freq{1360000000ULL};
+    FreqHz sweep3_start_freq{SWEEP3_DEFAULT_START_HZ};
+    FreqHz sweep3_end_freq{SWEEP3_DEFAULT_END_HZ};
     FreqHz sweep3_step_freq{SWEEP_GAPLESS_STEP_MAX_HZ};
     bool sweep3_enabled{false};
 
     // Sweep range (Hz) — window 4 (433 MHz + 868/915 MHz: control/telemetry)
     // NOTE: disabled by default to match SettingsStruct defaults.
-    FreqHz sweep4_start_freq{433000000ULL};
-    FreqHz sweep4_end_freq{928000000ULL};
+    FreqHz sweep4_start_freq{SWEEP4_DEFAULT_START_HZ};
+    FreqHz sweep4_end_freq{SWEEP4_DEFAULT_END_HZ};
     FreqHz sweep4_step_freq{SWEEP_GAPLESS_STEP_MAX_HZ};
     bool sweep4_enabled{false};
 
@@ -242,78 +242,6 @@ struct ScanStatistics {
      * @brief Reset statistics
      */
     void reset() noexcept;
-};
-
-// ============================================================================
-// Multi-Zone Sweep Structures
-// ============================================================================
-
-/**
- * @brief Number of sweep zones (4 horizontal display bands)
- */
-constexpr uint8_t SWEEP_ZONE_COUNT = 4;
-
-/**
- * @brief Per-zone sweep configuration
- */
-struct SweepZoneConfig {
-    FreqHz start_freq{0};
-    FreqHz end_freq{0};
-    bool enabled{false};
-};
-
-/**
- * @brief Multi-zone sweep configuration (stored in SD card settings)
- */
-struct SweepZonesConfig {
-    SweepZoneConfig zones[SWEEP_ZONE_COUNT];
-
-    SweepZonesConfig() noexcept {
-        // Default: zone 0 = 2.4 GHz ISM, others disabled
-        zones[0] = {2400000000ULL, 2500000000ULL, true};
-        zones[1] = {5700000000ULL, 5800000000ULL, false};
-        zones[2] = {5800000000ULL, 5900000000ULL, false};
-        zones[3] = {1000000000ULL, 1100000000ULL, false};
-    }
-};
-
-/**
- * @brief Per-zone sweep runtime state
- */
-struct SweepZoneRuntime {
-    FreqHz current_center{0};
-    FreqHz pixel_step_hz{0};
-    FreqHz step_hz{0};
-    FreqHz bins_hz_acc{0};
-    FreqHz center_ini{0};
-    uint16_t pixel_index{0};
-    uint8_t pixel_max{0};
-
-    void init(const SweepZoneConfig& cfg) noexcept {
-        const FreqHz range = cfg.end_freq - cfg.start_freq;
-        if (range == 0 || !cfg.enabled) {
-            pixel_step_hz = SWEEP_SLICE_BW / SWEEP_PIXELS_PER_SLICE;
-        } else {
-            pixel_step_hz = range / SWEEP_PIXELS_PER_SLICE;
-        }
-        step_hz = SWEEP_BINS_PER_STEP * SWEEP_BIN_SIZE;
-        center_ini = cfg.start_freq + (SWEEP_SLICE_BW / 2);
-        current_center = center_ini;
-        pixel_index = 0;
-        pixel_max = 0;
-        bins_hz_acc = 0;
-    }
-
-    void reset_pass() noexcept {
-        current_center = center_ini;
-        pixel_index = 0;
-        pixel_max = 0;
-        bins_hz_acc = 0;
-    }
-
-    [[nodiscard]] bool is_complete() const noexcept {
-        return pixel_index >= SWEEP_PIXELS_PER_SLICE;
-    }
 };
 
 /**

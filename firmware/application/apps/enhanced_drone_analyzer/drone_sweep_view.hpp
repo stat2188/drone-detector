@@ -23,8 +23,9 @@ enum class SweepFieldID : uint8_t;
 
 /**
  * @brief Per-window sweep configuration data (POD, no UI widgets)
- * @note SRAM: 117 bytes (3×FreqHz=24B + enabled=1+7pad + det_windows[5]×16=80B
- *       + name_idx[5]=5B). Total for array[4]: ~468 bytes BSS.
+ * @note SRAM: sizeof = 120 bytes — 3×FreqHz=24B + enabled=1+7pad +
+ *       det_windows[5]×16=80B + name_idx[5]=5B + 3B tail padding (struct
+ *       align 8). Total for array[4]: 480 bytes BSS.
  * @note Stored as std::array<WindowData, MAX_SWEEP_WINDOWS> in DroneSweepView
  *       to avoid duplicating widgets for each window.
  */
@@ -116,10 +117,13 @@ private:
  *       window. DroneSweepView switches the data pointer to show different
  *       windows. (The sweep center pitch is auto-derived for gapless coverage —
  *       SweepWindow::init() ignores step_freq. See SWEEP_GAPLESS_STEP_MAX_HZ.)
- * @note SRAM: ~900 bytes heap (24 widgets × ~32 bytes each + labels
- *       + 1 OptionsField + RangeNameSelector). The range-label selector is
- *       zero-heap (Flash strings) — it replaced a second OptionsField whose
- *       options vector cost >1 KB of heap at the current RANGE_NAMES size.
+ * @note SRAM: ≈1.9 KB of member data (the 12 NumberFields dominate; plus
+ *       Checkbox, Button, 4 Labels, 1 OptionsField, RangeNameSelector).
+ *       The view lives inside the heap-allocated DroneSweepView while pushed;
+ *       the only heap inside it is the Labels/OptionsField option vectors
+ *       (~0.3 KB). The range-label selector is zero-heap (Flash strings) —
+ *       it replaced a second OptionsField whose options vector cost >1 KB
+ *       of heap at the current RANGE_NAMES size.
  */
 class SweepWindowView : public ui::View {
 public:
@@ -136,6 +140,16 @@ public:
      * @param window_index Window index (0-3) for frequency keypad routing
      */
     void bind(WindowData* data, uint8_t window_index) noexcept;
+
+    /**
+     * @brief Preset callback — invoked by the "DANGER DRONES" button
+     * @note Owned by the parent DroneSweepView (assigns [this] = 4 B capture →
+     *       std::function inline storage, zero heap). The button is a child of
+     *       THIS view (not of DroneSweepView) so a sweep_view_ repaint fills
+     *       its own rect first and then repaints the overlapping child — the
+     *       parent-button z-order hazard that already affects DEFAULTS/SAVE.
+     */
+    std::function<void()> on_preset{};
 
     /**
      * @brief Read current widget values back into the bound WindowData
@@ -288,13 +302,23 @@ public:
     // vector was the allocation that starved the SWP-tab frequency keypad).
     RangeNameSelector field_label_name_{{UI_POS_X(7), UI_POS_Y(9)}, 10};
     uint8_t label_slot_{0};  // currently edited range slot (0-4)
+
+    // Preset loader — local row 11 (a couple of rows below Name:), left
+    // column, so the encoder path Name → Down → preset is a single step.
+    // Applies the Flash-resident DANGER DRONES band plan to ALL 4 windows
+    // (sweep_presets.hpp): enables every window, sets the factory spans and
+    // fills the drone-bearing detection ranges. UI-side only — like DEFAULTS
+    // it does NOT save; SAVE persists and pushes to the scanner.
+    // Label length 13 <= 15 chars → libstdc++ SSO, zero heap.
+    ui::Button button_preset_{{UI_POS_X(0), UI_POS_Y(11), UI_POS_WIDTH(16), 20}, "DANGER DRONES"};
 };
 
 /**
  * @brief Sweep settings view — accessible via SWP button
  * @note Uses a SINGLE SweepWindowView that swaps data for each window.
  *       A window selector (OptionsField) switches which window is displayed.
- *       Total SRAM: ~1,260B (SweepWindowView ~800B + WindowData[4] 448B + UI ~10B)
+ *       Total SRAM: ≈2.7 KB (SweepWindowView ≈1.9 KB + WindowData[4] 480 B
+ *       + window selector & 2 buttons ≈360 B)
  *       vs old design: ~4,800B (2 group views ~2,400B each + TabView + buttons)
  */
 class DroneSweepView : public ui::View {
@@ -319,10 +343,10 @@ private:
     NavigationView& nav_;
     DroneScanner* scanner_ptr_;
 
-    // Window data for all 4 windows (compact POD array, 288 bytes BSS)
+    // Window data for all 4 windows (compact POD array, 480 bytes BSS)
     std::array<WindowData, NUM_WINDOWS> windows_{};
 
-    // Single reusable view (~480 bytes) — bound to windows_[selected]
+    // Single reusable view (≈1.9 KB, see class note) — bound to windows_[selected]
     SweepWindowView sweep_view_;
 
     // Window selector — positioned above "-- Window --" label
@@ -348,6 +372,16 @@ private:
     void switch_to_window(uint8_t index) noexcept;
     void save_settings() noexcept;
     void apply_defaults() noexcept;
+
+    /**
+     * @brief Apply a Flash-resident sweep preset to ALL 4 windows
+     * @param preset_index Index into SWEEP_PRESETS (sweep_presets.hpp)
+     * @note Mirrors apply_defaults(): rewrites windows_[] + widgets only —
+     *       no settings save, no scanner push (SAVE does both). The table is
+     *       statically validated at compile time (sweep_presets_are_valid),
+     *       sanitize_window_det_ranges() runs anyway as a runtime belt.
+     */
+    void apply_sweep_preset(uint8_t preset_index) noexcept;
 
     /**
      * @brief Normalize the freshly loaded workspace config (SWP bugfix)
