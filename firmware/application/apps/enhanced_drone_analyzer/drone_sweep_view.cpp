@@ -285,7 +285,7 @@ SweepWindowView::SweepWindowView(NavigationView& nav, const Rect parent_rect, Dr
         &labels_name_,                        // r8 Range:, r9 Name:
         &field_label_slot_,                   // r8 slot selector R1..R5
         &field_label_name_,                   // r9 label selector (RANGE_NAMES)
-        &button_preset_,                      // r11 "DANGER DRONES" preset loader
+        &button_preset_,                      // r11 "Demo preset" band-plan loader
     });
 
     // on_select callbacks route through the bound window index.
@@ -669,10 +669,10 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     };
 
     // Preset loader (child button of sweep_view_, see SweepWindowView) —
-    // applies the Flash-resident DANGER DRONES band plan to all 4 windows.
+    // applies the Flash-resident Demo preset band plan to all 4 windows.
     // Closure [this] = 4 B → std::function inline storage, zero heap.
     sweep_view_.on_preset = [this]() {
-        apply_sweep_preset(SWEEP_PRESET_DANGER_DRONES);
+        apply_sweep_preset(SWEEP_PRESET_DEMO);
     };
 }
 

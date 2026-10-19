@@ -75,40 +75,45 @@ struct SweepPreset {
 }
 
 // ============================================================================
-// DANGER DRONES — factory band plan for the drone-relevant spectrum
+// DEMO PRESET — factory band plan for the drone-relevant spectrum
 // ============================================================================
 // Detection ranges are an ALLOW-LIST: with at least one active slot,
 // SweepProcessor::is_detection_window_allowed() drops every peak outside the
 // union of the active ranges BEFORE the Mahalanobis/tracking stage — gated
 // peaks never become tracked drones (scanner.cpp: apply_sweep_tracking).
-// So each window lists only the drone-bearing sub-bands; everything else
-// (GSM, LTE, broadcast TV, DVB-T, airband) stays out of the ranges and
-// cannot fire a detection. All slots are labelled so the drone list shows
-// the band class instead of the "Unknown" fallback.
-//
-// Window spans equal the shared factory defaults (constants.hpp) — enabling
-// all four windows sweeps: 5.8 GHz FPV + 2.4 GHz + 1.2 GHz FPV + sub-GHz.
+// The sweep still TUNES across the full window span, so any span area not
+// covered by a slot is pure sweep-time waste (tunes + FFT + composite work
+// for spectra that can never detect). Each window below therefore keeps its
+// span as tight as the drone-bearing sub-bands allow.
 //
 // Band plan (MHz):
-//   W1 5645..5945 (5.8 GHz FPV / DJI video downlinks)
+//   W1 5645..5945 (5.8 GHz FPV / DJI video downlinks) — spans the shared
+//     factory default; 3 gapless slots cover 100 % of the span.
 //     R1 5645..5725 FPV   analog FPV ch1..2 / RaceBand 5658, 5695
 //     R2 5725..5850 MAVIC DJI O3/O4 air units + analog RaceBand 5732..5843
 //     R3 5850..5945 FPV   analog RaceBand 5866, 5905 / high FPV channels
 //     R4/R5 off
-//   W2 2400..2483 (2.4 GHz ISM; the .5 MHz edge does not survive MHz storage)
+//   W2 2400..2483 (2.4 GHz ISM; the .5 MHz edge does not survive MHz
+//     storage) — 4 gapless slots cover 100 % of the span.
 //     R1 2400..2427 WIFI  WLAN (Wi-Fi drone bridges, FPV wifi)
 //     R2 2427..2452 MAVIC DJI control/telemetry
 //     R3 2452..2472 CTRL  generic RC (SFHSS, ExpressLRS 2.4)
 //     R4 2472..2483 WIFI  WLAN upper edge
 //     R5 off
-//   W3 1120..1360 (1.2 GHz long-range FPV)
+//   W3 1120..1360 (1.2 GHz long-range FPV) — single slot covers 100 %.
 //     R1 1120..1360 FPV   entire band (single video-downlink slot)
 //     R2..R5 off
-//   W4 433..928 (sub-GHz control / telemetry)
-//     R1 433..436  CTRL   433 MHz ISM RC links (EU/China SRD 433.05..434.79)
-//     R2 863..870  LORA   LoRa/LoRaWAN drone telemetry (EU SRD)
-//     R3 902..928  CTRL   915 MHz ISM RC/telemetry (US/AU, ExpressLRS 900)
-//     R4/R5 off
+//   W4 863..928 (sub-GHz control / telemetry) — deliberately NOT the
+//     factory default 433..928 span: the 433 MHz island sits ~430 MHz away
+//     from the 868/915 cluster, and the span between them (436..863) is
+//     UHF TV / LTE / GSM — swept every cycle but permanently gated by the
+//     allow-list, i.e. 93 % sweep-time waste. 433 MHz SRD (3 MHz wide,
+//     toy-RC / alarm noise) stays available via manual SWP entry.
+//     R1 863..870  LORA   LoRa/LoRaWAN drone telemetry (EU SRD)
+//     R2 902..928  CTRL   915 MHz ISM RC/telemetry (US/AU, ExpressLRS 900)
+//     R3/R4/R5 off
+//     The 870..902 gap is intentional: GSM900 uplink (880..915) lives
+//     there; leaving it un-gated avoids a false-positive storm.
 //
 // Invariants enforced on every preset (sweep_presets_are_valid() below):
 //   1. each window span is ordered and inside the hardware frequency range;
@@ -126,7 +131,7 @@ struct SweepPreset {
 //      burn one of the 5 slots per window.
 constexpr SweepPreset SWEEP_PRESETS[] = {
     {
-        "DANGER DRONES",
+        "Demo preset",
         {{
             // W1 — 5.8 GHz FPV / DJI video
             {SWEEP_DEFAULT_START_HZ, SWEEP_DEFAULT_END_HZ, true,
@@ -145,11 +150,13 @@ constexpr SweepPreset SWEEP_PRESETS[] = {
             // W3 — 1.2 GHz long-range FPV
             {SWEEP3_DEFAULT_START_HZ, SWEEP3_DEFAULT_END_HZ, true,
              {{{1120, 1360, range_label_index("FPV")}, {}, {}, {}, {}}}},
-            // W4 — 433 / 868 / 915 MHz control & telemetry
-            {SWEEP4_DEFAULT_START_HZ, SWEEP4_DEFAULT_END_HZ, true,
-             {{{433, 436, range_label_index("CTRL")},
-               {863, 870, range_label_index("LORA")},
+            // W4 — 868 / 915 MHz control & telemetry (tightened; see band
+            // plan above). Explicit Hz literals — no longer the factory
+            // default 433..928 span, so the shared constant is not reused.
+            {863000000, 928000000, true,
+             {{{863, 870, range_label_index("LORA")},
                {902, 928, range_label_index("CTRL")},
+               {},
                {},
                {}}}},
         }},
@@ -160,17 +167,17 @@ constexpr SweepPreset SWEEP_PRESETS[] = {
 /// currently exposes preset 0; further presets need a selector, not code).
 constexpr size_t SWEEP_PRESET_COUNT = sizeof(SWEEP_PRESETS) / sizeof(SWEEP_PRESETS[0]);
 
-/// Preset applied by the "DANGER DRONES" button in the SWP tab.
-constexpr uint8_t SWEEP_PRESET_DANGER_DRONES = 0;
+/// Preset applied by the "Demo preset" button in the SWP tab.
+constexpr uint8_t SWEEP_PRESET_DEMO = 0;
 
 // Presets are selected by their own index (the SWP button passes
-// SWEEP_PRESET_DANGER_DRONES into SWEEP_PRESETS[i]), never by the window
+// SWEEP_PRESET_DEMO into SWEEP_PRESETS[i]), never by the window
 // selector — so the index must be inside the table or the read runs off its
 // end. Assert against the PRESET count, not against MAX_SWEEP_WINDOWS: the
 // two are unrelated numbers (a 5-preset table would be perfectly legal) and
 // comparing them would assert nothing about actual use.
-static_assert(SWEEP_PRESET_DANGER_DRONES < SWEEP_PRESET_COUNT,
-    "SWEEP_PRESET_DANGER_DRONES indexes past the end of SWEEP_PRESETS");
+static_assert(SWEEP_PRESET_DEMO < SWEEP_PRESET_COUNT,
+    "SWEEP_PRESET_DEMO indexes past the end of SWEEP_PRESETS");
 
 // ----------------------------------------------------------------------------
 // Compile-time validation — the preset table is data, so validate it like data

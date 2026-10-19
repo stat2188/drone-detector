@@ -378,7 +378,7 @@ totals 1118 MHz — 300 + 83 + 240 + 495, every span user-editable) by
 stepping the radio through 20 MHz slices, similar to the Looking Glass app.
 
 Preset band plans (SWEEP_PRESETS, sweep_presets.hpp):
-  The SWP tab's DANGER DRONES button applies a factory band plan to all four
+  The SWP tab's Demo preset button applies a factory band plan to all four
   windows at once: the window span, the Enabled flag, and the detection
   ranges — each labelled from RANGE_NAMES, unused slots left 0/0 (off).
   Like DEFAULTS it is a UI-side edit: nothing is written until SAVE. The
@@ -386,6 +386,11 @@ Preset band plans (SWEEP_PRESETS, sweep_presets.hpp):
   button SSO, spans inside the hardware range, every slot inside its own
   window, no two slots overlapping beyond their shared boundary), so an
   invalid preset fails the build instead of shipping.
+  The Demo preset totals 688 MHz (300 + 83 + 240 + 65): W4 is tightened
+  to 863..928 so the span matches the drone-bearing sub-GHz clusters
+  (the factory default 433..928 span sweeps 459 MHz of UHF TV / LTE /
+  GSM that the detection allow-list permanently gates out). 433 MHz SRD
+  stays available via manual SWP entry.
 
 Sweep Architecture:
   ┌──────────────────────────────────────────────────────┐
@@ -538,7 +543,7 @@ The EDA follows the standard Mayhem UI pattern:
     │   ├── Enabled Checkbox
     │   ├── 5×2 Det-Win NumberFields (From/To, MHz)
     │   ├── RangeNameSelector field_label_name_ — per-slot label
-    │   └── button_preset_ — applies DANGER DRONES (see section 7)
+    │   └── button_preset_ — applies Demo preset (see section 7)
     ├── OptionsField window_select_ — switch window 1-4
     └── Save/Defaults buttons
 

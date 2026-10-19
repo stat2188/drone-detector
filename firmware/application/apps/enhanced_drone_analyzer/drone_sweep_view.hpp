@@ -142,7 +142,7 @@ public:
     void bind(WindowData* data, uint8_t window_index) noexcept;
 
     /**
-     * @brief Preset callback — invoked by the "DANGER DRONES" button
+     * @brief Preset callback — invoked by the "Demo preset" button
      * @note Owned by the parent DroneSweepView (assigns [this] = 4 B capture →
      *       std::function inline storage, zero heap). The button is a child of
      *       THIS view (not of DroneSweepView) so a sweep_view_ repaint fills
@@ -305,12 +305,12 @@ public:
 
     // Preset loader — local row 11 (a couple of rows below Name:), left
     // column, so the encoder path Name → Down → preset is a single step.
-    // Applies the Flash-resident DANGER DRONES band plan to ALL 4 windows
+    // Applies the Flash-resident Demo preset band plan to ALL 4 windows
     // (sweep_presets.hpp): enables every window, sets the factory spans and
     // fills the drone-bearing detection ranges. UI-side only — like DEFAULTS
     // it does NOT save; SAVE persists and pushes to the scanner.
-    // Label length 13 <= 15 chars → libstdc++ SSO, zero heap.
-    ui::Button button_preset_{{UI_POS_X(0), UI_POS_Y(11), UI_POS_WIDTH(16), 20}, "DANGER DRONES"};
+    // Label length 11 <= 15 chars → libstdc++ SSO, zero heap.
+    ui::Button button_preset_{{UI_POS_X(0), UI_POS_Y(11), UI_POS_WIDTH(16), 20}, "Demo preset"};
 };
 
 /**
