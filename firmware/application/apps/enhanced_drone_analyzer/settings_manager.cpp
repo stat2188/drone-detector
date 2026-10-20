@@ -34,7 +34,7 @@ SettingsStruct::SettingsStruct() noexcept
     , spectrum_detection_enabled(true)
     , median_enabled(true)
     , spectrum_margin(DEFAULT_SPECTRUM_MARGIN)
-    , spectrum_min_width(DEFAULT_SPECTRUM_MIN_WIDTH)  // 2 bins ≈ 156 kHz («проходят и узкие»)
+    , spectrum_min_width(DEFAULT_SPECTRUM_MIN_WIDTH)  // 60 bins ≈ 4.69 MHz (strict spike reject)
     , spectrum_max_width(DEFAULT_SPECTRUM_MAX_WIDTH)
     , spectrum_peak_sharpness(DEFAULT_SPECTRUM_PEAK_SHARPNESS)
     , spectrum_peak_ratio(DEFAULT_SPECTRUM_PEAK_RATIO)
@@ -566,10 +566,10 @@ ErrorCode SettingsFileManager::load(SettingsStruct& out) noexcept {
     // audit-D1 UI step bug made 50 the only reachable stored value besides
     // 100 — so a stored 50 in such a file is overwhelmingly the accidental
     // old default, not a deliberate dissent opt-in. Promote it to the new
-    // default 100 (strict AND: every armed similarity gate must pass — a
-    // detection can never register after passing only part of them).
-    // Files stamped >= 1.4 preserve 50 verbatim: they were saved AFTER the
-    // default changed, i.e. the user re-confirmed the value deliberately.
+    // default (DEFAULT_SHAPE_SIM_THRESHOLD_PCT, currently 75: 4-of-5 armed
+    // similarity steps must pass). Files stamped >= 1.4 preserve 50
+    // verbatim: they were saved AFTER the default changed, i.e. the user
+    // re-confirmed the value deliberately.
     // Versionless / hand-edited files (file_version_x10 == 0) are treated
     // as legacy: they predate this migration. Known cost: a hand-edited
     // deliberate 50 without a version line is promoted once.

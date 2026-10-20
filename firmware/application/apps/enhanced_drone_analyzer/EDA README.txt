@@ -299,9 +299,10 @@ Key Structures:
     uint8_t cfar_ref_cells/guard_cells/threshold_x10
     uint8_t cfar_hybrid_alpha/beta/gamma, os_cfar_k_percent, vi_cfar_threshold_x10
     bool shape_bypass_enabled, robust_width_floor_enabled, sensitive_mode
-    uint8_t shape_sim_threshold_pct (50..100, default 100 = strict AND,
-        only read when sensitive_mode ON; files stamped <= 1.3 migrate
-        a stored 50 to 100 on load — audit D-FULL-PASS)
+    uint8_t shape_sim_threshold_pct (50..100, default 75 = 4-of-5 armed
+        steps must agree, only read when sensitive_mode ON; files stamped
+        <= 1.3 migrate a stored 50 to the current default on load — audit
+        D-FULL-PASS)
     bool kurtosis_enabled, adaptive_cfar_enabled
     uint8_t rssi_decrease_cycles, freq_match_radius_mhz
 
@@ -386,11 +387,13 @@ Preset band plans (SWEEP_PRESETS, sweep_presets.hpp):
   button SSO, spans inside the hardware range, every slot inside its own
   window, no two slots overlapping beyond their shared boundary), so an
   invalid preset fails the build instead of shipping.
-  The Demo preset totals 688 MHz (300 + 83 + 240 + 65): W4 is tightened
-  to 863..928 so the span matches the drone-bearing sub-GHz clusters
-  (the factory default 433..928 span sweeps 459 MHz of UHF TV / LTE /
-  GSM that the detection allow-list permanently gates out). 433 MHz SRD
-  stays available via manual SWP entry.
+  The Demo preset totals 2100 MHz (700 + 300 + 500 + 600), all spans
+  user-editable (2026-10 user-elected plan): W1 5300..6000 with detection
+  in 5 gapless priority zones 5645..5950 (slot 0 first; the guard slices
+  5300..5645 / 5950..6000 are swept but allow-list-gated), W2 2300..2600,
+  W3 900..1400, W4 400..1000 — W2/W3/W4 carry a single full-span slot
+  each (no narrow channel splits: vendor grids differ and the detector
+  classifies by SHAPE, not by grid).
 
 Sweep Architecture:
   ┌──────────────────────────────────────────────────────┐
@@ -783,8 +786,8 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
                       AND present-now (frame age 0 also >= threshold — stale
                       history alone can never confirm)
                       AND tbd_peak_is_narrowband() (narrowband guard)
-    → The noise-relative floor (TBD_MIN_ELEVATION_UNITS = 6 units = 1.2 dB ≈
-      3σ of the ~2-unit noise sigma) is what makes "3 of 8 frames" a
+    → The noise-relative floor (TBD_MIN_ELEVATION_UNITS = 5 units = 1.0 dB ≈
+      2.5σ of the ~2-unit noise sigma) is what makes "3 of 8 frames" a
       NOISE-RELATIVE statement: at default Sens (−105 dBm) with gain <= 54 dB
       the absolute RSSI term clamps to 0 units, so without the floor ANY
       non-zero bin would count as a vote. static_assert pins the floor to
@@ -825,13 +828,13 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
   Step 3: Peak Margin (SNR gate)
     peak_margin = peak_value - noise_floor
     Must reach shape_gate_margin() — the EFFECTIVE gate:
-      normal mode, Sens <= 75: gate = spectrum_margin (default 20 ≈ 4 dB)
+      normal mode, Sens <= 75: gate = spectrum_margin (default 10 ≈ 2 dB)
       normal mode, Sens > 75:  gate = spectrum_margin + (Sens-75)/2
-                               (fresh default Sens=85 → gate = 25)
-      Sensitive ("Sens") mode: gate = clamp(3σ_IQR, 10, spectrum_margin - 2)
+                               (fresh default Sens=85 → gate = 15)
+      Sensitive ("Sens") mode: gate = clamp(3σ_IQR, 8, spectrum_margin - 2)
                                — NOISE-ADAPTIVE (SHAPE_ADAPT_*): 3σ of the
                                usable-bin IQR measured per frame; opens in
-                               clean noise (floor 10 = 2 dB), capped by
+                               clean noise (floor 8 = 1.6 dB), capped by
                                Mar-2 so it is never STRICTER than the user
                                asked (±5..10 on Mar cannot cliff-kill)
     → Rejects sub-CFAR noise spikes
@@ -846,8 +849,10 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
       they all measure the SAME [left..right] band
 
   Step 5: Minimum Width
-    signal_width must exceed spectrum_min_width (default 2 bins ≈ 156 kHz)
-    → Rejects single-bin noise spikes
+    signal_width must exceed spectrum_min_width (default 60 bins ≈ 4.69 MHz)
+    → Rejects narrow noise spikes AND narrowband links (ELRS/FrSky 2-8
+      bins die at defaults; note: below-gate TBD targets are exempt
+      while MinW sits at the default floor — see tbd_peak_is_narrowband)
 
   Step 6: Maximum Width
     signal_width (Step-4 fragment) AND the WHOLE emission extent (Step 6b,
@@ -856,7 +861,8 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
     (margin/3) so the extent can genuinely exceed the fragment — with a
     HALF-POWER trim of outer noise-shelf shoulders) must both be below
     spectrum_max_width
-    (default 255 bins = NO CAP — «проходят и узкие, и широкие»)
+    (default 120 bins ≈ 9.4 MHz — ≥ the 114-bin DC-gap extent cap, so
+     behaviorally ≈ «проходят и узкие, и широкие» for measurable extents)
     → NOTE: in the raw-FFT chain the walk is DC-gap bounded, so the extent
       can never exceed 110 bins in DB (10..119 / 136..245) or 114 in sweep
       (6..119 / 136..249) — any value >= 114 is behaviorally identical in
@@ -901,11 +907,12 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
 
   Step 7: Peak Sharpness
     sharpness = (peak_margin * 100) / avg_margin over [left..right]
-    Must exceed spectrum_peak_sharpness (default 100)
-    → PERMISSIVE by design: analog FM video measures 100-130 and passes;
-      WiFi flat-top ≈ 100-110 sits IN the overlap — at defaults WiFi is
-      classified by Flat (Step 10), not Sharp. Raise to 140-160 on
-      WiFi-dense sites (cost: weak FPV at 100-120 starts dropping).
+    Must exceed spectrum_peak_sharpness (default 165)
+    → STRICT by design (2026-10 user-elected): clips the measured analog
+      FPV band 100-130 at medium range — only inverted-V / strong-carrier
+      peaks (> ~200) pass comfortably. WiFi flat-top ≈ 100-110 is rejected
+      by BOTH Sharp and Flat at defaults. Lower to 100-120 if weak/mid
+      analog FPV must be recovered (cost: flat noise leaks return).
 
   Step 8: Peak-to-Width Ratio
     ratio = (peak_margin * 10) / signal_width
@@ -944,8 +951,10 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
 
   Step 10: Flatness
     flatness_pct = (high_power_bins * 100) / signal_width
-    Must be below spectrum_flatness (default 0 = OFF — включается вручную)
-    → Rejects WiFi flat-top (>50%), accepts drone V-shape (<20%)
+    Must be below spectrum_flatness (default 25 = ARMED, strict —
+      flatness_pct > 25 rejects: blunt-top FPV 40-70% AND WiFi/BT 50-80%
+      die on strong peaks; weak peaks / narrow signals skip the check)
+    → Rejects WiFi flat-top (>50%), accepts sharp drone V-shape (<25%)
     → Only applied when peak_margin >= effective guard AND signal_width > 4;
       guard = 40 at Sens <= 75, lowered by (Sens-75)/2 at high Sens (floor 15)
     НАПРАВЛЕНИЕ: Flat — это ВЕРХНЯЯ граница плоскостности.
@@ -982,8 +991,12 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
 
   Step 11: Symmetry
     symmetry = min(left_width, right_width) * 100 / max(left_width, right_width)
-    Must exceed spectrum_symmetry (default 0 = disabled)
-    → Optional: rejects asymmetric noise
+    Must be >= spectrum_symmetry (default 25 = ARMED, strict — weaker flank
+      must carry >= ¼ of the stronger flank; drone V-shape > 50 passes,
+      asymmetric noise < 30 dies; skipped for very-strong peaks, abstains
+      when a flank bin was clipped, Sensitive eases toward 0 near the gate)
+    → Rejects asymmetric noise; slight analog-FM asymmetry (the historical
+      reason 35 was disabled) is clipped harder at 25 — user-elected
 
   Step 12: Spectral Kurtosis (last IN-FRAME step — still inside
            apply_shape_filters; runs BEFORE Steps 13-15)
@@ -1163,12 +1176,16 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
            pct > 100 is unreachable, so it is now the no-op it is, and a
            Flat config whose Step 10 abstained (margin < flatness guard)
            no longer arms; both keep Step 13 guarding where the chain
-           cannot reject. Flat = 0 stays DISARMED, keeping the D-B
-           wideband guard at defaults]. Guards RSSI-only and TBD paths
-           unconditionally; with PERMISSIVE defaults it also guards
-           shape-validated verdicts [audit D-B]: otherwise DB scan has
-            NO wideband gate at defaults, since Step 6c is sweep-only and
-            Mahalanobis / RSSI-variance then defaulted OFF)
+           cannot reject. Flat = 0 stays DISARMED for the legacy
+           permissive set. 2026-10 strict defaults (Sharp = 165, Flat =
+           25, Sym = 25) leave the chain ARMED at Sens OFF, so at
+           defaults Step 13 is skipped for shape-validated verdicts and
+           the chain owns the wideband verdict]. Guards RSSI-only and TBD
+           paths unconditionally; when the chain is DISARMED (Sharp <=
+           100 AND Flat = 0) it also guards
+            shape-validated verdicts [audit D-B]: otherwise DB scan has
+             NO wideband gate there, since Step 6c is sweep-only and
+             Mahalanobis / RSSI-variance then defaulted OFF)
     center freq must exceed strongest neighbor within 10 MHz by
     neighbor_margin_db (default 2 dB)
     → Rejects wideband noise (WiFi, BT, microwave)
@@ -1528,26 +1545,38 @@ FFT Bin Layout:
   FFT_USABLE_BINS_NARROW     = 228
   SWEEP_BIN_SIZE             = 78,125 Hz
 
-Spectrum Shape Defaults (PERMISSIVE SET — "detect what fits the bands";
-the width/margin frames are user-tunable, the strict shape descriptors are
-loosened so real targets are not clipped at the band edge):
-  DEFAULT_SPECTRUM_MARGIN         = 20    (≈4 dB, analog FPV)
-  DEFAULT_SPECTRUM_MIN_WIDTH      = 2     (≈156 kHz — narrow ELRS/FrSky
-                                           bursts pass; 1-bin spikes still die)
-  DEFAULT_SPECTRUM_MAX_WIDTH      = 255   (NO CAP — extent is DC-gap bounded
-                                           at 114 bins anyway; wide passes)
-  DEFAULT_SPECTRUM_PEAK_SHARPNESS = 100   (PERMISSIVE: below the measured FPV
-                                           band 100-130; WiFi ≈ 100-110 is
-                                           classified by Flat, not Sharp)
+Spectrum Shape Defaults (STRICT SHAPE SET — 2026-10 user-elected: wide
+video-bearing signals pass on width, sharp-peaked shapes pass on profile;
+narrowband links, blunt-top FPV and flat-top WiFi are all clipped; the
+width/margin frames remain user-tunable):
+  DEFAULT_SPECTRUM_MARGIN         = 10    (≈2 dB — permissive gate; CFAR +
+                                           post-filters own FP rejection.
+                                           Floor: ≥ 2×TBD_MIN_ELEVATION_UNITS
+                                           and ≥ SHAPE_ADAPT_GATE_FLOOR+2)
+  DEFAULT_SPECTRUM_MIN_WIDTH      = 60    (≈4.69 MHz — rejects narrowband
+                                           control links & narrow spikes;
+                                           below-gate TBD exempt at this
+                                           floor, see Step 5 note)
+  DEFAULT_SPECTRUM_MAX_WIDTH      = 120   (≈9.4 MHz — ABOVE the 114-bin
+                                           DC-gap extent cap, so behaviorally
+                                           ≈ no cap for measurable extents)
+  DEFAULT_SPECTRUM_PEAK_SHARPNESS = 165   (STRICT — clips the measured FPV
+                                           100-130 band at medium range by
+                                           design; inverted-V > 200 passes)
   DEFAULT_SPECTRUM_PEAK_RATIO     = 0     (disabled)
   DEFAULT_SPECTRUM_VALLEY_DEPTH   = 0     (OFF — the old 90 was provably
                                            inert: flank < margin/3 <= 84;
                                            arming <=84 cuts close FPV)
-  DEFAULT_SPECTRUM_FLATNESS       = 0     (OFF — fat blunt-topped FPV was
-                                           rejected here on every pass at
-                                           >=8 dB SNR; re-enable at 45 on
-                                           WiFi-dense sites. МЕНЬШЕ = жёстче!)
-  DEFAULT_SPECTRUM_SYMMETRY       = 0     (disabled)
+  DEFAULT_SPECTRUM_FLATNESS       = 25    (ARMED, strict — flatness_pct > 25
+                                           rejects: blunt-top FPV 40-70% AND
+                                           WiFi/BT 50-80% die on strong
+                                           peaks. МЕНЬШЕ = жёстче!)
+  DEFAULT_SPECTRUM_SYMMETRY       = 25    (ARMED, strict — weaker flank must
+                                           carry >= ¼ of the stronger; slight
+                                           FM asymmetry clips by design)
+  DEFAULT_SHAPE_SIM_THRESHOLD_PCT = 75    (Shape score — 4 of 5 armed
+                                           similarity steps must agree;
+                                           between majority-50 and AND-100)
 
 CFAR Defaults:
   DEFAULT_CFAR_MODE           = CFARMode::OFF (USER DEFAULT; fixed threshold.
@@ -1770,7 +1799,19 @@ WiFi — ШИРОКОПОЛОСНЫЙ сигнал (20-40+ МГц), а окно 
 ================================================================================
   END OF DOCUMENTATION
   Generated: 2026-09-06
-  Updated:   2026-09-25 (FPV-relaxed defaults: MinW 9→2, MaxW 200→255,
+  Updated:   2026-10-20 (STRICT SHAPE SET defaults, user-elected: MinW
+             20→60 (≈4.69 MHz), Mar 20→10 (permissive gate; TBD floor 6→5
+             and shape-adapt floor 10→8 retuned for the noise-model
+             static_asserts), MaxW 255→120 (≥114 DC-gap cap, inert),
+             Sharp 100→165 (clips FPV 100-130 band by design), Flat 0→25
+             (ARMED), Sym 0→25 (ARMED), Shape score 100→75 (4-of-5); Demo
+             preset renamed from
+             DANGER DRONES; Demo preset band plan re-elected: W1 5300..6000
+             (5 priority zones 5645..5950), W2 2300..2600, W3 900..1400,
+             W4 400..1000 — one full-span slot each, 2100 MHz total;
+             W4's earlier 433..928 tightening superseded by the explicit
+             400..1000 span (manual entry still available)
+  History:   2026-09-25 (FPV-relaxed defaults: MinW 9→2, MaxW 200→255,
              Flat 45→0; Step 6c → BOTH-EDGES rule so fat blunt FPV peaks
              are no longer clipped at the fixed retune-grid phase)
   History:   2026-09-23 (§14 renumbered 1:1 to scanner.cpp — 15 steps, in-frame

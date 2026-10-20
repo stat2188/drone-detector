@@ -75,7 +75,7 @@ struct SweepPreset {
 }
 
 // ============================================================================
-// DEMO PRESET — factory band plan for the drone-relevant spectrum
+// DEMO PRESET — user-elected band plan for the drone-relevant spectrum
 // ============================================================================
 // Detection ranges are an ALLOW-LIST: with at least one active slot,
 // SweepProcessor::is_detection_window_allowed() drops every peak outside the
@@ -83,37 +83,32 @@ struct SweepPreset {
 // peaks never become tracked drones (scanner.cpp: apply_sweep_tracking).
 // The sweep still TUNES across the full window span, so any span area not
 // covered by a slot is pure sweep-time waste (tunes + FFT + composite work
-// for spectra that can never detect). Each window below therefore keeps its
-// span as tight as the drone-bearing sub-bands allow.
+// for spectra that can never detect). Windows where the span exceeds the
+// slot union (W1's guard slices) are a DELIBERATE retune-headroom choice —
+// detection stays gated to the zones below.
 //
-// Band plan (MHz):
-//   W1 5645..5945 (5.8 GHz FPV / DJI video downlinks) — spans the shared
-//     factory default; 3 gapless slots cover 100 % of the span.
-//     R1 5645..5725 FPV   analog FPV ch1..2 / RaceBand 5658, 5695
-//     R2 5725..5850 MAVIC DJI O3/O4 air units + analog RaceBand 5732..5843
-//     R3 5850..5945 FPV   analog RaceBand 5866, 5905 / high FPV channels
-//     R4/R5 off
-//   W2 2400..2483 (2.4 GHz ISM; the .5 MHz edge does not survive MHz
-//     storage) — 4 gapless slots cover 100 % of the span.
-//     R1 2400..2427 WIFI  WLAN (Wi-Fi drone bridges, FPV wifi)
-//     R2 2427..2452 MAVIC DJI control/telemetry
-//     R3 2452..2472 CTRL  generic RC (SFHSS, ExpressLRS 2.4)
-//     R4 2472..2483 WIFI  WLAN upper edge
-//     R5 off
-//   W3 1120..1360 (1.2 GHz long-range FPV) — single slot covers 100 %.
-//     R1 1120..1360 FPV   entire band (single video-downlink slot)
-//     R2..R5 off
-//   W4 863..928 (sub-GHz control / telemetry) — deliberately NOT the
-//     factory default 433..928 span: the 433 MHz island sits ~430 MHz away
-//     from the 868/915 cluster, and the span between them (436..863) is
-//     UHF TV / LTE / GSM — swept every cycle but permanently gated by the
-//     allow-list, i.e. 93 % sweep-time waste. 433 MHz SRD (3 MHz wide,
-//     toy-RC / alarm noise) stays available via manual SWP entry.
-//     R1 863..870  LORA   LoRa/LoRaWAN drone telemetry (EU SRD)
-//     R2 902..928  CTRL   915 MHz ISM RC/telemetry (US/AU, ExpressLRS 900)
-//     R3/R4/R5 off
-//     The 870..902 gap is intentional: GSM900 uplink (880..915) lives
-//     there; leaving it un-gated avoids a false-positive storm.
+// Band plan (MHz) — 2026-10 user-elected:
+//   W1 5300..6000 (broad 5.8 GHz window) — 5 gapless priority slots cover
+//     the drone-bearing core 5645..5950 (slot 0 = highest priority, labels
+//     resolve FIRST-match). The guard slices 5300..5645 and 5950..6000 are
+//     swept but allow-list-gated (deliberate: detection stays where the
+//     video channels live; the span gives retune headroom).
+//     S1 5645..5700 FPV   RaceBand R1-R2 / DJI ch1-2
+//     S2 5700..5760 FPV   E, F bands / RaceBand R3-R4
+//     S3 5760..5820 MAVIC densest zone: R4-R5, F4, DJI ch4-5
+//     S4 5820..5880 FPV   RaceBand R6 / DJI public channel 5839
+//     S5 5880..5950 FPV   R7-R8 / DJI ch7 @ 5914, E-upper 5885..5945
+//   W2 2300..2600 (extended 2.4 GHz ISM) — single slot covers 100 %.
+//     R1 2300..2600 CTRL  RC/telemetry + Wi-Fi drone bridges (ELRS 2.4,
+//                         SFHSS, DJI 2.4 control) — intentionally NOT
+//                         split into narrow channels: vendor channel grids
+//                         differ, the detector classifies by SHAPE.
+//   W3 900..1400 — single slot covers 100 %.
+//     R1 900..1400  FPV   915 MHz ISM RC (ELRS 900) + 1.2 GHz long-range FPV
+//   W4 400..1000 — single slot covers 100 % (user-elected full sub-GHz
+//     span, wider than the earlier tightened 863..928: 433 SRD and the
+//     700..1000 control/telemetry band stay in-window).
+//     R1 400..1000  CTRL  433/700/868/915 MHz RC, telemetry, LoRa links
 //
 // Invariants enforced on every preset (sweep_presets_are_valid() below):
 //   1. each window span is ordered and inside the hardware frequency range;
@@ -133,32 +128,23 @@ constexpr SweepPreset SWEEP_PRESETS[] = {
     {
         "Demo preset",
         {{
-            // W1 — 5.8 GHz FPV / DJI video
-            {SWEEP_DEFAULT_START_HZ, SWEEP_DEFAULT_END_HZ, true,
-             {{{5645, 5725, range_label_index("FPV")},
-               {5725, 5850, range_label_index("MAVIC")},
-               {5850, 5945, range_label_index("FPV")},
-               {},
-               {}}}},
-            // W2 — 2.4 GHz ISM
-            {SWEEP2_DEFAULT_START_HZ, SWEEP2_DEFAULT_END_HZ, true,
-             {{{2400, 2427, range_label_index("WIFI")},
-               {2427, 2452, range_label_index("MAVIC")},
-               {2452, 2472, range_label_index("CTRL")},
-               {2472, 2483, range_label_index("WIFI")},
-               {}}}},
-            // W3 — 1.2 GHz long-range FPV
-            {SWEEP3_DEFAULT_START_HZ, SWEEP3_DEFAULT_END_HZ, true,
-             {{{1120, 1360, range_label_index("FPV")}, {}, {}, {}, {}}}},
-            // W4 — 868 / 915 MHz control & telemetry (tightened; see band
-            // plan above). Explicit Hz literals — no longer the factory
-            // default 433..928 span, so the shared constant is not reused.
-            {863000000, 928000000, true,
-             {{{863, 870, range_label_index("LORA")},
-               {902, 928, range_label_index("CTRL")},
-               {},
-               {},
-               {}}}},
+            // W1 — broad 5.8 GHz window; detection only in the 5 core zones
+            // 5645..5950 (priority: slot 0 first; see band plan above).
+            {5300000000, 6000000000, true,
+             {{{5645, 5700, range_label_index("FPV")},
+               {5700, 5760, range_label_index("FPV")},
+               {5760, 5820, range_label_index("MAVIC")},
+               {5820, 5880, range_label_index("FPV")},
+               {5880, 5950, range_label_index("FPV")}}}},
+            // W2 — extended 2.4 GHz ISM, one full-span slot
+            {2300000000, 2600000000, true,
+             {{{2300, 2600, range_label_index("CTRL")}, {}, {}, {}, {}}}},
+            // W3 — 915 ISM RC + 1.2 GHz long-range FPV, one full-span slot
+            {900000000, 1400000000, true,
+             {{{900, 1400, range_label_index("FPV")}, {}, {}, {}, {}}}},
+            // W4 — sub-GHz control/telemetry (433..1000), one full-span slot
+            {400000000, 1000000000, true,
+             {{{400, 1000, range_label_index("CTRL")}, {}, {}, {}, {}}}},
         }},
     },
 };

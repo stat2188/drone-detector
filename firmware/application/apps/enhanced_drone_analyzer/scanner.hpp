@@ -173,8 +173,9 @@ struct ScanConfig {
 
     // Minimum SHARE (%) of the ARMED shape-similarity steps that must agree
     // for a candidate to pass while sensitive_mode is ON ("Shape score" in
-    // the settings UI). 50 = majority-or-tie (default, never stricter than
-    // the legacy ladder); 100 = legacy AND verdict. Ignored when OFF.
+    // the settings UI). 50 = majority-or-tie (never stricter than the legacy
+    // ladder); 100 = legacy AND verdict; default 75 = 4-of-5 middle ground.
+    // Ignored when OFF.
     uint8_t shape_sim_threshold_pct{DEFAULT_SHAPE_SIM_THRESHOLD_PCT};
 
     // Very-strong signal shape-filter bypass (opt-in, default OFF)
