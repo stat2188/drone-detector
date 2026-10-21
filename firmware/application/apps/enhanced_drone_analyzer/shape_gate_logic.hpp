@@ -33,9 +33,15 @@
  * Moved verbatim from scanner.cpp (audit F4 2026-10): the test suite
  * previously mirrored the eased limits by hand and therefore could not catch
  * arming-predicate regressions (audit F1); one formula, two consumers.
+ * The structural/decision helpers (flatness_structural — A-3,
+ * flatness_judgment_limit — FLAT_WIDE_BAR_PCT cap, raw_fallback_engages —
+ * A-1, auto_gate_from_iqr — A-5) followed the same F4 pattern later in
+ * 2026-10: their test mirrors were deleted, scanner.cpp and the host tests
+ * call these single-author bodies instead.
  */
 
 #include <cstdint>
+#include <cstddef>
 
 #include "constants.hpp"
 
@@ -200,6 +206,111 @@ inline uint16_t eased_valley_limit(uint8_t user_valley_depth, uint8_t peak_margi
 inline uint8_t eased_sym_limit(uint8_t user_symmetry, uint16_t w2) noexcept {
     return static_cast<uint8_t>(
         (static_cast<uint32_t>(user_symmetry) * w2) / 10000u);
+}
+
+/**
+ * @brief Step-10 STRUCTURAL flatness head — w-independent (A-3 2026-10).
+ * @param user_flatness Raw ScanConfig::spectrum_flatness (F = 0 disables)
+ * @param peak_margin raw_peak − noise_floor (Step 3 gate already cleared)
+ * @param min_peak_margin flatness_min_peak_margin(rssi_sens) of the same
+ *        config (FLATNESS_MIN_PEAK_MARGIN when Sens <= 75)
+ * @param width DC-gap-corrected fragment width in bins (effective_width)
+ * @return F > 0 AND (margin floor cleared OR wide-fragment waiver) — the
+ *         exact conjunction scanner.cpp Step 10 arms on and the A-1 raw set
+ *         reuses WITHOUT the w-term (raw_armed_flat).
+ * @note SINGLE AUTHOR shared by apply_shape_filters (flat_structural,
+ *       flat_outer) and the host-side A-3 tests (audit: the test mirror of
+ *       this predicate is gone). The `w > 0` outer stays in scanner.cpp
+ *       (flat_outer) — the structural head must not depend on w: A-1 needs
+ *       it Sens-OFF-shaped. Stack: 0 (register). SRAM: 0. Flash: ~32 bytes.
+ */
+inline bool flatness_structural(uint8_t user_flatness, uint8_t peak_margin,
+                                uint8_t min_peak_margin, size_t width) noexcept {
+    if (user_flatness == 0) return false;
+    return (peak_margin >= min_peak_margin) ||
+           (width >= FLATNESS_WIDE_WAIVER_BINS);
+}
+
+/**
+ * @brief Step-10 flatness PASS/FAIL limit — eased value capped at
+ *        FLAT_WIDE_BAR_PCT (judgment cap 2026-10).
+ * @param user_flatness Raw ScanConfig::spectrum_flatness (0..255)
+ * @param w2 adapt_w² (0..10000); the A-1 fallback and Sens OFF both pass
+ *        10000, where the cap is provably inert (eased = clamp(F) <=
+ *        max(F, bar) ⇒ limit = eased for every F — raw F for in-domain
+ *        F <= 100, the domain-guarded 100 for F > 100)
+ * @return min(eased_flatness_limit(F, w2), max(F, FLAT_WIDE_BAR_PCT)):
+ *         w-easing may relax the bar toward 100 for marginal peaks but
+ *         never above FLAT_WIDE_BAR_PCT; a user F >= 85 is never tightened
+ *         below what was asked (max(F, bar) ⇒ limit ≡ F for every in-domain
+ *         F >= 85; out-of-domain F keeps the domain-guarded eased value,
+ *         unchanged by the cap).
+ * @note SCOPE: consumed ONLY by the Step-10 judgment site. ARMING keeps the
+ *       uncapped eased_flatness_limit (see its @note in constants.hpp —
+ *       capping the arming comparison would re-open the F1 phantom-seat
+ *       band), and the Step-13 EFFECTIVE-ARMING mirror stays on the
+ *       uncapped value for the same reason: the cap lowers a verdict limit
+ *       only inside an ALREADY-ARMED seat, so it can only ADD rejection
+ *       where the mirror already reads armed (safe direction, no drift).
+ * Stack: ~8 bytes (register). SRAM: 0. Flash: ~40 bytes. No FP.
+ */
+inline uint16_t flatness_judgment_limit(uint8_t user_flatness, uint16_t w2) noexcept {
+    const uint16_t eased = eased_flatness_limit(user_flatness, w2);
+    const uint16_t bar = (user_flatness > FLAT_WIDE_BAR_PCT)
+        ? static_cast<uint16_t>(user_flatness)
+        : static_cast<uint16_t>(FLAT_WIDE_BAR_PCT);
+    return (eased < bar) ? eased : bar;
+}
+
+/**
+ * @brief A-1 raw-fallback decision (fail-closed, 2026-10): engage the
+ *        Sens-OFF ladder exactly when easing silenced the WHOLE group.
+ * @param sens_parallel config_.sensitive_mode (Sens OFF ⇒ never engages)
+ * @param sim_armed the EASED armed set (ShapeVerdict::sim_armed pre-switch)
+ * @param raw_armed the raw Sens-OFF armed set (limits at w2 = 10000)
+ * @return true iff Sens ON AND the eased similarity set is empty AND the
+ *         raw set is not — the caller then switches sim_armed to the raw
+ *         set and w2 to 10000 (byte-identical Sens-OFF ladder).
+ * @note SINGLE AUTHOR shared by apply_shape_filters and the host-side A-1
+ *       tests (the test's mirror of this boolean is gone). SHAPE_SIM_MASK
+ *       lives in constants.hpp (bits 0..4, the five similarity steps).
+ * Stack: 0 (register). SRAM: 0. Flash: ~24 bytes.
+ */
+inline bool raw_fallback_engages(bool sens_parallel, uint16_t sim_armed,
+                                 uint16_t raw_armed) noexcept {
+    return sens_parallel &&
+           ((sim_armed & SHAPE_SIM_MASK) == 0u) &&
+           ((raw_armed & SHAPE_SIM_MASK) != 0u);
+}
+
+/**
+ * @brief SENS auto-gate core: 3σ from the usable-bin IQR, clamped to
+ *        [SHAPE_ADAPT_GATE_FLOOR, raw user margin] (A-5 2026-10).
+ * @param iqr p75 − p25 of the usable bins (0 if p75 <= noise floor), as
+ *        extracted by the caller from its Step-1 scratch buffer
+ * @param base_cap the RAW user spectrum_margin (never the Sens-relaxed
+ *        base — the old Mar − 2 cap collapsed the clamp to [8, 8] at
+ *        default Mar 10 and killed the measurement)
+ * @return the stored auto gate: 3σ ≈ (IQR×22 + 5)/10 (σ ≈ IQR/1.349 × 3),
+ *         capped at the user Mar, floored at SHAPE_ADAPT_GATE_FLOOR unless
+ *         the user explicitly tightened below it (Mar wins verbatim).
+ * @note SINGLE AUTHOR shared by update_auto_gate() and the host-side A-5
+ *       tests (audit: the test mirror of this clamp is gone). Branch
+ *       order byte-identical to the inlined original. uint16 holds
+ *       255 × 22 + 5 = 5615 — no overflow before the clamp.
+ * Stack: ~6 bytes (uint16 temp). SRAM: 0. Flash: ~48 bytes. No FP.
+ */
+inline uint8_t auto_gate_from_iqr(uint8_t iqr, uint8_t base_cap) noexcept {
+    const uint16_t sigma3 = static_cast<uint16_t>(
+        (static_cast<uint32_t>(iqr) * SHAPE_ADAPT_SIGMA3_NUM +
+         SHAPE_ADAPT_SIGMA3_DEN / 2u) / SHAPE_ADAPT_SIGMA3_DEN);
+    if (sigma3 > base_cap) return base_cap;
+    if (sigma3 < SHAPE_ADAPT_GATE_FLOOR) {
+        return (base_cap < SHAPE_ADAPT_GATE_FLOOR)
+            ? base_cap
+            : SHAPE_ADAPT_GATE_FLOOR;
+    }
+    return static_cast<uint8_t>(sigma3);
 }
 
 }  // namespace drone_analyzer

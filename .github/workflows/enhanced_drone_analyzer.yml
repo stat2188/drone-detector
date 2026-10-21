@@ -711,9 +711,11 @@ jobs:
 
           # Compile test files (standalone)
           # Note: Tests are in firmware/test/enhanced_drone_analyzer/
+          # phase_a (shape gates) needs the app headers (constants.hpp /
+          # shape_gate_logic.hpp) — host-clean, no ch.h on that path.
           cd firmware/test/enhanced_drone_analyzer
           mkdir -p build
-          g++ -std=c++17 -O2 -Wall -Wextra -I../include main.cpp test_stack_usage.cpp test_database_parser.cpp test_settings_persistence.cpp -o build/enhanced_drone_analyzer_test
+          g++ -std=c++17 -O2 -Wall -Wextra -I../include -I../../application/apps/enhanced_drone_analyzer main.cpp test_stack_usage.cpp test_database_parser.cpp test_settings_persistence.cpp test_shape_filters_phase_a.cpp -o build/enhanced_drone_analyzer_test
 
           echo "✅ Host build check completed"
 
@@ -747,7 +749,7 @@ jobs:
 
           # Compile enhanced_drone_analyzer_test
           echo "Compiling enhanced_drone_analyzer_test..."
-          g++ -std=c++17 -O2 -Wall -Wextra -I../include main.cpp test_stack_usage.cpp test_database_parser.cpp test_settings_persistence.cpp -o build/enhanced_drone_analyzer_test
+          g++ -std=c++17 -O2 -Wall -Wextra -I../include -I../../application/apps/enhanced_drone_analyzer main.cpp test_stack_usage.cpp test_database_parser.cpp test_settings_persistence.cpp test_shape_filters_phase_a.cpp -o build/enhanced_drone_analyzer_test
           if [ -f build/enhanced_drone_analyzer_test ]; then
             echo "Running enhanced_drone_analyzer_test..."
             ./build/enhanced_drone_analyzer_test

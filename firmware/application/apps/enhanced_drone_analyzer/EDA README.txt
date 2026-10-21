@@ -1121,7 +1121,7 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
           бин на верху шкалы не дотягивает до лимита: ok ≡ true на КАЖДОМ
           кадре — фантомное ALWAYS-PASS место (режим «высокий шум +
           глубокая D», напр. D = 70 при noise > 185 на w = 100; шире под
-          w-easing). Формула вынесена в eased_valley_limit() (scanner.cpp,
+          w-easing). Формула вынесена в eased_valley_limit() (shape_gate_logic.hpp,
           единый автор арминга и Step-9 — паттерн shared author M3 rev. 2);
       (4) Symmetry с ОБРЕЗАННЫМ ДО НУЛЯ лимитом (D-ARM ext. 2026-10):
           sym_limit = user·w²/10000 обрезается до 0 при user·w² < 10000
@@ -1152,6 +1152,22 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
     но отклонялось при w = 0 и w >= 15: немонотонность по SNR).
     Тот же конфиг вооружает только Flat: WiFi fail = 0 из 1 = 0% =>
     REJECT.
+    КАП СУДНОГО ЛИМИТА (FLAT_WIDE_BAR_PCT = 85, judgment cap 2026-10):
+    вооружение выше остаётся на НЕКАППЕННОМ eased-значении (кап арминга
+    открыл бы фантомное место w = 5/10 обратно), а сам PASS/FAIL-лимит
+    Step 10 считается как min(eased, max(F, 85)) — w-easing может поднять
+    лимит максимум до 85; пользовательское F >= 85 (в домене, 85..100)
+    никогда не опускается ниже того, что просил. Закрывает mid-band FP-дыру: при достижимых
+    w = 15..40 (adapt_w кратен 5 — SLACK 20) дефолтный F = 25 сидел на
+    лимитах 98..88 и пропускал плато WiFi/BT с измеренными 86-98% ровно
+    в открывшейся полосе (классы: WiFi/BT 40-90%, все легитимные классы
+    документировано ниже 70 — бар 85 не задевает ни одного). При
+    w2_eff = 10000 (Sens OFF и A-1 fallback) кап инертен: лимит = eased
+    = clamp(F) для ЛЮБОГО F 0..255 (байт-идентичность Sens-OFF лестницы;
+    = сырое F при F <= 100, домен-защищённые 100 при F > 100). Остаточная
+    ступень 25 → 85 на границе w = 10/15 —
+    это сам fail-closed fallback (см. FN-классы (a)/(b) в A-1 комментарии
+    scanner.cpp); плато 40-85% в mid-band по-прежнему отдают MaxW/Sharp/Sym.
     Sens OFF VERDICT-IDENTICAL: у dead-band шага старый early-return
     никогда не срабатывал (ok был безусловно true), поэтому пропуск
     шага не меняет ни один accept/reject — убирается только фантомный
@@ -1487,7 +1503,7 @@ Test:
   # Run specific test
   ./firmware/test/enhanced_drone_analyzer/enhanced_drone_analyzer_test
 
-Test Coverage (3 test files):
+Test Coverage (4 test files):
   test_database_parser.cpp (842 lines):
     - safe_strlen, safe_strcpy, skip_whitespace
     - parse_uint64, freqman/CSV format parsing
@@ -1505,6 +1521,17 @@ Test Coverage (3 test files):
     - Validates buffer sizes (parser buffers, signal processing)
     - Validates UI component sizes
     - Validates total RAM < 128KB
+
+  test_shape_filters_phase_a.cpp (480 lines, 21 TEST_CASEs; host-clean:
+  constants.hpp + shape_gate_logic.hpp only — no scanner.cpp/ch.h):
+    - A-1 similarity ratio + shared raw_fallback_engages() decision
+    - A-2/F2 extent caps (DB 110 vs sweep 114) + Step-13 MaxW arming
+    - A-3 wide-fragment flatness waiver (shared flatness_structural())
+    - A-5 3σ IQR auto-gate clamp (shared auto_gate_from_iqr())
+    - F1 eased-flat abstention band w ∈ {0,5,10}, re-arm at w = 15
+    - F1+ FLAT_WIDE_BAR_PCT judgment cap (mid-band FP hole; byte-identity
+      at w2 = 10000; arming stays uncapped)
+    - Wired in BOTH paths: ctest (build_tests) and the workflow g++ line
 
 Code Quality:
   ./format-code.sh          — clang-format-18

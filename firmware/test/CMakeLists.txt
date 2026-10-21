@@ -25,6 +25,10 @@ set(DOCTESTINC ${PROJECT_SOURCE_DIR}/include)
 enable_testing()
 add_subdirectory(application)
 add_subdirectory(baseband)
+# Enhanced Drone Analyzer host tests (pure-logic: shape gates, parsers —
+# links no firmware objects; needs the same DOCTESTINC/CHIBIOS include
+# wiring as the application subdir, see its CMakeLists.txt):
+add_subdirectory(enhanced_drone_analyzer)
 
 add_custom_target(build_tests)
-add_dependencies(build_tests application_test baseband_test)
+add_dependencies(build_tests application_test baseband_test enhanced_drone_analyzer_test)

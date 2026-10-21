@@ -20,21 +20,27 @@
  */
 
 // ============================================================================
-// Phase A regression tests (A-1..A-5 + F1/F2, audit 2026-10).
+// Phase A regression tests (A-1..A-5 + F1/F2 + the FLAT_WIDE_BAR_PCT
+// judgment cap, audit 2026-10).
 //
 // Convention: this target does NOT link scanner.cpp and cannot include
-// scanner.hpp (it pulls ch.h). The pure easing/arming FORMULAS and the
-// constants now live in host-clean headers included below — one author, no
-// formula copies (audit F4: the pre-F1 suite mirrored the arming inputs and
-// therefore could not catch the phantom-Flat-seat regression).
+// scanner.hpp (it pulls ch.h). The pure easing/arming FORMULAS, the
+// structural/decision predicates and the constants now live in host-clean
+// headers included below — one author, no formula copies (audit F4: the
+// pre-F1 suite mirrored the arming inputs and therefore could not catch
+// the phantom-Flat-seat regression; the A-3/A-5/A-1 mirrors followed — the
+// scanner call sites and these tests share flatness_structural(),
+// auto_gate_from_iqr() and raw_fallback_engages() bodies).
 // Mirrors left in this file are the short structural booleans only:
-//   A-1  scanner.hpp ShapeVerdict::similarity_pct() ratio math +
-//        apply_shape_filters() raw-fallback decision (trivially boolean)
+//   A-1  scanner.hpp ShapeVerdict::similarity_pct() ratio math
+//        (the raw-fallback DECISION is the shared raw_fallback_engages())
 //   A-2  constants.hpp DEFAULT_SPECTRUM_MAX_WIDTH (= 110) — real constant
-//   A-3  scanner.cpp flat_structural: FLATNESS_WIDE_WAIVER_BINS term
-//   A-5  scanner.cpp update_auto_gate(): raw-Mar cap clamp
+//   A-3  real flatness_structural(): FLATNESS_WIDE_WAIVER_BINS term
+//   A-5  real auto_gate_from_iqr(): 3σ IQR formula + raw-Mar cap
 //   F1   real eased_flatness_limit + FLATNESS_EFFECTIVE_CEILING (99):
 //        silenced group at w ∈ {0,5,10}, re-armed at w = 15
+//   F1+  real flatness_judgment_limit(): FLAT_WIDE_BAR_PCT (85) cap —
+//        mid-band FP hole closed, Sens-OFF/fallback byte-identity kept
 //   F2   real DB_EXTENT_CAP_BINS (110) vs SWEEP_EXTENT_CAP_BINS (114):
 //        the DB-only Step-13 MaxW arming must read DISARMED at defaults
 //   A-4  intentionally untested: documented analysis-only decision (no new
@@ -56,29 +62,17 @@ static inline bool maxw_passes(uint16_t width, uint8_t maxw_cfg) {
     return width <= maxw_cfg;
 }
 
-// ---- A-5 mirror: update_auto_gate() clamp (scanner.cpp ~3106-3130) ----
-// Input: iqr = p75 - p25 over the usable bins, raw_margin = user Mar.
-// Returns the stored auto gate; caller falls back to (Mar - 2) when the
-// sentinel 0 is returned (no measurement). Mirrors the A-5 raw-Mar cap.
-static inline uint8_t update_auto_gate_mirror(uint8_t iqr, uint8_t raw_margin) {
-    const uint16_t sigma3 = static_cast<uint16_t>(
-        (static_cast<uint32_t>(iqr) * SHAPE_ADAPT_SIGMA3_NUM +
-         SHAPE_ADAPT_SIGMA3_DEN / 2u) / SHAPE_ADAPT_SIGMA3_DEN);
-    if (sigma3 > raw_margin) return raw_margin;
-    if (sigma3 < SHAPE_ADAPT_GATE_FLOOR) {
-        return (raw_margin < SHAPE_ADAPT_GATE_FLOOR) ? raw_margin
-                                                     : SHAPE_ADAPT_GATE_FLOOR;
-    }
-    return static_cast<uint8_t>(sigma3);
-}
-
-// ---- A-3 mirror: flat_structural (scanner.cpp Step-10 arming) ----
-static inline bool flat_structural_mirror(uint8_t flatness_cfg,
+// A-5 (update_auto_gate clamp) and A-3 (flat_structural) have NO mirror
+// anymore: the tests call the shared bodies auto_gate_from_iqr() and
+// flatness_structural() from shape_gate_logic.hpp — same function the
+// scanner consumes (audit F4 pattern). The A-3 wrapper only BINDS the
+// floor to its shipped default (rssi_sens <= 0 ⇒ FLATNESS_MIN_PEAK_MARGIN);
+// the F > 0 / margin-floor / waiver logic itself is the shared body.
+static inline bool flat_struct_at_default(uint8_t flatness_cfg,
                                           uint8_t peak_margin,
                                           uint16_t effective_width) {
-    if (flatness_cfg == 0) return false;
-    return (peak_margin >= FLATNESS_MIN_PEAK_MARGIN) ||
-           (effective_width >= FLATNESS_WIDE_WAIVER_BINS);
+    return flatness_structural(flatness_cfg, peak_margin,
+                               FLATNESS_MIN_PEAK_MARGIN, effective_width);
 }
 
 // ---- A-1 mirror: ShapeVerdict::similarity_pct() (scanner.hpp ~2266) ----
@@ -93,7 +87,9 @@ static inline uint8_t similarity_pct_mirror(uint16_t sim_armed,
     return static_cast<uint8_t>((pct > 100u) ? 100u : pct);
 }
 
-// ---- A-1 mirror: raw-fallback decision (scanner.cpp ~3902-3916) ----
+// ---- A-1 composition around the shared raw_fallback_engages() decision ----
+// The boolean itself is the scanner's (shape_gate_logic.hpp); this wrapper
+// only carries the two side effects the caller applies after it fires.
 struct FallbackResult {
     bool fallback;
     uint16_t effective_armed;
@@ -105,9 +101,7 @@ static inline FallbackResult raw_fallback_mirror(bool sens_parallel,
                                                  uint16_t raw_armed,
                                                  uint16_t w2) {
     FallbackResult r{};
-    r.fallback = sens_parallel &&
-                 ((eased_armed & SHAPE_SIM_MASK) == 0u) &&
-                 ((raw_armed & SHAPE_SIM_MASK) != 0u);
+    r.fallback = raw_fallback_engages(sens_parallel, eased_armed, raw_armed);
     r.effective_armed = r.fallback ? raw_armed : eased_armed;
     r.w2_eff = r.fallback ? uint16_t{10000} : w2;
     return r;
@@ -130,7 +124,8 @@ static inline DefaultArming default_arming_at(uint8_t peak_margin) {
         eased_sharpness_limit(DEFAULT_SPECTRUM_PEAK_SHARPNESS, w2) >
         SHARPNESS_NOOP_CEILING;
     const bool sim_flat =
-        flat_structural_mirror(DEFAULT_SPECTRUM_FLATNESS, peak_margin, kWidebandPlateau) &&
+        flatness_structural(DEFAULT_SPECTRUM_FLATNESS, peak_margin,
+                            FLATNESS_MIN_PEAK_MARGIN, kWidebandPlateau) &&
         (w > 0) &&  // Sens-ON outer: !sensitive_mode || adapt_w > 0
         (kWidebandPlateau > FLATNESS_MIN_SIGNAL_WIDTH) &&
         (eased_flatness_limit(DEFAULT_SPECTRUM_FLATNESS, w2) <
@@ -147,7 +142,8 @@ static inline DefaultArming default_arming_at(uint8_t peak_margin) {
         eased_sharpness_limit(DEFAULT_SPECTRUM_PEAK_SHARPNESS, 10000u) >
         SHARPNESS_NOOP_CEILING;
     const bool raw_flat =
-        flat_structural_mirror(DEFAULT_SPECTRUM_FLATNESS, peak_margin, kWidebandPlateau) &&
+        flatness_structural(DEFAULT_SPECTRUM_FLATNESS, peak_margin,
+                            FLATNESS_MIN_PEAK_MARGIN, kWidebandPlateau) &&
         (kWidebandPlateau > FLATNESS_MIN_SIGNAL_WIDTH) &&
         (eased_flatness_limit(DEFAULT_SPECTRUM_FLATNESS, 10000u) <
          FLATNESS_EFFECTIVE_CEILING);
@@ -220,21 +216,21 @@ TEST_CASE("A-5: 3-sigma gate is measured, not collapsed, at default Mar=10") {
     using namespace phase_a;
     // The old cap (Mar - 2 = 8) made the clamp [8, 8]: dead measurement.
     // Clean spectrum (iqr=2 -> sigma3=4) opens to the floor:
-    CHECK(update_auto_gate_mirror(2, DEFAULT_SPECTRUM_MARGIN) ==
+    CHECK(auto_gate_from_iqr(2, DEFAULT_SPECTRUM_MARGIN) ==
           SHAPE_ADAPT_GATE_FLOOR);
     // Moderately noisy (iqr=4 -> sigma3=9) tracks the measurement:
-    CHECK(update_auto_gate_mirror(4, DEFAULT_SPECTRUM_MARGIN) == 9);
+    CHECK(auto_gate_from_iqr(4, DEFAULT_SPECTRUM_MARGIN) == 9);
     // Noisy (iqr=8 -> sigma3=18) is capped at the RAW Mar, not Mar-2:
-    CHECK(update_auto_gate_mirror(8, DEFAULT_SPECTRUM_MARGIN) ==
+    CHECK(auto_gate_from_iqr(8, DEFAULT_SPECTRUM_MARGIN) ==
           DEFAULT_SPECTRUM_MARGIN);
 }
 
 TEST_CASE("A-5: explicit tightening below the floor wins verbatim") {
     using namespace phase_a;
     // User Mar = 5 (< FLOOR 8): even a noisy measurement cannot exceed 5.
-    CHECK(update_auto_gate_mirror(8, 5) == 5);
+    CHECK(auto_gate_from_iqr(8, 5) == 5);
     // Clean + tightened: floor must not override the user's Mar either.
-    CHECK(update_auto_gate_mirror(2, 5) == 5);
+    CHECK(auto_gate_from_iqr(2, 5) == 5);
 }
 
 TEST_CASE("A-5: static floor-vs-default invariant (constants.hpp assert)") {
@@ -256,28 +252,28 @@ TEST_CASE("A-3: waiver constant equals the MinW default (60 bins)") {
 TEST_CASE("A-3: margin floor unchanged for narrow fragments") {
     using namespace phase_a;
     // margin 30 < 40, width 50 < 60: Flat stays disarmed (old behavior).
-    CHECK(!flat_structural_mirror(25, 30, 50));
+    CHECK(!flat_struct_at_default(25, 30, 50));
     // margin 39, width 59: still disarmed (both bounds strict).
-    CHECK(!flat_structural_mirror(25, 39, 59));
+    CHECK(!flat_struct_at_default(25, 39, 59));
 }
 
 TEST_CASE("A-3: waiver arms Flat for wide fragments below the floor") {
     using namespace phase_a;
     // The WiFi-plateau hole: margin in the gate..floor band, width >= 60.
-    CHECK(flat_structural_mirror(25, 30, 60));
-    CHECK(flat_structural_mirror(25, 8, 110));
+    CHECK(flat_struct_at_default(25, 30, 60));
+    CHECK(flat_struct_at_default(25, 8, 110));
 }
 
 TEST_CASE("A-3: margin floor still arms strong narrow peaks") {
     using namespace phase_a;
-    CHECK(flat_structural_mirror(25, 40, 5));
-    CHECK(flat_structural_mirror(25, 100, 1));
+    CHECK(flat_struct_at_default(25, 40, 5));
+    CHECK(flat_struct_at_default(25, 100, 1));
 }
 
 TEST_CASE("A-3: F = 0 never arms (user disabled)") {
     using namespace phase_a;
-    CHECK(!flat_structural_mirror(0, 100, 110));
-    CHECK(!flat_structural_mirror(0, 30, 60));
+    CHECK(!flat_struct_at_default(0, 100, 110));
+    CHECK(!flat_struct_at_default(0, 30, 60));
 }
 
 // ============================================================================
@@ -407,4 +403,78 @@ TEST_CASE("F1: fallback never engages under Sens OFF") {
         /*sens_parallel=*/false, a.sim, a.raw, 0u);
     CHECK(!r.fallback);
     CHECK(r.w2_eff == 0u);
+}
+
+// ============================================================================
+// F1+: flatness_judgment_limit — the FLAT_WIDE_BAR_PCT (85) cap on the
+//      Step-10 PASS/FAIL limit. ARMING (eased_flatness_limit < 99 above)
+//      stays UNCAPPED — capping the arming comparison would re-open the F1
+//      phantom-seat band; the cap only shapes the verdict comparison. The
+//      byte-identity at w2 = 10000 (Sens OFF + the A-1 fallback judge with
+//      it) is the safety-critical property: the Sens-OFF ladder must not
+//      move with the cap.
+// ============================================================================
+
+TEST_CASE("F1+: judgment cap binds the loosened mid band at the default F = 25") {
+    using namespace phase_a;
+    // w = 15 (w2 = 225): the UNCAPPED eased limit 98 used to judge here —
+    // a WiFi/BT plateau measured 86-98% passed exactly in the band where
+    // the gates had just opened (audit mid-band FP hole):
+    CHECK(eased_flatness_limit(DEFAULT_SPECTRUM_FLATNESS, 225u) == 98);
+    CHECK(flatness_judgment_limit(DEFAULT_SPECTRUM_FLATNESS, 225u) ==
+          FLAT_WIDE_BAR_PCT);
+    // The capped limit sits at the bar for every w2 <= 2000 (eased >= 85
+    // there — strict binding while eased > 85 ⇔ w2 <= 1866, pass-through
+    // where eased already == 85; every reachable w = 15..40 has w2 <= 1600
+    // so the cap strictly binds at each of them):
+    for (uint16_t w2 = 225u; w2 < 2000u; w2 += 50u) {
+        CHECK(flatness_judgment_limit(DEFAULT_SPECTRUM_FLATNESS, w2) ==
+              FLAT_WIDE_BAR_PCT);
+        // ...and is never LOOSER than the uncapped eased value anywhere:
+        CHECK(flatness_judgment_limit(DEFAULT_SPECTRUM_FLATNESS, w2) <=
+              eased_flatness_limit(DEFAULT_SPECTRUM_FLATNESS, w2));
+    }
+    // w2 = 2000 (w ≈ 44.7): eased lands exactly on the bar, the cap turns
+    // into a pass-through and the descent continues eased-only:
+    CHECK(eased_flatness_limit(DEFAULT_SPECTRUM_FLATNESS, 2000u) ==
+          FLAT_WIDE_BAR_PCT);
+    CHECK(flatness_judgment_limit(DEFAULT_SPECTRUM_FLATNESS, 2000u) ==
+          FLAT_WIDE_BAR_PCT);
+    // ...down to the exact user value at Sens OFF:
+    CHECK(flatness_judgment_limit(DEFAULT_SPECTRUM_FLATNESS, 10000u) ==
+          DEFAULT_SPECTRUM_FLATNESS);
+}
+
+TEST_CASE("F1+: judgment cap is inert at w2 = 10000 for every user F") {
+    using namespace phase_a;
+    // Sens OFF and the A-1 fallback both judge with w2_eff = 10000 — the
+    // capped limit must EQUAL the uncapped eased value for defaults,
+    // permissive values above the bar, and out-of-domain values the
+    // defensive saturation in eased_flatness_limit already handles (raw F
+    // for in-domain F <= 100; 100 for the domain-guarded F > 100):
+    static constexpr uint8_t kCases[] = {0, 25, 84, FLAT_WIDE_BAR_PCT,
+                                         90, 100, 150, 255};
+    for (uint8_t f : kCases) {
+        CHECK(flatness_judgment_limit(f, 10000u) ==
+              eased_flatness_limit(f, 10000u));
+    }
+    // Permissive user value above the bar: never tightened below what was
+    // asked — the cap only limits how far EASING may raise the limit:
+    CHECK(flatness_judgment_limit(90, 225u) == 90);
+    // User value just under the bar: the mid band clamps up to the bar
+    // (F = 84 eased to 99 → 85), i.e. the bar rules whenever F < 85:
+    CHECK(flatness_judgment_limit(84, 225u) == FLAT_WIDE_BAR_PCT);
+    // At defaults the bar still allows easing ABOVE the raw F (gentle
+    // weak-peak regime kept, just bounded):
+    CHECK(flatness_judgment_limit(DEFAULT_SPECTRUM_FLATNESS, 225u) >
+          DEFAULT_SPECTRUM_FLATNESS);
+    // ARMING SPLIT: at w2 = 100 (w = 10) the seat stays CLOSED even though
+    // a capped comparison (85 < 99) would open it — arming must keep the
+    // exact eased value or the F1 phantom seat reopens for plateaus <= 85:
+    CHECK(!(eased_flatness_limit(DEFAULT_SPECTRUM_FLATNESS, 100u) <
+            FLATNESS_EFFECTIVE_CEILING));
+    CHECK(flatness_judgment_limit(DEFAULT_SPECTRUM_FLATNESS, 100u) ==
+          FLAT_WIDE_BAR_PCT);  // the capped value exists, but the closed
+                               // seat never reads it (run_flat == false;
+                               // the fallback judges at w2_eff = 10000)
 }

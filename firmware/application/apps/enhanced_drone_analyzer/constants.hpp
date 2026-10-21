@@ -1377,6 +1377,10 @@ constexpr uint8_t SPECTRUM_FLATNESS_PCT_MAX = 100;
  *       limit equals the raw F, so F = 99 (previously armed, could reject
  *       only pct == 100) newly abstains — same abstention class as F = 100,
  *       which was already disarmed.
+ * @note SCOPE: this ceiling gates ARMING (the `< 99` test — exact eased
+ *       value, uncapped). The Step-10 PASS/FAIL limit is additionally
+ *       clamped below by FLAT_WIDE_BAR_PCT (85) — see
+ *       flatness_judgment_limit() in shape_gate_logic.hpp.
  */
 constexpr uint8_t FLATNESS_EFFECTIVE_CEILING = 99;
 
@@ -1443,6 +1447,72 @@ constexpr uint8_t FLATNESS_WIDE_WAIVER_BINS = DEFAULT_SPECTRUM_MIN_WIDTH;
 
 static_assert(FLATNESS_WIDE_WAIVER_BINS > FLATNESS_MIN_SIGNAL_WIDTH,
     "the wide-fragment waiver must sit above the narrowband floor");
+
+/**
+ * @brief Ceiling of the SENS-eased Step-10 flatness PASS/FAIL limit (percent,
+ *        judgment cap 2026-10 — NOT a user knob, NOT an arming value)
+ * @note FORMULA (shape_gate_logic.hpp flatness_judgment_limit, the Step-10
+ *       judgment site only): `min(eased_flatness_limit(F, w2), max(F, FLAT_WIDE_BAR_PCT))`
+ *       — w-easing may RAISE the limit above the user value toward 100
+ *       ("marginal peaks judged gently") but never above THIS bar; a user
+ *       value at/above the bar is never tightened below what was asked:
+ *       for every in-domain F >= 85 (85..100) max(F, bar) = F and
+ *       eased >= F, so limit ≡ F at every w (easing disabled — the user's
+ *       own bar rules); out-of-domain F > 100 keeps the domain-guarded
+ *       eased value (100), which the cap leaves unchanged too.
+ * @note WHY (audit mid-band FP hole): adapt_w only reaches multiples of 5
+ *       (w = (margin − gate)·100/SHAPE_ADAPT_SLACK_UNITS, SLACK = 20), so
+ *       the reachable band where easing has just opened is w = 15..40 —
+ *       there the eased default F = 25 sat at limits 98..88 (98, 97, 95,
+ *       93, 90, 88) and a WiFi/BT plateau measured 86-98% could pass Flat
+ *       exactly where the gates had just opened, while the A-1 raw-fallback
+ *       band (w <= 10, limit 25) and w >= 45 (limit 84, easing below the
+ *       bar) both rejected it — stringency non-monotonic in SNR again,
+ *       this time as a mid-band hole instead of the F1 phantom seat. At
+ *       defaults the judgment now reads 25 (fallback, w <= 10) -> 85
+ *       (w = 15..40) -> eased 84..25 (w >= 45): one continuous descent
+ *       above the fallback band. DOCUMENTED RESIDUAL: the 25 -> 85 step at
+ *       the w = 10/15 boundary is the fail-closed fallback band itself
+ *       (scanner.cpp A-1) — see its documented FN classes; and plateaus
+ *       measured 40-85% still pass the mid band (owned by MaxW/Sharp/Sym
+ *       there, same as before the cap).
+ * @note CLASS SEPARATION (why 85): the flatness docs put WiFi/BT plateaus
+ *       at 40-90% (real flat tops 50-90%) and EVERY documented legitimate
+ *       class below — drone V-shape < 30 above margin 40, blunt-top FPV
+ *       45-70 — so 85 sits strictly above every documented legitimate value
+ *       (zero documented FN cost) while cutting the documented WiFi plateau's
+ *       top band (86-90%) everywhere the step runs — the mid band directly
+ *       (bar 85 < 86), the fallback band (25) and w >= 45 (eased <= 84)
+ *       already below it. Below margin 40 the
+ *       classes overlap (WiFi > 60 vs drone 40-70 — see
+ *       FLATNESS_MIN_PEAK_MARGIN) and NO fixed bar separates them there;
+ *       the bar deliberately does not try — that band stays owned by the
+ *       margin floor/waiver and the raw fallback.
+ * @note INERT CASES (byte-identity proofs): w2_eff = 10000 (Sens OFF and
+ *       the A-1 fallback both judge with it) ⇒ eased = clamp(F) <= max(F,
+ *       bar) ⇒ limit = eased for EVERY F 0..255 — byte-identical to the
+ *       pre-cap ladder (exactly raw F for every in-domain F <= 100; the
+ *       domain-guarded 100 for out-of-domain F > 100); and the step not
+ *       running (F = 0; closed seat: eased >= 99 ⇔ w2 <= 133 ⇒ reachable
+ *       w in {0, 5, 10}; narrow width; margin floor) never reads the
+ *       helper. ARMING is NOT capped: the Step-10 arming keeps
+ *       the exact `eased_flatness_limit(F, w2) < FLATNESS_EFFECTIVE_CEILING`
+ *       test — capping THAT would re-arm the w = 5/10 seat the F1 fix
+ *       closed and reopen the phantom-seat hole for plateaus <= 85%. The
+ *       Step-13 EFFECTIVE-ARMING mirror likewise stays on the uncapped
+ *       value (arming parity): the cap only lowers a verdict limit inside
+ *       an ALREADY-ARMED seat, so it can only add rejection where the
+ *       mirror already reads armed — no drift in the unsafe direction.
+ * Stack: 0. SRAM: 0. Flash: ~40 bytes (inlined helper).
+ */
+constexpr uint8_t FLAT_WIDE_BAR_PCT = 85;
+
+static_assert(FLAT_WIDE_BAR_PCT < FLATNESS_EFFECTIVE_CEILING,
+    "the judgment bar must stay below the abstention ceiling (a capped limit must remain a verdict)");
+static_assert(FLAT_WIDE_BAR_PCT > DEFAULT_SPECTRUM_FLATNESS,
+    "the judgment bar must sit above the default F so w-easing can still relax weak peaks");
+static_assert(FLAT_WIDE_BAR_PCT <= SPECTRUM_FLATNESS_PCT_MAX,
+    "the judgment bar must stay inside the flatness percentage domain");
 
 /**
  * @brief Default signal symmetry threshold (0-100, percent)
@@ -1729,7 +1799,10 @@ static_assert(SHAPE_ADAPT_SIGMA3_DEN > 0,
 //                 and kept a phantom always-pass seat there. Armed iff
 //                 eased_flatness_limit(user, w2) < FLATNESS_EFFECTIVE_CEILING
 //                 plus the three Step-10 run guards (F > 0, margin floor,
-//                 w > 0 — Step 13 mirrors them).
+//                 w > 0 — Step 13 mirrors them). This is the ARMING test,
+//                 uncapped: the Step-10 PASS/FAIL limit is separately
+//                 clamped at FLAT_WIDE_BAR_PCT (85) — see
+//                 flatness_judgment_limit() in shape_gate_logic.hpp.
 //             (3) VALLEY with an UNREACHABLE limit (D-ARM ext. 2026-10):
 //                 the probe margins are data[i] − noise_floor over uint8
 //                 bins, so max_valley is structurally bounded by
