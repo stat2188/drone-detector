@@ -37,6 +37,7 @@ add_executable(enhanced_drone_analyzer_test EXCLUDE_FROM_ALL
 	${PROJECT_SOURCE_DIR}/test_stack_usage.cpp
 	${PROJECT_SOURCE_DIR}/test_database_parser.cpp
 	${PROJECT_SOURCE_DIR}/test_settings_persistence.cpp
+	${PROJECT_SOURCE_DIR}/test_shape_filters_phase_a.cpp
 )
 
 target_include_directories(enhanced_drone_analyzer_test PRIVATE

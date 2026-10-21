@@ -508,8 +508,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     // "Mar" is the BASE of the Step-3 gate (README §14). The scanner applies
     // shape_gate_margin(): normal mode + Sens>75 → Mar + (Sens-75)/2
     // (fresh default Sens 85 → effective gate = Mar+5, so Mar=10 gates at 15);
-    // Sensitive ("Sens") mode → Mar acts as a CAP on the NOISE-ADAPTIVE gate
-    // clamp(3σ_IQR, 8, Mar-2) — in clean noise the gate opens below Mar, so
+    // Sensitive ("Sens") mode → Mar is the CAP on the NOISE-ADAPTIVE gate
+    // clamp(3σ_IQR, 8, Mar) (A-5: raw Mar — the old Mar−2 cap collapsed
+    // the clamp to [8,8] at the default Mar 10) — in clean noise the gate
+    // opens below Mar, so
     // ±5..10 here cannot cliff-kill a target the measured noise justifies
     // (constants.hpp SHAPE_ADAPT_*). Single source of truth:
     // DroneScanner::shape_gate_margin().

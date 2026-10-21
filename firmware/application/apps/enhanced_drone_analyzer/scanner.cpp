@@ -4,6 +4,7 @@
 #include "ch.h"
 
 #include "scanner.hpp"
+#include "shape_gate_logic.hpp"
 #include "sweep_processor.hpp"
 #include "sweep_sensitivity.hpp"
 #include "receiver_model.hpp"
@@ -156,25 +157,8 @@ static ShapeFloors select_shape_floors(
     return floors;
 }
 
-/**
- * @brief SENS adaptive stringency weight (0..100) for one peak (SHAPE_ADAPT_*).
- * @param peak_margin Peak elevation above the noise shelf (units)
- * @param gate Effective Step-3 gate this frame (shape_gate_margin())
- * @return 0 at/under the gate, ramping linearly to 100 at
- *         gate + SHAPE_ADAPT_SLACK_UNITS (+4 dB). Consumers apply w² easing
- *         (w2/10000), so thresholds sit near their permissive floor at small
- *         w and converge quadratically to the exact user value at w = 100.
- * @note apply_shape_filters forces w = 100 when sensitive_mode is OFF —
- *       every eased formula then collapses to the legacy behavior.
- * Stack: ~8 bytes (registers). Flash: ~40 bytes. No FP; division is by
- *       SHAPE_ADAPT_SLACK_UNITS, static_asserted > 0.
- */
-static uint8_t shape_adapt_weight(uint8_t peak_margin, uint8_t gate) noexcept {
-    if (peak_margin <= gate) return 0;
-    const uint32_t above = static_cast<uint32_t>(peak_margin - gate);
-    const uint32_t w = (above * 100u) / static_cast<uint32_t>(SHAPE_ADAPT_SLACK_UNITS);
-    return static_cast<uint8_t>((w > 100u) ? 100u : w);
-}
+// shape_adapt_weight() moved to shape_gate_logic.hpp (single-author easing
+// formulas shared with the host regression tests, audit F4 2026-10).
 
 /**
  * @brief Sensitivity stringency of the RSSI threshold vs the -95 dBm anchor.
@@ -196,35 +180,8 @@ static int32_t rssi_sens_units(const ScanConfig& cfg) noexcept {
     return RSSI_DETECTION_THRESHOLD_DBM - cfg.rssi_threshold_dbm;
 }
 
-/**
- * @brief Step-10 flatness entry guard floor (sensitivity easing stops here).
- * @note Documented: sens=95 (rssi_sens=20) => guard = max(40-20, 15) = 20.
- *       File-local: the value only exists inside flatness_min_peak_margin().
- * Stack: 0. SRAM: 0. Flash: 0.
- */
-constexpr uint8_t FLATNESS_MIN_MARGIN_FLOOR = 15;
-
-/**
- * @brief Step-10 flatness entry guard: min peak margin for the step to run.
- * @param rssi_sens rssi_sens_units() of the same config
- * @return FLATNESS_MIN_PEAK_MARGIN (40) when rssi_sens <= 0 (threshold at
- *         or above the -95 dBm anchor, Sens <= 75), eased down by rssi_sens
- *         above the anchor, floored at FLATNESS_MIN_MARGIN_FLOOR.
- * @note SINGLE AUTHOR shared by apply_shape_filters Step 10 (run guard) and
- *       the Step-13 EFFECTIVE-ARMING flat term (audit M3 rev. 2): an armed
- *       Flat verdict may only be granted when the step would actually RUN
- *       for this peak. Byte-identical to the former inline expression —
- *       including the uint8 cast of rssi_sens — safe because the Sens
- *       range (0..100 ⇒ threshold -120..-20 dBm, RSSI_MIN_DBM floor)
- *       bounds rssi_sens at 25 <= 255, so the cast never truncates.
- * Stack: ~4 bytes. SRAM: 0. Flash: ~48 bytes. No FP.
- */
-static uint8_t flatness_min_peak_margin(int32_t rssi_sens) noexcept {
-    if (rssi_sens <= 0) return FLATNESS_MIN_PEAK_MARGIN;
-    return (FLATNESS_MIN_PEAK_MARGIN > static_cast<uint8_t>(rssi_sens))
-        ? static_cast<uint8_t>(FLATNESS_MIN_PEAK_MARGIN - rssi_sens)
-        : FLATNESS_MIN_MARGIN_FLOOR;
-}
+// flatness_min_peak_margin() / FLATNESS_MIN_MARGIN_FLOOR moved to
+// shape_gate_logic.hpp (shared with the host tests, audit F4 2026-10).
 
 /**
  * @brief `eased_maxw_bins` was REMOVED (dependency + sensitivity audit,
@@ -236,132 +193,37 @@ static uint8_t flatness_min_peak_margin(int32_t rssi_sens) noexcept {
  *        (which eased DOWN) that was removed at Step 5. MaxW is now read
  *        directly from config_.spectrum_max_width at both consumers (Step 6
  *       fragment + emission extent, and Step-13 EFFECTIVE-ARMING).
- * BYTE-IDENTITY AT THE SHIPPED DEFAULT (MaxW = 120, ≥ the 114-bin DC-gap
- * extent cap): the DC-gap-bounded walks
+ * BYTE-IDENTITY AT THE OLD SHIPPED DEFAULT (MaxW = 120, ≥ the 114-bin
+ * DC-gap extent cap): the DC-gap-bounded walks
  * can measure at most one sideband (≤110 DB / ≤114 sweep bins), and 114 ≤ 120
  * ≤ 382, so both the old eased limit and the new raw limit pass every real
  * measurement — no default-path behavior changes. Only MaxW < 114 (a user who
  * actually lowered MaxW) is affected, and there it becomes STRICTER near the
  * gate, which is the requested direction.
+ * A-2 (2026-10): the shipped default is now 110 — AT the DB sideband cap
+ * (inert in DB: ≤ 110 always passes) and BELOW the sweep cap, so sweep
+ * extents of 111-114 bins are rejected by the raw MaxW ahead of Step 6c
+ * (intended extra wideband gate; see DEFAULT_SPECTRUM_MAX_WIDTH).
  * SIDE EFFECT (fix, not regression): the Step-13 arming predicate
- * `armed_maxw_eff < MAXW_NO_CAP_BINS` previously consumed the EASED value, so
- * at MaxW = 100 with w ≈ 0 it read 150 ≥ 114 and concluded "MaxW cannot
- * reject" while the chain's raw MaxW = 100 < 114 CAN reject a 110-114 bin
- * emission — arming and chain now agree by construction (both read the raw
- * config value; see the arming site in process_spectrum_message).
+ * previously consumed the EASED value, so at MaxW = 100 with w ≈ 0 it read
+ * 150 ≥ cap and concluded "MaxW cannot reject" while the chain's raw
+ * MaxW = 100 CAN reject a 110-bin emission — arming and chain now agree by
+ * construction (both read the raw config value; see the arming site in
+ * process_spectrum_message). F2 fix (2026-10): the comparison constant is
+ * DB_EXTENT_CAP_BINS (110, the DB measurable cap), not the old local 114
+ * (the SWEEP cap) — at the shipped MaxW = 110 the sweep constant read
+ * "armed" in DB where nothing measurable can exceed 110, wrongly skipping
+ * the neighbor post-filter under the documented Sharp≤100 + Flat = 0
+ * config. (The old name MAXW_NO_CAP_BINS died with the local constant.)
  * CONSISTENCY FIX: tbd_peak_is_narrowband already read the raw
  * config_.spectrum_max_width; the in-frame path was the outlier. Both now
  * apply the identical limit.
  */
 
-/**
- * @brief Sharpness limit above which Step 7 can mathematically REJECT.
- * @details Audit D5 dead-band: avg_margin is measured over [left..right]
- *          which INCLUDES the peak, so avg_margin <= peak_margin and
- *          sharpness = peak*100/avg >= 100 on EVERY frame. A limit of
- *          100 (or any value <= 100) can therefore never reject — a
- *          sharpness config in the dead-band is an ABSTENTION, not a
- *          verdict, and under the Sens similarity score it must not
- *          occupy a permanent ALWAYS-PASS seat (audit D-ARM — see the
- *          Step-7 arming comment in apply_shape_filters).
- * @note SINGLE AUTHOR of the dead-band ceiling: the Step-7 informative
- *       arming and the Step-13 EFFECTIVE-ARMING test
- *       (`armed_sharp_eff > SHARPNESS_NOOP_CEILING`) share it, so the
- *       score denominator and the wideband-ownership test cannot drift.
- * Stack: 0 (constexpr). SRAM: 0. Flash: 0.
- */
-constexpr int32_t SHARPNESS_NOOP_CEILING = 100;
-
-/**
- * @brief SENS eased sharpness limit — shared author of Step 7 and arming.
- * @param user_sharpness Raw ScanConfig::spectrum_peak_sharpness (0..255)
- * @param w2 adapt_w², 0..10000 (uint16: 100² fits exactly)
- * @return 100 + (user − 100)·w²/10000: the documented no-op (100) at
- *         w2 = 0 — avg includes the peak, so sharpness ≥ 100 by
- *         construction and a limit ≤ 100 can never reject (audit D5
- *         dead-band 51..100); the exact user value at w2 = 10000.
- * @note Consumed by apply_shape_filters Step 7 AND the Step-13
- *       EFFECTIVE-ARMING test (audit M3 rev. 2).
- * Stack: ~8 bytes (register). SRAM: 0. Flash: ~40 bytes. No FP.
- */
-static int32_t eased_sharpness_limit(uint8_t user_sharpness, uint16_t w2) noexcept {
-    return 100 +
-        ((static_cast<int32_t>(user_sharpness) - 100) *
-         static_cast<int32_t>(w2)) / 10000;
-}
-
-/**
- * @brief SENS eased flatness limit — shared author of Step 10 and arming.
- * @param user_flatness Raw ScanConfig::spectrum_flatness (0..255)
- * @param w2 adapt_w², 0..10000
- * @return F + (100 − F)·(10000 − w²)/10000 after saturating F to
- *         SPECTRUM_FLATNESS_PCT_MAX: ≤ 100 always (pct > 100 unreachable ⇒
- *         100 is the abstain ceiling), exact user F at w2 = 10000.
- * @note DOMAIN GUARD (audit D-CFG-RANGE) lives here: the `(100 − F)` term
- *       is UNSIGNED — an F of 101..255 underflows it, the /10000 quotient
- *       then overflows the narrowing cast and the limit comes out as
- *       garbage. Shipped producers clamp 0..100 (settings_manager parse +
- *       NumberField), but this chain eats a raw ScanConfig. Consumed by
- *       apply_shape_filters Step 10 AND Step-13 EFFECTIVE-ARMING (M3 rev. 2).
- * Stack: ~8 bytes. SRAM: 0. Flash: ~56 bytes. No FP.
- */
-static uint16_t eased_flatness_limit(uint8_t user_flatness, uint16_t w2) noexcept {
-    const uint16_t flat_user =
-        (user_flatness > SPECTRUM_FLATNESS_PCT_MAX)
-            ? static_cast<uint16_t>(SPECTRUM_FLATNESS_PCT_MAX)
-            : static_cast<uint16_t>(user_flatness);
-    return static_cast<uint16_t>(flat_user +
-        static_cast<uint16_t>(
-            ((static_cast<uint32_t>(SPECTRUM_FLATNESS_PCT_MAX) - flat_user) *
-             (10000u - w2)) / 10000u));
-}
-
-/**
- * @brief SENS eased valley-depth limit — shared author of Step 9 and arming.
- * @param user_valley_depth Raw ScanConfig::spectrum_valley_depth (0..200,
- *        settings clamp) — 0 is the documented DISABLE sentinel and is
- *        excluded by the valley_outer run guard before this helper runs.
- * @param peak_margin raw_peak − noise_floor (Step 3 gate already cleared,
- *        so >= 1).
- * @param w2 adapt_w², 0..10000.
- * @return D + (peak_margin/3 + 1)·(10000 − w²)/10000: the exact user D at
- *         w² = 10000 (Sens OFF byte-identity), the smooth-flank ceiling
- *         (margin/3 + 1) added at w² = 0. MAX-POLARITY (a HIGHER limit is
- *         MORE permissive: reject iff max_valley >= limit).
- * @note Consumed by apply_shape_filters Step 9 AND the Step-9
- *       INFORMATIVE-ARMING capability test (audit D-ARM ext. 2026-10,
- *       regime (3) in constants.hpp): one formula, so the arming test
- *       cannot drift from what the chain runs. uint16: 200 + 86 = 286 max.
- * Stack: ~8 bytes (register). SRAM: 0. Flash: ~48 bytes. No FP.
- */
-static uint16_t eased_valley_limit(uint8_t user_valley_depth, uint8_t peak_margin, uint16_t w2) noexcept {
-    return static_cast<uint16_t>(user_valley_depth) +
-        static_cast<uint16_t>(
-            (static_cast<uint32_t>(peak_margin / 3u + 1u) *
-             (10000u - w2)) / 10000u);
-}
-
-/**
- * @brief SENS eased symmetry limit — shared author of Step 11 and arming.
- * @param user_symmetry Raw ScanConfig::spectrum_symmetry (0..100, settings
- *        clamp) — 0 is the documented DISABLE sentinel, excluded by the
- *        Step-11 run guard before this helper runs.
- * @param w2 adapt_w², 0..10000.
- * @return user·w²/10000 (MIN-POLARITY: reject iff sym_pct < limit). At
- *         w² = 10000 the exact user Y (Sens OFF byte-identity); the
- *         INTEGER TRUNCATION to 0 for user·w² < 10000 is the vacuous-bar
- *         regime: ok = (sym_pct >= 0) is then true for EVERY geometry, so
- *         a zero limit can never reject — see the Step-11
- *         INFORMATIVE-ARMING capability test (audit D-ARM ext. 2026-10,
- *         regime (4) in constants.hpp).
- * @note Consumed by apply_shape_filters Step 11 AND its arming — one
- *       formula, cannot drift.
- * Stack: ~4 bytes (register). SRAM: 0. Flash: ~32 bytes. No FP.
- */
-static uint8_t eased_sym_limit(uint8_t user_symmetry, uint16_t w2) noexcept {
-    return static_cast<uint8_t>(
-        (static_cast<uint32_t>(user_symmetry) * w2) / 10000u);
-}
+// SHARPNESS_NOOP_CEILING / eased_sharpness_limit / eased_flatness_limit /
+// eased_valley_limit / eased_sym_limit moved to shape_gate_logic.hpp
+// (single-author easing formulas shared with the host regression tests,
+// audit F4 2026-10).
 
 // ============================================================================
 // ScanConfig Implementation
@@ -1240,19 +1102,28 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         // while constants.hpp promises DB flat-top rejection to exactly this
         // post-filter. When the chain is DISARMED the check now also runs for
         // shape-validated verdicts; arming Flat/MaxW/Sharp restores the
-        // legacy skip. The 2026-10 strict defaults (MaxW = 120, Sharp = 165,
+        // legacy skip. The 2026-10 strict defaults (MaxW = 110 [A-2: AT the
+        // DB extent cap — INERT in DB, see the MaxW term below; the chain is
+        // armed by Sharp = 165 / Flat = 25 instead], Sharp = 165,
         // Flat = 25) leave the chain ARMED at Sens OFF, so at current
         // defaults the legacy skip applies and the chain owns the verdict.
         // Stack: ~12 bytes (bools + locals, registers). SRAM: 0. Flash: ~64 B.
         const bool shape_validated = has_shape_result;
         // Armed = the chain, AT ITS EFFECTIVE stringency, can still reject a
-        // wideband flat top: eased MaxW below the DC-gap extent cap (>= 114
-        // bins ≡ no cap — see DEFAULT_SPECTRUM_MAX_WIDTH), eased sharpness
-        // above the documented dead-band (51..100 can never reject — audit
-        // D5), or eased Flat below its 100% no-op ceiling (pct > 100 is
-        // unreachable, so Flat = 100 never rejected anything). Valley/
-        // Symmetry are NOT wideband gates (README §14: Step 6c/MaxW/Flat own
-        // wideband) and deliberately do not count here.
+        // wideband flat top: raw MaxW below the DB DC-gap extent cap
+        // (DB_EXTENT_CAP_BINS = 110 — the Step-4 walk / emission_extent()
+        // can never measure MORE in DB, so a MaxW >= cap rejects nothing
+        // there; the sweep-side cap SWEEP_EXTENT_CAP_BINS = 114 does NOT
+        // apply here — this arming site is DB-only, F2 fix 2026-10: the
+        // sweep constant made the default MaxW = 110 read ARMED in DB while
+        // the chain could reject nothing — the exactly documented D-B
+        // disarmed-chain hole reopened), sharpness above the documented
+        // dead-band (51..100 can never reject — audit D5), or Flat below
+        // its effective ceiling (FLATNESS_EFFECTIVE_CEILING = 99: a 99-bar
+        // rejects only the synthetic pct == 100 — an abstention, F1 fix
+        // 2026-10). Valley/Symmetry are NOT wideband gates (README §14:
+        // Step 6c/MaxW/Flat own wideband) and deliberately do not count
+        // here.
         // SENS EASED (audit M3): the raw-config test delegated the
         // wideband verdict to steps that SHAPE_ADAPT_* w-easing had
         // simultaneously relaxed toward their permissive floors — in the
@@ -1265,7 +1136,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         // instead of hand-copied formulas glued by comments. With Sens OFF
         // (w = 100) the Sharp/Flat helpers collapse to the raw config values. D-ARM (2026-10): the Sharp/Flat no-op ceilings
         // here are the SAME shared constants (SHARPNESS_NOOP_CEILING,
-        // SPECTRUM_FLATNESS_PCT_MAX) the similarity-score arming in
+        // FLATNESS_EFFECTIVE_CEILING) the similarity-score arming in
         // apply_shape_filters now consumes — the score denominator and
         // the wideband-ownership test can no longer disagree about what
         // "informative" means (previously Step 13 already disarmed Flat =
@@ -1278,8 +1149,19 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         // flatness_min_peak_margin(rssi_sens) (40 when rssi_sens <= 0,
         // Sens <= 75 — below it Step 10 abstains, so a flat config alone
         // cannot own the verdict), and adapt_w > 0 (w == 0 ⇒ abstain, D-W0).
-        // Corrections vs legacy: Flat = 100 counted as "armed" although pct > 100 is
-        // unreachable (no-op ⇒ now DISARMED); Flat = 0 stays DISARMED
+        // A-3 WAIVER (2026-10): the in-frame chain also arms Flat when
+        // effective_width >= FLATNESS_WIDE_WAIVER_BINS (60 bins ≈ 4.7 MHz)
+        // even below the margin floor. This mirror deliberately does NOT
+        // add the width term: ShapeDetection carries no width, and
+        // over-claiming arming here would SKIP the neighbor post-filter
+        // for a candidate the chain might not have fully owned (the unsafe
+        // direction). The safe asymmetry: a weak-wide candidate under a
+        // disarmed-MaxW+Sharp config gets ONE extra neighbor pass — a
+        // cheap FP rejection, never a missed detection.
+        // Corrections vs legacy: Flat limits in the abstention band 99..100
+        // (a 99-bar rejects only the synthetic pct == 100 — audit F1)
+        // counted as "armed" although they can never reject a real flat
+        // top ⇒ now DISARMED; Flat = 0 stays DISARMED
         // (audit D-B, legacy permissive set — no longer the defaults);
         // with Sens OFF + Flat > 0 + margin < 40
         // legacy read "armed" while Step 10 never ran — this reads
@@ -1291,11 +1173,17 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         // nobody reads).
         // Stack: +24 B (inner-scope temps, register-allocatable). SRAM: 0.
         // Flash: ~120 B. No FP, no locks, same thread as the chain.
-        constexpr uint8_t MAXW_NO_CAP_BINS = 114;
-        // SHARPNESS_NOOP_CEILING is file-scoped (single author, audit
-        // D-ARM): the Step-7 score arming in apply_shape_filters uses the
-        // identical constant, so `armed_sharp_eff > 100` means the same
-        // thing in both places.
+        // MaxW arming compares against DB_EXTENT_CAP_BINS (constants.hpp,
+        // derived from the FFT window constants) — NOT the old local 114
+        // (the SWEEP cap): this site is DB-only, and at the shipped
+        // MaxW = 110 the sweep constant read `110 < 114` = ARMED, which
+        // skipped the neighbor post-filter exactly when the documented
+        // disarmed-chain config (Sharp <= 100 + Flat = 0) needed it (F2).
+        // SHARPNESS_NOOP_CEILING / FLATNESS_EFFECTIVE_CEILING come from
+        // shape_gate_logic.hpp / constants.hpp (single author, audit D-ARM
+        // + F1): the similarity-score arming in apply_shape_filters uses the
+        // identical constants, so `armed_sharp_eff > 100` and
+        // `armed_flat_eff < 99` mean the same thing in both places.
         // ⇒ shape_validated by construction (set only inside the guard);
         // the Step 13 predicate below still keeps its explicit
         // !shape_validated term so a future refactor of this block can
@@ -1316,10 +1204,15 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             // MaxW arming reads the RAW config value (eased_maxw_bins removed
             // — its tombstone at the top of this file). Previously the arming
             // test consumed the EASED 1.5× value while the chain enforced the
-            // raw one, so at MaxW=100 with w≈0 the test read 150 ≥ 114 and
-            // concluded "MaxW cannot reject" even though the chain's MaxW=100
-            // < 114 CAN reject a 110-114 bin emission. Both now read the same
-            // raw number — arming and chain cannot drift.
+            // raw one, so at MaxW=100 with w≈0 the test read 150 ≥ the cap
+            // and concluded "MaxW cannot reject" even though the chain's raw
+            // MaxW=100 CAN reject a 110-bin emission. Both now read the same
+            // raw number — arming and chain cannot drift. F2 fix (2026-10):
+            // the comparison is against the DB cap (110), not the sweep cap
+            // (114) — at the shipped MaxW = 110 the sweep constant read
+            // "can reject" in DB where the measurable extent can NEVER
+            // exceed 110, so the neighbor post-filter was wrongly skipped
+            // under a Sharp<=100 + Flat=0 config (the documented D-B hole).
             const int32_t armed_sharp_eff =
                 eased_sharpness_limit(config_.spectrum_peak_sharpness, armed_w2);
             const uint16_t armed_flat_eff =
@@ -1344,10 +1237,10 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
                 (shape_result.count == 0) ||
                 (shape_result.detections[0].similarity_pct >= 100);
             shape_chain_armed = shape_fully_owned &&
-                ((config_.spectrum_max_width < MAXW_NO_CAP_BINS) ||
+                ((config_.spectrum_max_width < DB_EXTENT_CAP_BINS) ||
                  (armed_sharp_eff > SHARPNESS_NOOP_CEILING) ||
                  (armed_flat_runs &&
-                  (armed_flat_eff < SPECTRUM_FLATNESS_PCT_MAX)));
+                  (armed_flat_eff < FLATNESS_EFFECTIVE_CEILING)));
         }
         // Step 13 (README §14 chain): Neighbor-margin tracking post-filter.
         if (config_.neighbor_margin_db > 0 && (!shape_validated || !shape_chain_armed)) {
@@ -3024,9 +2917,10 @@ uint8_t DroneScanner::shape_gate_margin() const noexcept {
     const uint8_t base = effective_spectrum_margin();
     // SENS ADAPTIVE GATE (constants.hpp SHAPE_ADAPT_* contract #1): in Sens
     // mode the gate is the per-frame noise measurement (3σ of the usable-
-    // bin IQR), clamped in update_auto_gate() to [FLOOR, base] — it OPENS
-    // in clean noise and can never exceed the user's value. Sentinel 0 =
-    // no measurement yet (first frame / chain off) → user base fallback.
+    // bin IQR), clamped in update_auto_gate() to [FLOOR, raw Mar] — it
+    // OPENS in clean noise and can never exceed the user's raw value.
+    // Sentinel 0 = no measurement yet (first frame / chain off) → the
+    // relaxed user base (Mar − 2) fallback.
     if (config_.sensitive_mode) {
         return (auto_gate_ != 0) ? auto_gate_ : base;
     }
@@ -3047,13 +2941,17 @@ void DroneScanner::update_auto_gate(
 ) noexcept {
     // SENS ADAPTIVE GATE measurement (constants.hpp SHAPE_ADAPT_* contract #1):
     // estimate σ from the usable-bin IQR (p75 − p25; σ ≈ IQR/1.349) and
-    // store the 3σ gate clamped to [SHAPE_ADAPT_GATE_FLOOR, user base]:
+    // store the 3σ gate clamped to [SHAPE_ADAPT_GATE_FLOOR, raw user Mar]:
     //   clean spectrum → 3σ under the floor → floor (2 dB ≈ 5σ at σ ≈ 2 —
     //                      a single-bin noise excursion reaches it with
     //                      p ≈ 3e-7, so the opened gate stays quiet);
-    //   noisy spectrum → 3σ rises but the user base CAPS it, so Sens mode
-    //                      is never stricter than the user asked;
-    //   base < floor (user tightened Mar below 10) → base wins — explicit
+    //   noisy spectrum → 3σ rises but the RAW user Mar CAPS it, so Sens
+    //                      mode is never stricter than the user asked
+    //                      (A-5: the old cap, effective_spectrum_margin()
+    //                      = Mar − 2, collapsed the clamp to the single
+    //                      point [8, 8] at the default Mar 10 and killed
+    //                      the measurement — see the base_cap note below);
+    //   Mar < floor (user tightened below 8) → Mar wins — explicit
     //                      tightening is always respected.
     // CELL SOURCE (P0/O3): the caller passes its Step-1 scratch buffer —
     // the SAME usable-bin cell set select_shape_floors() consumed, already
@@ -3087,7 +2985,19 @@ void DroneScanner::update_auto_gate(
     const uint16_t sigma3 = static_cast<uint16_t>(
         (static_cast<uint32_t>(iqr) * SHAPE_ADAPT_SIGMA3_NUM +
          SHAPE_ADAPT_SIGMA3_DEN / 2u) / SHAPE_ADAPT_SIGMA3_DEN);
-    const uint8_t base_cap = effective_spectrum_margin();
+    // A-5 CAP = RAW user Mar (2026-10): capping at effective_spectrum_margin()
+    // (Mar − 2 in Sens) collapsed the clamp to the single point [8, 8] at the
+    // default Mar 10 — FLOOR == Mar − 2 — so the 3σ measurement was DEAD at
+    // defaults: the gate sat constant at 8 in both clean and noisy spectra
+    // and SHAPE_ADAPT_* contract #1 ("the gate follows the noise") could
+    // never fire. The raw Mar widens the clamp to [FLOOR, Mar]: it OPENs to
+    // the Sens-relaxed floor in clean noise (the first-frame fallback base
+    // stays Mar − 2, so a clean frame's measured gate is never STRICTER
+    // than the placeholder), tracks 3σ upward in noise, and is capped at
+    // exactly what the user asked — never stricter than the user asked, and
+    // never stricter than Sens OFF (whose gate is Mar + rssi_sens/2 ≥ Mar).
+    // Explicit tightening (Mar < FLOOR) still wins verbatim.
+    const uint8_t base_cap = config_.spectrum_margin;
     if (sigma3 > base_cap) {
         auto_gate_ = base_cap;                 // user cap wins
     } else if (sigma3 < SHAPE_ADAPT_GATE_FLOOR) {
@@ -3359,8 +3269,10 @@ bool DroneScanner::apply_shape_filters(
         final_extent = SignalExtent{peak_idx, peak_idx};
     } else {
         // MaxW is the user's EXACT config value (eased_maxw_bins removed —
-        // see its tombstone above). Byte-identical at the shipped default
-        // (120 > any measurable width, extent ≤ 114); stricter near the gate
+        // see its tombstone above). Inert at the shipped default in DB
+        // (110 = the sideband extent cap); in sweep the same 110 rejects
+        // 111-114-bin wall-to-wall extents (A-2 — intended tightening);
+        // stricter near the gate
         // only when the
         // user lowered MaxW below the sideband cap. The same raw value feeds
         // the Step-13 EFFECTIVE-ARMING test and tbd_peak_is_narrowband, so
@@ -3378,9 +3290,14 @@ bool DroneScanner::apply_shape_filters(
         // never fire after Step 6), and the HALF-POWER trim removes noise-
         // shelf shoulders, so for smooth skirts the extent still ends at the
         // -6 dB point: MaxW keeps mapping to real bandwidth — analog FM video
-        // (8-18 MHz) measures ~100-140 bins and passes MaxW=200 at ANY range,
-        // while WiFi rejection shifts to the sharpness gate (flat OFDM tops
-        // ≈ 100-115 < 120) + valley depth. Interior dips deeper than
+        // (8-18 MHz) measures ~100-140 bins per DC-gap sideband and passes
+        // MaxW=110 at ANY range (A-2: 110 bins ≈ 8.6 MHz, at the DB extent
+        // cap; the widest single-sideband skirts measured 111-114 bins in
+        // sweep are now rejected by MaxW itself — intended tightening, see
+        // DEFAULT_SPECTRUM_MAX_WIDTH); WiFi rejection is owned by the
+        // sharpness gate (flat OFDM tops ≈ 100-115: the 111-115 tail is now
+        // rejected by MaxW itself, the rest by sharpness) + valley depth.
+        // Interior dips deeper than
         // quarter-power still split (legit video+audio nulls).
         // WIDTH-ANCHOR FLOOR (audit fix W1): fed with width_floor, same
         // contaminated-frame demotion as the Step-4 bar above — a plateau
@@ -3529,6 +3446,10 @@ bool DroneScanner::apply_shape_filters(
     //   Sens ON  — no similarity early return; the HARD envelope (Steps 3/5/
     //              6/6b/6c/8) has already returned above, and the similarity
     //              group decides via ShapeVerdict::similarity_ok() below.
+    //              A-1 RAW FALLBACK (see the raw_sim_armed block below): when
+    //              w-easing silences the WHOLE similarity group, the run_*
+    //              arming and w2_eff switch to the raw Sens-OFF-equivalent
+    //              set so the group can never auto-pass on an empty score.
     //
     // DC-GAP PARITY (audit-critical): legacy Step 7 and Step 10 do
     // `if (is_dc) continue;` while legacy Step 9 CLOSES the current run
@@ -3554,7 +3475,9 @@ bool DroneScanner::apply_shape_filters(
     //       high_power_threshold/deepest_dip ...  4 B
     //     effective_flatness_min/
     //       sim_min_pct_raw/sim_min_pct ........  3 B
-    //                                    total .. 50 B
+    //     A-1 raw set: 5 raw bools + flat_structural + raw_fallback
+    //       + 5 run_* + raw_sim_armed + w2_eff ... 17 B
+    //                                    total .. 67 B
     //
     //   LEGACY peak-simultaneous for the same section: the Step 7/9/10/11
     //   temps were in DISJOINT scopes, so the compiler could (and with -Os
@@ -3607,7 +3530,11 @@ bool DroneScanner::apply_shape_filters(
     // Shared author (flatness_min_peak_margin): the Step-13
     // EFFECTIVE-ARMING flat term consumes the SAME run guard (audit M3
     // rev. 2) — an armed Flat verdict may only be granted when this step
-    // would actually RUN for this peak.
+    // would actually RUN for this peak. A-3 waiver: a fragment >=
+    // FLATNESS_WIDE_WAIVER_BINS (60 bins ≈ 4.7 MHz) bypasses this floor
+    // entirely (wideband evidence); the mirror at Step 13 stays
+    // conservative (no width term) to never skip a post-filter the chain
+    // didn't run.
     // At Sens <= 75 (rssi_sens <= 0): guard = FLATNESS_MIN_PEAK_MARGIN (40, ~8 dB).
     // At sens=87 (rssi_sens=12): guard = max(15, 40-12) = 28 (~5.6 dB).
     // At sens=95 (rssi_sens=20): guard = max(15, 40-20) = 20 (~4 dB).
@@ -3638,6 +3565,10 @@ bool DroneScanner::apply_shape_filters(
     // — it only removes the phantom score vote and skips the fused-loop
     // work (a small CPU win at defaults). user > 100: armed, unchanged.
     // Field floor 50 stays the UI OFF sentinel (50..100 all abstain).
+    // A-1 CROSS-REF (raw fallback below): abstention here is SAFE only
+    // because the fallback re-admits the raw gate set whenever easing
+    // silences the WHOLE similarity group — an abstaining no-op step must
+    // never turn a configured rejection into an auto-pass.
     const bool sim_armed_sharp =
         (eased_sharpness_limit(config_.spectrum_peak_sharpness, w2) >
          SHARPNESS_NOOP_CEILING);
@@ -3669,25 +3600,41 @@ bool DroneScanner::apply_shape_filters(
           eased_valley_limit(config_.spectrum_valley_depth, peak_margin, w2))
          <= 255u);
 
-    // Step 10 arming: the OUTER run guard (Flat + peak-margin floor +
-    // adapt_w). The narrowband guard is folded in below as sim_armed_flat.
-    const bool flat_outer =
-        (config_.spectrum_flatness > 0) &&
-        (peak_margin >= effective_flatness_min) &&
-        (!config_.sensitive_mode || adapt_w > 0);
-
-    // Step 10 denominator + narrowband guard — measured exactly as legacy did
-    // (DC-range subtraction over [left..right]; the guard makes the
-    // subtraction unreachable when the fragment cannot touch the DC gap, so
-    // no size_t underflow is possible). signal_width == right-left+1 by
-    // construction (Step 4), so this is byte-identical to legacy's local.
+    // Step 10 denominator — measured exactly as legacy did (DC-range
+    // subtraction over [left..right]; no size_t underflow is possible
+    // because the walk never enters the gap). signal_width == right-left+1
+    // by construction (Step 4). Computed for EVERY F > 0 peak now: A-3's
+    // wide-fragment waiver reads it BEFORE the margin floor, so the old
+    // flat_structural gate can no longer precede it.
     size_t effective_width = signal_width;
-    if (flat_outer && has_dc_gap &&
+    if ((config_.spectrum_flatness > 0) && has_dc_gap &&
         left < FFT_DC_SPIKE_END && right >= FFT_DC_SPIKE_START) {
         const size_t dc_start = (left > FFT_DC_SPIKE_START) ? left : FFT_DC_SPIKE_START;
         const size_t dc_end = (right < FFT_DC_SPIKE_END) ? right : (FFT_DC_SPIKE_END - 1);
         effective_width -= (dc_end - dc_start + 1);
     }
+
+    // Step 10 arming: the OUTER run guard (Flat + peak-margin floor [A-3
+    // waived for wide fragments] + adapt_w). The narrowband guard is
+    // folded in below as sim_armed_flat.
+    // A-1 RAW FALLBACK (below): the w-independent head (user F > 0 +
+    // margin floor/waiver) is factored out as flat_structural — the raw
+    // set needs the SAME structural guards Sens OFF applies, without the
+    // w > 0 term.
+    // A-3 WIDE-FRAGMENT FLOOR WAIVER (2026-10): the margin floor protects
+    // the flatness STATISTIC on narrow low-SNR fragments; a fragment that
+    // already spans >= FLATNESS_WIDE_WAIVER_BINS (~4.7 MHz) is wideband
+    // evidence by itself, so a WiFi/BT plateau parked in the gate..floor
+    // band no longer escapes Flat (it was owned only by MaxW/sharpness
+    // there). Applies in BOTH modes. DOCUMENTED COST: weak wide BLUNT-TOP
+    // analog FPV in that band now dies on the default Flat = 25 — see
+    // constants.hpp FLATNESS_WIDE_WAIVER_BINS.
+    const bool flat_structural =
+        (config_.spectrum_flatness > 0) &&
+        ((peak_margin >= effective_flatness_min) ||
+         (effective_width >= FLATNESS_WIDE_WAIVER_BINS));
+    const bool flat_outer =
+        flat_structural && (!config_.sensitive_mode || adapt_w > 0);
     // Narrowband guard: flatness is meaningless for very narrow signals.
     // A 2-4 bin burst (ELRS/FrSky in sweep mode) is inherently "flat"
     // (1-2 high-power bins out of 2-4 = 50-100%) and was previously
@@ -3696,25 +3643,38 @@ bool DroneScanner::apply_shape_filters(
     // flat-tops span dozens of bins and are unaffected by this guard.
     //
     // INFORMATIVE-ARMING (audit D-ARM, 2026-10 — symmetric with Step 7):
-    // Flat = 100 is the documented no-op (pct > 100 is unreachable, so the
-    // limit saturates at the abstain ceiling — eased_flatness_limit never
-    // exceeds 100) yet used to take a permanent ALWAYS-PASS score seat:
-    // {Sharp(100, inert), Flat(100, inert)} = 2 seats, 100% — and any REAL
-    // dissent added later was diluted 1-vs-1 to a passing tie at the
-    // then-default threshold 50. Armed iff the eased limit can actually reject
-    //     eased_flatness_limit(F, w2) < SPECTRUM_FLATNESS_PCT_MAX
+    // the abstention band is now 99..100 (FLATNESS_EFFECTIVE_CEILING, F1
+    // fix 2026-10). A limit of 100 could never reject (pct > 100 is
+    // unreachable); a limit of 99 rejects ONLY the synthetic pct == 100
+    // (every bin within 10% of the 90% bar) — a real WiFi/BT plateau
+    // (40-90%) or blunt-top FPV (45-70%) sails over it, so 99 is an
+    // ABSTENTION, not a verdict. Both used to take a permanent
+    // ALWAYS-PASS score seat: {Sharp(100, inert), Flat(99, inert)} = 2
+    // seats, 100% — and any REAL dissent added later was diluted 1-vs-1
+    // to a passing tie at the then-default threshold 50. Worse, the eased
+    // default F = 25 lands exactly on 99 throughout the w <= 10 band
+    // (25 + 75·(10000−w²)/10000 = 99 ⇔ w² <= 133): at w = 0 the group was
+    // silenced and the A-1 raw fallback caught it, but at w = 5/10 the
+    // phantom Flat(99) seat kept the group NON-EMPTY, so the fallback
+    // never engaged and a wideband plateau AUTO-PASSED 100%-scored while
+    // w = 0 and w >= 15 both rejected it — stringency was NON-MONOTONIC
+    // in SNR (audit F1). Armed iff the eased limit can actually reject a
+    // real flat top:
+    //     eased_flatness_limit(F, w2) < FLATNESS_EFFECTIVE_CEILING
     // — the SAME predicate the Step-13 EFFECTIVE-ARMING flat term consumes
-    // (audit M3 rev. 2). Reachable regime unchanged: flat_outer already
-    // excludes F = 0 and w = 0, and for F in 1..99 with any w >= 1 the
-    // limit is strictly < 100, so only F = 100 newly abstains. Sens OFF
-    // VERDICT-IDENTITY: at F = 100 the old step ran but could never reject
-    // (pct <= 100 <= limit ⇒ ok unconditionally true), so skipping it
-    // changes no accept/reject — it only removes the phantom vote and the
-    // high_power_threshold accumulation (a small CPU win).
+    // (audit M3 rev. 2). Reachable regime: flat_outer already excludes
+    // F = 0 and w = 0; at F = 99/100 the step now abstains in BOTH modes
+    // (Sens OFF VERDICT-IDENTITY: the old step ran but could never reject
+    // a real top — pct <= 99 <= limit ⇒ ok unconditionally true except at
+    // the synthetic pct == 100 — so skipping it changes no meaningful
+    // accept/reject — it only removes the phantom vote and the
+    // high_power_threshold accumulation, a small CPU win). At defaults
+    // (F = 25) the step arms from w >= 15 (limit 98) up; below that the
+    // A-1 raw fallback runs the exact user ladder instead.
     const bool sim_armed_flat =
         flat_outer && (effective_width > FLATNESS_MIN_SIGNAL_WIDTH) &&
         (eased_flatness_limit(config_.spectrum_flatness, w2) <
-         SPECTRUM_FLATNESS_PCT_MAX);
+         FLATNESS_EFFECTIVE_CEILING);
 
     // Step 11 arming. left/right start at peak_idx and only expand (Step 4),
     // so left <= peak_idx <= right always holds.
@@ -3766,6 +3726,30 @@ bool DroneScanner::apply_shape_filters(
         !very_strong && (!config_.sensitive_mode || adapt_w > 0) &&
         (signal_width >= KURTOSIS_MIN_SEGMENT_BINS);
 
+    // ---- A-1 RAW SET: "would Sens OFF run (and reject with) this step?" ----
+    // Same structural guards as the eased arming minus the w-easing terms,
+    // limits at w2 = 10000 via the SAME shared helpers (single author — no
+    // formula copies). raw_armed_* is a superset of its eased twin for every
+    // gate (eased limits sit between the raw limit and its no-op ceiling),
+    // so the pair (eased, raw) cleanly separates "user-OFF / structurally
+    // skipped" (raw empty) from "silenced by easing" (raw non-empty).
+    const bool raw_armed_sharp =
+        (eased_sharpness_limit(config_.spectrum_peak_sharpness, 10000u) >
+         SHARPNESS_NOOP_CEILING);
+    const bool raw_armed_valley = (config_.spectrum_valley_depth > 0) && !very_strong &&
+        ((static_cast<uint16_t>(noise_floor) +
+          eased_valley_limit(config_.spectrum_valley_depth, peak_margin, 10000u))
+         <= 255u);
+    const bool raw_armed_flat = flat_structural &&
+        (effective_width > FLATNESS_MIN_SIGNAL_WIDTH) &&
+        (eased_flatness_limit(config_.spectrum_flatness, 10000u) <
+         FLATNESS_EFFECTIVE_CEILING);
+    const bool raw_armed_sym = (config_.spectrum_symmetry > 0) && (signal_width > 1) &&
+        !very_strong && !left_clipped && !right_clipped;
+    const bool raw_armed_kurt = config_.kurtosis_enabled &&
+        (peak_margin >= FLATNESS_MIN_PEAK_MARGIN) && !very_strong &&
+        (signal_width >= KURTOSIS_MIN_SEGMENT_BINS);
+
     ShapeVerdict verdict{};
     verdict.sim_armed = static_cast<uint16_t>(
         (sim_armed_sharp ? SHAPE_BIT_SHARPNESS : uint16_t{0}) |
@@ -3774,10 +3758,68 @@ bool DroneScanner::apply_shape_filters(
         (sim_armed_sym ? SHAPE_BIT_SYMMETRY : uint16_t{0}) |
         (sim_armed_kurt ? SHAPE_BIT_KURTOSIS : uint16_t{0}));
 
+    // ---- A-1 RAW FALLBACK (fail-closed, 2026-10; band-true after F1) ----
+    // The informative arming above ABSTAINS whenever easing drops a
+    // configured gate into its no-op/abstention regime (Sharp eased to 100,
+    // Flat eased to 99 — the F1 fix, Sym truncated to 0, Valley ceiling
+    // widened past 255...). At the shipped defaults (Sharp 165, Flat 25,
+    // Sym 25, Vly 0, Kurt off) that silences the WHOLE group exactly for
+    // w ∈ {0, 5, 10} (peak_margin − gate ≤ 2 units ≈ 0.4 dB — Sharp's
+    // w² <= 153 dead-band AND Flat's new w² <= 133 abstention band overlap
+    // there); at w = 15 Sharp(101)/Flat(98) re-arm and the normal path
+    // resumes. BEFORE the F1 fix the w = 5/10 seats kept a phantom
+    // Flat(99) seat: the group was non-empty, the fallback below never
+    // engaged, and a wideband flat-top AUTO-PASSED 100%-scored while
+    // w = 0 and w ≥ 15 both rejected it (stringency non-monotonic in SNR).
+    // The combine below saw an EMPTY armed set, similarity_pct()
+    // returned its documented "empty = full = 100" and the candidate
+    // AUTO-PASSED the entire similarity group: a wideband flat-top the
+    // same user gates reject at full weight (and that Sens OFF rejects via
+    // the identical ladder) slipped through with "Shape score" ON and
+    // bypass OFF. FIX: when (and only when) the eased set is empty while
+    // the RAW set — the exact gate set Sens OFF runs on THIS peak — is
+    // not, the verdict switches to the raw set and w2 to 10000: every step
+    // Sens OFF would run now votes at the exact user limit (the Sens-OFF
+    // ladder, byte-identical), so a real narrowband target still passes on
+    // its merits while the flat-top is rejected. IDENTITY CASES:
+    //   - user gates OFF (Sharp <= 100, Vly = 0, Flat = 0/99/100 [99 newly
+    //     abstains under F1], Sym = 0, Kurt off): raw set empty too ->
+    //     fallback stays off -> the empty score keeps passing (documented
+    //     Sens-OFF identity);
+    //   - gates structurally skipped for THIS peak (Flat margin floor,
+    //     narrow width, very_strong): the same guards sit in the raw set
+    //     -> empty -> pass, because Sens OFF skips them as well;
+    //   - Sens OFF: sens_parallel is false -> fallback never engages.
+    // Threshold semantics unchanged: the score (default 100 = AND) applies
+    // to the raw set exactly as it does to the eased set — lowering
+    // shape_sim_threshold_pct stays a permissive opt-in in both regimes.
+    // Stack: +7 bools + uint16 (register-allocatable). Flash: ~120 bytes.
+    const uint16_t raw_sim_armed = static_cast<uint16_t>(
+        (raw_armed_sharp ? SHAPE_BIT_SHARPNESS : uint16_t{0}) |
+        (raw_armed_valley ? SHAPE_BIT_VALLEY : uint16_t{0}) |
+        (raw_armed_flat ? SHAPE_BIT_FLATNESS : uint16_t{0}) |
+        (raw_armed_sym ? SHAPE_BIT_SYMMETRY : uint16_t{0}) |
+        (raw_armed_kurt ? SHAPE_BIT_KURTOSIS : uint16_t{0}));
+    const bool raw_fallback = sens_parallel &&
+        ((verdict.sim_armed & SHAPE_SIM_MASK) == 0u) &&
+        ((raw_sim_armed & SHAPE_SIM_MASK) != 0u);
+    if (raw_fallback) verdict.sim_armed = raw_sim_armed;
+    // EFFECTIVE per-step arming consumed by the fused loop and the Step
+    // 7..12 bodies below: the eased gate normally, the raw gate under the
+    // fallback (eased bits are all false in that regime by construction).
+    const bool run_sharp = raw_fallback ? raw_armed_sharp : sim_armed_sharp;
+    const bool run_valley = raw_fallback ? raw_armed_valley : sim_armed_valley;
+    const bool run_flat = raw_fallback ? raw_armed_flat : sim_armed_flat;
+    const bool run_sym = raw_fallback ? raw_armed_sym : sim_armed_sym;
+    const bool run_kurt = raw_fallback ? raw_armed_kurt : sim_armed_kurt;
+    // w2 switch: 10000 collapses EVERY eased formula in Steps 7-12 (and the
+    // HARD Step 8 ratio) to the raw user limit — the Sens-OFF ladder.
+    const uint16_t w2_eff = raw_fallback ? uint16_t{10000} : w2;
+
     // ---- Thresholds needed INSIDE the fused loop (loop-invariant) ----
     uint8_t secondary_threshold = 0;  // Step 9 ridge bar  = noise + margin/2
     uint8_t required_dip = 0;         // Step 9 dual-peak dip = max(margin/6, 2)
-    if (sim_armed_valley) {
+    if (run_valley) {
         // Saturate to 255: peak_margin/2 (0-127) added to noise_floor
         // (0-255) can overflow uint8 (e.g. 255 + 60 -> 59 without this),
         // which would lower the dual-peak bypass bar and misroute wideband
@@ -3812,7 +3854,7 @@ bool DroneScanner::apply_shape_filters(
     }
 
     uint8_t high_power_threshold = 0;  // Step 10 bar = noise + 0.9 * margin
-    if (sim_armed_flat) {
+    if (run_flat) {
         // AUDIT MEDIUM-1 (fix F2): the old `raw_peak * 9 / 10` measured
         // 90% of the ABSOLUTE dB-compressed value, so the effective
         // elevation above the shelf shrank as the noise floor rose
@@ -3857,7 +3899,7 @@ bool DroneScanner::apply_shape_filters(
     bool in_run = false;
     bool cur_has_peak = false;
 
-    const bool need_fuse = sim_armed_sharp || sim_armed_valley || sim_armed_flat;
+    const bool need_fuse = run_sharp || run_valley || run_flat;
     if (need_fuse) {
         for (size_t i = left; i <= right; ++i) {
             // DC gap TERMINATES a run (hard measurement boundary, same as
@@ -3866,7 +3908,7 @@ bool DroneScanner::apply_shape_filters(
             // first. close_run() touches ONLY Step-9 state, which 7/10 never
             // read — so the fused order is exact.
             if (has_dc_gap && i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) {
-                if (sim_armed_valley && in_run) {
+                if (run_valley && in_run) {
                     in_run = false;
                     if (!cur_has_peak) {
                         ++extra_runs;
@@ -3877,12 +3919,12 @@ bool DroneScanner::apply_shape_filters(
             }
             const uint8_t v = data[i];
 
-            if (sim_armed_sharp && v > noise_floor) {
+            if (run_sharp && v > noise_floor) {
                 margin_sum += static_cast<int32_t>(v) - static_cast<int32_t>(noise_floor);
                 ++margin_count;
             }
 
-            if (sim_armed_valley) {
+            if (run_valley) {
                 if (v >= secondary_threshold) {
                     if (!in_run) {
                         in_run = true;
@@ -3922,9 +3964,9 @@ bool DroneScanner::apply_shape_filters(
             // flat top under-scored and escaped Flat (implementation was more
             // permissive than documented). The left loop also historically
             // skipped bin `left`/peak entirely (audit D7 — up to 1/width soft).
-            if (sim_armed_flat && v >= high_power_threshold) ++high_power_count;
+            if (run_flat && v >= high_power_threshold) ++high_power_count;
         }
-        if (sim_armed_valley && in_run && !cur_has_peak) {
+        if (run_valley && in_run && !cur_has_peak) {
             ++extra_runs;
             if (cur_run > extra_widest) extra_widest = cur_run;
         }
@@ -3942,17 +3984,18 @@ bool DroneScanner::apply_shape_filters(
     // no-op default); effective filtering starts at 101. No comparison
     // change can fix this (the peak is the range maximum by construction).
     // D-ARM (2026-10): because the dead-band is unfalsifiable, arming now
-    // treats it as ABSTENTION (sim_armed_sharp false ⇒ this block never
+    // treats it as ABSTENTION (run_sharp false ⇒ this block never
     // runs, no sim_pass bit, no score seat) instead of a mandatory
-    // always-pass vote — see the Step 7 arming comment above.
-    if (sim_armed_sharp) {
+    // always-pass vote — see the Step 7 arming comment above. A-1 fallback
+    // may re-admit raw_armed_sharp when the whole eased group is empty.
+    if (run_sharp) {
         const int32_t avg_margin =
             (margin_count > 0) ? (margin_sum / static_cast<int32_t>(margin_count)) : 0;
         // avg_margin <= 0 (count == 0) is a REJECT in legacy, not an abstain —
         // preserved verbatim so the dead-band semantics cannot drift.
         const bool ok = (avg_margin > 0) &&
             ((static_cast<int32_t>(peak_margin) * 100) / avg_margin >=
-             eased_sharpness_limit(config_.spectrum_peak_sharpness, w2));
+             eased_sharpness_limit(config_.spectrum_peak_sharpness, w2_eff));
         // Shared author (eased_sharpness_limit): the Step-13
         // EFFECTIVE-ARMING test consumes the SAME formula (audit M3 rev. 2).
         if (ok) verdict.sim_pass |= SHAPE_BIT_SHARPNESS;
@@ -3968,7 +4011,7 @@ bool DroneScanner::apply_shape_filters(
     if (config_.spectrum_peak_ratio > 0) {
         const int32_t ratio_limit =
             (static_cast<int32_t>(config_.spectrum_peak_ratio) *
-             static_cast<int32_t>(w2)) / 10000;
+             static_cast<int32_t>(w2_eff)) / 10000;
         if (ratio_limit > 0) {
             const int32_t ratio =
                 (static_cast<int32_t>(peak_margin) * 10) / static_cast<int32_t>(signal_width);
@@ -3988,11 +4031,11 @@ bool DroneScanner::apply_shape_filters(
     // (margin/3 + 1) — near the gate valley effectively abstains, at full
     // stringency it is exactly the user D — weak-signal geometry stays
     // protected without a binary bypass.
-    // D-ARM ext. 2026-10: guarded by sim_armed_valley (outer conditions
+    // D-ARM ext. 2026-10: guarded by run_valley (outer conditions
     // AND the noise+limit <= 255 capability term — see the arming block),
     // so an unreachable-limit frame never enters this block, never takes
     // a score seat and never pays the probe cost.
-    if (sim_armed_valley) {
+    if (run_valley) {
         // FIX B5 (narrow dual-peak skip): the old "any bin above half-peak"
         // test was satisfied by dozens of bins of a WiFi flat-top, so valley
         // NEVER rejected flat-tops while claiming to. Count ridges above the
@@ -4093,7 +4136,7 @@ bool DroneScanner::apply_shape_filters(
             // at exactly w == 0, so the reachable w=0 case is really
             // 0 < w < 100 where the limit is already ≥ D.
             const uint16_t valley_limit =
-                eased_valley_limit(config_.spectrum_valley_depth, peak_margin, w2);
+                eased_valley_limit(config_.spectrum_valley_depth, peak_margin, w2_eff);
             ok = (max_valley < valley_limit);
         }
         // ABSTENTION MODEL — THREE KINDS COEXIST BY DESIGN, and they must
@@ -4129,7 +4172,7 @@ bool DroneScanner::apply_shape_filters(
     // At high sensitivity, lower the guard so flatness activates earlier —
     // this is critical because flatness is the primary WiFi/BT rejection filter.
     // The run guard, the peak-margin floor and the narrowband guard are all
-    // folded into sim_armed_flat above, so entering this block means legacy
+    // folded into run_flat above, so entering this block means legacy
     // would have entered BOTH of its nested `if`s — the `effective_width > 0`
     // check of the draft is dead (arming requires > FLATNESS_MIN_SIGNAL_WIDTH
     // = 4, so the denominator is statically >= 5).
@@ -4141,16 +4184,18 @@ bool DroneScanner::apply_shape_filters(
     // (w = 100) and still faces Flat unfiltered.
     // NOTE (2026-10 default change): default spectrum_flatness is now 25
     // (ARMED, strict) — a fat blunt-topped FPV peak measured 45-70% and is
-    // rejected here on strong peaks BY DESIGN (user-elected; this step only
-    // engages above ~8 dB margin, i.e. exactly on strong visible peaks).
+    // rejected here on strong peaks BY DESIGN (user-elected; this step
+    // normally engages above ~8 dB margin, i.e. exactly on strong visible
+    // peaks; A-3 waiver: also on wide fragments >= 60 bins even below the
+    // margin floor — wideband evidence by itself).
     // Lower Flat toward 40-45 in Settings to recover blunt-top FPV (cost:
     // WiFi/BT discrimination weakens; 0 disables the filter). Weak peaks
     // (peak_margin < effective_flatness_min) are always skipped and, in
     // sensitive mode, ALL non-very-strong peaks ease the limit — far-field
     // FPV is unaffected either way.
-    if (sim_armed_flat) {
+    if (run_flat) {
         // effective_width > 4 by arming, high_power_count only accumulated
-        // when sim_armed_flat (and sim_armed_flat => need_fuse), so the
+        // when run_flat (and run_flat => need_fuse), so the
         // counter is meaningful here by construction.
         const uint8_t flatness_pct = static_cast<uint8_t>(
             (high_power_count * 100) / effective_width);
@@ -4164,7 +4209,7 @@ bool DroneScanner::apply_shape_filters(
         // EFFECTIVE-ARMING test consumes the SAME formula AND the SAME
         // saturation (audit M3 rev. 2). Stack: ~4 B. Flash: 0.
         const bool ok =
-            flatness_pct <= eased_flatness_limit(config_.spectrum_flatness, w2);
+            flatness_pct <= eased_flatness_limit(config_.spectrum_flatness, w2_eff);
         if (ok) verdict.sim_pass |= SHAPE_BIT_FLATNESS;
         if (!sens_parallel && !ok) return false;
     }
@@ -4180,7 +4225,7 @@ bool DroneScanner::apply_shape_filters(
     // rejected for "asymmetry" that was actually a measurement artifact.
     // No boundary → no verdict: BOTH flanks must be threshold-measured for
     // symmetry to speak (left_clipped/right_clipped from the Step 4 walk).
-    if (sim_armed_sym) {
+    if (run_sym) {
         // Geometry lives HERE, not in the arming block (audit D3): it is
         // read only below, so scoping it here keeps 16 B (4 x size_t) out
         // of the simultaneous-live set of the fused tail.
@@ -4202,7 +4247,7 @@ bool DroneScanner::apply_shape_filters(
         // Shared author (eased_sym_limit): the Step-11 INFORMATIVE-ARMING
         // capability term consumes the SAME formula (audit D-ARM ext.
         // 2026-10), so the arming test and the chain cannot drift.
-        const uint8_t sym_limit = eased_sym_limit(config_.spectrum_symmetry, w2);
+        const uint8_t sym_limit = eased_sym_limit(config_.spectrum_symmetry, w2_eff);
         const bool ok = (sym_pct >= sym_limit);
         if (ok) verdict.sim_pass |= SHAPE_BIT_SYMMETRY;
         if (!sens_parallel && !ok) return false;
@@ -4224,7 +4269,7 @@ bool DroneScanner::apply_shape_filters(
     // (Step 1 -> update_auto_gate -> Step 12 -> TBD, one thread) is intact.
     // Stack: ~4 bytes (register locals). SRAM: 0 (spectrum_sort_buf_
     // scratch, sequential use).
-    if (sim_armed_kurt) {
+    if (run_kurt) {
         const auto kurt_result = SpectralKurtosis::compute(
             data, left, right + 1,
             spectrum_sort_buf_, SPECTRUM_SORT_BUF_SIZE,
@@ -4235,7 +4280,7 @@ bool DroneScanner::apply_shape_filters(
         // user K (OFF byte-identical).
         const int32_t kurt_limit =
             (static_cast<int32_t>(config_.kurtosis_min_x10) *
-             static_cast<int32_t>(w2)) / 10000;
+             static_cast<int32_t>(w2_eff)) / 10000;
         const bool ok = kurt_result.kurtosis_x10 >= kurt_limit;
         if (ok) verdict.sim_pass |= SHAPE_BIT_KURTOSIS;
         if (!sens_parallel && !ok) return false;
@@ -4295,6 +4340,22 @@ bool DroneScanner::tbd_peak_is_narrowband(
     // on "narrow-looking" frames. TBD now looks at where the signal started
     // and where subsequent peaks re-appeared across the window.
     // Stack: ~20 bytes. Flash: ~80 bytes.
+    //
+    // A-4 ANALYSIS (2026-10): there is deliberately NO flatness guard in the
+    // TBD path — two candidates were evaluated and rejected as unsound:
+    // (a) envelope flatness (per-bin max over the waterfall window) — a
+    // slow-drifting narrow drone produces an OR-envelope plateau identical
+    // to a WiFi/BT flat-top, so any usable limit would false-reject
+    // legitimate slow drifters; (b) frame-domain flatness at the
+    // confirmation frame — at below-gate margins (2-7 units) the 90%-bar
+    // statistic cannot distinguish a WiFi plateau from a drone V-shape
+    // because the plateau's ripple is a large fraction of the margin and no
+    // bar separates them. The wideband holes are covered by this function
+    // (envelope width > MaxW + the BOTH-EDGES sideband rule); above-gate
+    // shape rejections are vetoed before TBD (shape_rejected_after_margin /
+    // shape_blocked_tbd). The mid-width (60-110 bins) below-gate flat-top
+    // that passes TBD is the documented cost of the weak-signal domain —
+    // see constants.hpp MinW-exempt note and EDA README TBD section.
     if (peak_bin >= data_size || edge_skip >= data_size / 2) return false;
     if (peak_bin < edge_skip || peak_bin >= data_size - edge_skip) return false;
 
@@ -4668,8 +4729,8 @@ void DroneScanner::process_spectrum_sweep(
     // only reject, and every peak the gate admits is guaranteed the same
     // Step 4 width threshold.
     // Default margin=20 (~4 dB above noise); SENS mode: the NOISE-ADAPTIVE
-    // gate clamp(3σ_IQR, 10, Mar-2) measured in update_auto_gate() below
-    // (SHAPE_ADAPT_*), never stricter than Mar-2.
+    // gate clamp(3σ_IQR, 8, Mar) measured in update_auto_gate() below
+    // (SHAPE_ADAPT_*; A-5: cap = raw Mar), never stricter than Mar.
     // RSSI-ONLY EXCEPTION (audit M2): with spectrum_detection_enabled OFF
     // the margin is shape-domain — sweep_fast_prefilter bypasses it
     // (!shape_detect_on ⇒ true) and the DB path applies a pure RSSI gate —

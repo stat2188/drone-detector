@@ -807,6 +807,23 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
     → Reachable weak band: [noise + 1.2 dB, Step-3 gate), gated by
       persistence — this is the multi-frame path the single-frame chain
       (Steps 1-12, gate-bound) can never see.
+    → A-4 ANALYSIS (2026-10): there is deliberately NO flatness guard in
+      the TBD path. Two candidates were evaluated and rejected as unsound:
+      (a) envelope flatness (per-bin max over the waterfall window) — a
+      slow-drifting narrow drone produces an OR-envelope plateau identical
+      to a WiFi/BT flat-top, so any usable limit would false-reject
+      legitimate slow drifters; (b) frame-domain flatness at the
+      confirmation frame — at below-gate margins (2-7 units) the 90%-bar
+      statistic cannot distinguish a WiFi plateau from a drone V-shape
+      because the plateau's ripple is a large fraction of the margin and
+      no bar separates them. The wideband holes the guard was meant to
+      plug are already covered: envelope width > MaxW (110) and the
+      BOTH-EDGES sideband rule in tbd_peak_is_narrowband; above-gate
+      candidates that failed shape are vetoed by shape_rejected_after_margin
+      / shape_blocked_tbd. The mid-width (60-110 bins) below-gate flat-top
+      that passes TBD is the documented cost of the weak-signal domain —
+      the user can raise MinW above the default floor to get below-gate
+      MinW enforcement (see tbd_peak_is_narrowband MinW exempt note).
 
   Step 1: Noise Floor (caller — analyze_spectrum_shape_multi / sweep loop)
     quickselect 25th percentile of the usable bins (DC spike + edge bins
@@ -831,12 +848,15 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
       normal mode, Sens <= 75: gate = spectrum_margin (default 10 ≈ 2 dB)
       normal mode, Sens > 75:  gate = spectrum_margin + (Sens-75)/2
                                (fresh default Sens=85 → gate = 15)
-      Sensitive ("Sens") mode: gate = clamp(3σ_IQR, 8, spectrum_margin - 2)
+      Sensitive ("Sens") mode: gate = clamp(3σ_IQR, 8, spectrum_margin)
                                — NOISE-ADAPTIVE (SHAPE_ADAPT_*): 3σ of the
                                usable-bin IQR measured per frame; opens in
                                clean noise (floor 8 = 1.6 dB), capped by
-                               Mar-2 so it is never STRICTER than the user
-                               asked (±5..10 on Mar cannot cliff-kill)
+                               the RAW Mar so it is never STRICTER than the
+                               user asked (±5..10 on Mar cannot cliff-kill;
+                               A-5: old cap Mar−2 collapsed the clamp to
+                               [8,8] at the default Mar 10 — the 3σ
+                               measurement was dead at defaults)
     → Rejects sub-CFAR noise spikes
 
   Step 4: Width Measurement (walk — MEASURES, never rejects)
@@ -861,13 +881,14 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
     (margin/3) so the extent can genuinely exceed the fragment — with a
     HALF-POWER trim of outer noise-shelf shoulders) must both be below
     spectrum_max_width
-    (default 120 bins ≈ 9.4 MHz — ≥ the 114-bin DC-gap extent cap, so
-     behaviorally ≈ «проходят и узкие, и широкие» for measurable extents)
+    (default 110 bins ≈ 8.6 MHz — A-2: AT the DB 110-bin DC-gap extent
+     cap, so inert in DB while capping sweep extents at 111-114 bins)
     → NOTE: in the raw-FFT chain the walk is DC-gap bounded, so the extent
       can never exceed 110 bins in DB (10..119 / 136..245) or 114 in sweep
       (6..119 / 136..249) — any value >= 114 is behaviorally identical in
-      BOTH modes. Wideband (WiFi) rejection is owned by Step 6c (sweep)
-      instead of MaxW.
+      BOTH modes; the default 110 sits exactly at the DB cap and tightens
+      sweep by 4 bins (extra wideband gate ahead of Step 6c). Wideband
+      (WiFi) rejection is additionally owned by Step 6c (sweep).
     CAUTION: values below ~100 bins (7.8 MHz) reject analog FPV video
     carriers (8-18 MHz) — the emission extent measures the FULL video band,
     not the crest fragment
@@ -1122,8 +1143,15 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
     Sharp сидел на дефолте 100. Теперь шаг ABSTAIN'ит: вооружён <=> 
     eased_sharpness_limit(user, w2) > 100 (SHARPNESS_NOOP_CEILING —
     тот же предикат, что ест EFFECTIVE-arming Step 13, audit M3 rev.2)
-    и <=> eased_flatness_limit(user, w2) < 100 для Flat. Тот же конфиг
-    вооружает только Flat: WiFi fail = 0 из 1 = 0% => REJECT.
+    и <=> eased_flatness_limit(user, w2) < 99 (FLATNESS_EFFECTIVE_CEILING,
+    F1 2026-10: лимит 99 отклоняет только синтетический pct == 100 —
+    реальная плосковершина 40-90% его не достигает, это ABSTENTION, а
+    не вердикт; сглаженный дефолт F = 25 попадает ровно на 99 во всей
+    полосе w <= 10, и до F1 фантомное Flat(99) не давало A-1 raw
+    fallback'у включиться там — плато проходило на 100% при w = 5/10,
+    но отклонялось при w = 0 и w >= 15: немонотонность по SNR).
+    Тот же конфиг вооружает только Flat: WiFi fail = 0 из 1 = 0% =>
+    REJECT.
     Sens OFF VERDICT-IDENTICAL: у dead-band шага старый early-return
     никогда не срабатывал (ok был безусловно true), поэтому пропуск
     шага не меняет ни один accept/reject — убирается только фантомный
@@ -1167,22 +1195,29 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
 
   Step 13: Neighbor Margin (DB mode only; SKIPPED for shape-validated
            detections ONLY WHEN THE CHAIN IS ARMED — the EFFECTIVE
-           (Sens-w-eased) MaxW < 114, or EFFECTIVE Sharp > 100, or
-           EFFECTIVE Flat in (0..100) AND Step 10 would RUN for this
+           MaxW < 110 (DB_EXTENT_CAP_BINS — the DB measurable cap; F2
+           2026-10: the old local 114 was the SWEEP cap and made the
+           default MaxW = 110 read "armed" in DB where nothing measurable
+           can exceed 110 — the neighbor guard was then wrongly skipped
+           under a Sharp<=100 + Flat=0 config, the documented D-B hole),
+           or EFFECTIVE Sharp > 100, or
+           EFFECTIVE Flat in (0..99) AND Step 10 would RUN for this
            peak (Flat > 0, margin >= flatness guard [40 at Sens <= 75],
            w > 0) [audit M3 rev. 2: with Sens OFF / w = 100
-           the limits are the raw config; two deliberate corrections vs
-           legacy — Flat = 100 counted as "armed" before although
-           pct > 100 is unreachable, so it is now the no-op it is, and a
+           the limits are the raw config; corrections vs
+           legacy — Flat limits in the abstention band 99..100 counted
+           as "armed" before although a 99-bar rejects only the synthetic
+           pct == 100 (F1: same predicate as the in-frame arming), and a
            Flat config whose Step 10 abstained (margin < flatness guard)
            no longer arms; both keep Step 13 guarding where the chain
            cannot reject. Flat = 0 stays DISARMED for the legacy
-           permissive set. 2026-10 strict defaults (Sharp = 165, Flat =
-           25, Sym = 25) leave the chain ARMED at Sens OFF, so at
+           permissive set. 2026-10 strict defaults (MaxW = 110 — inert
+           in DB, Sharp = 165, Flat = 25, Sym = 25) leave the chain
+           ARMED at Sens OFF via Sharp/Flat, so at
            defaults Step 13 is skipped for shape-validated verdicts and
            the chain owns the wideband verdict]. Guards RSSI-only and TBD
            paths unconditionally; when the chain is DISARMED (Sharp <=
-           100 AND Flat = 0) it also guards
+           100 AND Flat = 0/99/100) it also guards
             shape-validated verdicts [audit D-B]: otherwise DB scan has
              NO wideband gate there, since Step 6c is sweep-only and
              Mahalanobis / RSSI-variance then defaulted OFF)
@@ -1213,15 +1248,17 @@ default OFF; with it OFF every gate below runs at ANY signal strength):
 
 Sensitive ("Sens") Mode — ADAPTIVE shape (self-tuning, SHAPE_ADAPT_*):
   When ON the shape chain NEVER skips a step — instead:
-  1) the Step-3 gate becomes noise-adaptive: clamp(3σ_IQR, 10, Mar-2)
-     (opens in clean noise, capped by the user value — Sens is never
-     stricter than the user asked);
+  1) the Step-3 gate becomes noise-adaptive: clamp(3σ_IQR, 8, Mar)
+     (opens in clean noise, capped by the RAW user value — Sens is never
+     stricter than the user asked; A-5: the old Mar−2 cap collapsed the
+     clamp to [8,8] at the default Mar 10 and killed the measurement);
   2) Steps 5-12 ease their thresholds with the stringency weight
      w = min(100, (margin − gate)·100/20) and quadratic w² easing:
-       MinW → up to −10 bins (floor 2), MaxW → up to ×1.5,
        Sharp → 100 + (user−100)·w²/10000, Ratio → user·w²/10000,
        Valley → user + (ceil−user)·(1 − w²/10000), Flat → toward 100,
        Sym/Kurt → user·w²/10000.
+       (MinW and MaxW are NOT eased — both are raw user band edges,
+       easings removed in the 2026-10 dependency audit.)
      A marginal peak (just above the gate) is judged gently; a strong one
      (gate + 4 dB → w = 100) faces the EXACT user thresholds — so Sharp/
      Valley/Flat/Sym/Kurt still hold the line against WiFi in Sens mode.
@@ -1557,9 +1594,10 @@ width/margin frames remain user-tunable):
                                            control links & narrow spikes;
                                            below-gate TBD exempt at this
                                            floor, see Step 5 note)
-  DEFAULT_SPECTRUM_MAX_WIDTH      = 120   (≈9.4 MHz — ABOVE the 114-bin
-                                           DC-gap extent cap, so behaviorally
-                                           ≈ no cap for measurable extents)
+  DEFAULT_SPECTRUM_MAX_WIDTH      = 110   (≈8.6 MHz — A-2: AT the DB
+                                            110-bin extent cap (inert in
+                                            DB); real cap in sweep where
+                                            sidebands measure ≤114 bins)
   DEFAULT_SPECTRUM_PEAK_SHARPNESS = 165   (STRICT — clips the measured FPV
                                            100-130 band at medium range by
                                            design; inverted-V > 200 passes)
@@ -1802,8 +1840,9 @@ WiFi — ШИРОКОПОЛОСНЫЙ сигнал (20-40+ МГц), а окно 
   Updated:   2026-10-20 (STRICT SHAPE SET defaults, user-elected: MinW
              20→60 (≈4.69 MHz), Mar 20→10 (permissive gate; TBD floor 6→5
              and shape-adapt floor 10→8 retuned for the noise-model
-             static_asserts), MaxW 255→120 (≥114 DC-gap cap, inert),
-             Sharp 100→165 (clips FPV 100-130 band by design), Flat 0→25
+             static_asserts), MaxW 255→120→110 (A-2: at the DB 110-bin
+             extent cap — inert in DB, real cap in sweep), Sharp 100→165
+             (clips FPV 100-130 band by design), Flat 0→25
              (ARMED), Sym 0→25 (ARMED), Shape score 100→75 (4-of-5); Demo
              preset renamed from
              DANGER DRONES; Demo preset band plan re-elected: W1 5300..6000

@@ -158,10 +158,11 @@ struct ScanConfig {
     // Sensitive ("Sens") mode — ADAPTIVE shape: the chain keeps RUNNING,
     // its thresholds self-tune to the observed SNR (constants.hpp
     // SHAPE_ADAPT_* contract). When ON (default):
-    //   - the Step-3 gate becomes noise-adaptive: clamp(3σ_IQR, 10,
-    //     spectrum_margin − 2) — opens in clean noise, capped by the user
+    //   - the Step-3 gate becomes noise-adaptive: clamp(3σ_IQR, 8,
+    //     spectrum_margin) — opens in clean noise, capped by the raw user
     //     value so Sens is never STRICTER than asked (±5..10 on "Mar"
-    //     cannot cliff-kill a marginal target);
+    //     cannot cliff-kill a marginal target; A-5: the old Mar−2 cap
+    //     collapsed the clamp to [8, 8] at the default Mar 10);
     //   - Steps 5-12 are NEVER skipped — each threshold eases with the
     //     weight w (peak distance above the gate, quadratic w² easing):
     //     marginal peaks are judged gently, strong peaks (gate + 4 dB) by
@@ -2139,10 +2140,13 @@ private:
      * @brief Spectrum margin with the sensitive-mode relaxation applied
      * @return spectrum_margin, reduced by 2 (min 1) when sensitive_mode is on
      * @note Single source of truth for the sensitive-mode BASE margin. In
-     *       Sens mode this value acts as the CAP of the noise-adaptive gate
-     *       (see shape_gate_margin / constants.hpp SHAPE_ADAPT_*), not the
-     *       gate itself. The full Step 3 gate (including the
-     *       high-sensitivity scaling) is shape_gate_margin().
+     *       Sens mode this value is the PRE-MEASUREMENT fallback while
+     *       no auto_gate_ exists yet (first frame / chain disabled); the
+     *       noise-adaptive gate itself (update_auto_gate) clamps 3σ to
+     *       [SHAPE_ADAPT_GATE_FLOOR, raw spectrum_margin] — the raw value
+     *       is the cap, not this relaxed base (A-5 2026-10). The full
+     *       Step 3 gate (including the high-sensitivity scaling) is
+     *       shape_gate_margin().
      */
     [[nodiscard]] uint8_t effective_spectrum_margin() const noexcept;
 
@@ -2156,10 +2160,12 @@ private:
      *         design (the user explicitly chose max weak-signal sensitivity).
      * @note SENS ADAPTIVE (sensitive_mode ON): returns the per-frame
      *       noise-adaptive gate measured by update_auto_gate() —
-     *       clamp(3σ_IQR, SHAPE_ADAPT_GATE_FLOOR, effective_spectrum_margin())
-     *       — or effective_spectrum_margin() while no measurement exists yet
+     *       clamp(3σ_IQR, SHAPE_ADAPT_GATE_FLOOR, spectrum_margin) —
+     *       or effective_spectrum_margin() while no measurement exists yet
      *       (auto_gate_ == 0 sentinel: first frame / chain disabled). Never
-     *       stricter than the user's value (SHAPE_ADAPT_* contract #1).
+     *       stricter than the user's raw value (SHAPE_ADAPT_* contract #1;
+     *       A-5: raw cap, not the relaxed Mar−2 base — the old base
+     *       collapsed the clamp to [8, 8] at defaults).
      * @note Shared by apply_shape_filters() Step 3, the normal-mode secondary
      *       candidate gate, the sweep fixed-threshold candidate gate, and the
      *       TBD narrowband guard's width elevation anchor. Keeping all four on
@@ -2187,7 +2193,7 @@ private:
      *       current callers re-fill it from scratch later (Step 12 kurtosis,
      *       next frame's Step 1), so the contract holds.
      * @note Takes p75 → IQR → 3σ, clamps to
-     *       [SHAPE_ADAPT_GATE_FLOOR, effective_spectrum_margin()] and stores
+     *       [SHAPE_ADAPT_GATE_FLOOR, spectrum_margin] and stores
      *       auto_gate_. Call immediately AFTER Step 1, i.e. strictly before
      *       this frame's candidate gates / shape chain / TBD anchors read
      *       shape_gate_margin(). sensitive_mode OFF → auto_gate_ = 0 (the
@@ -2237,6 +2243,16 @@ private:
          * @return 100 when no similarity step was armed (an empty score is a
          *         full score: nothing disagreed, the hard envelope speaks),
          *         else 100 * popcount(pass) / popcount(armed).
+         * @note A-1 FAIL-CLOSED GUARD (2026-10): the empty-set auto-pass
+         *       below is only reachable for the Sens-OFF-ACCEPT cases —
+         *       apply_shape_filters() (raw fallback) switches sim_armed to
+         *       the raw, Sens-OFF-equivalent gate set whenever w-easing
+         *       silences a non-empty user configuration, so an empty armed
+         *       set HERE means "user gates OFF" or "gates structurally
+         *       skipped for this peak", both of which Sens OFF accepts by
+         *       the identical ladder. The wideband flat-top that used to
+         *       slip through the gate..gate+SLACK band can no longer reach
+         *       this return with a phantom 100.
          * @note SINGLE AUTHOR of the ratio — the Step-13 EFFECTIVE-ARMING
          *       test in scanner.cpp consumes this and must never re-derive it.
          * @note DENOMINATOR IS popcount(armed), NEVER the mask VALUE (audit
