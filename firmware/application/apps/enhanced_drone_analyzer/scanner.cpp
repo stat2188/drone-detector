@@ -1158,7 +1158,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         // already-armed seat, which this arming test already covers via
         // the uncapped eased value.
         // A-3 WAIVER (2026-10): the in-frame chain also arms Flat when
-        // effective_width >= FLATNESS_WIDE_WAIVER_BINS (60 bins ≈ 4.7 MHz)
+        // effective_width >= FLATNESS_WIDE_WAIVER_BINS (40 bins ≈ 3.1 MHz)
         // even below the margin floor. This mirror deliberately does NOT
         // add the width term: ShapeDetection carries no width, and
         // over-claiming arming here would SKIP the neighbor post-filter
@@ -3235,7 +3235,7 @@ bool DroneScanner::apply_shape_filters(
     // gate, and stricter there is exactly the requested direction. At the
     // then-shipped default (MinW = 2) the old relaxation already clamped to
     // the then-spike-floor (DEFAULT_SPECTRUM_MIN_WIDTH, later raised to 20,
-    // then 60),
+    // then 60, now 40),
     // so the default path stayed byte-identical (dependency audit: no test,
     // no arming predicate and no
     // sweep-specific site consumes minw_relax — Step 13 effective-arming
@@ -3536,7 +3536,7 @@ bool DroneScanner::apply_shape_filters(
     // EFFECTIVE-ARMING flat term consumes the SAME run guard (audit M3
     // rev. 2) — an armed Flat verdict may only be granted when this step
     // would actually RUN for this peak. A-3 waiver: a fragment >=
-    // FLATNESS_WIDE_WAIVER_BINS (60 bins ≈ 4.7 MHz) bypasses this floor
+    // FLATNESS_WIDE_WAIVER_BINS (40 bins ≈ 3.1 MHz) bypasses this floor
     // entirely (wideband evidence); the mirror at Step 13 stays
     // conservative (no width term) to never skip a post-filter the chain
     // didn't run.
@@ -3630,7 +3630,7 @@ bool DroneScanner::apply_shape_filters(
     // mirror of the predicate was deleted, audit F4 pattern).
     // A-3 WIDE-FRAGMENT FLOOR WAIVER (2026-10): the margin floor protects
     // the flatness STATISTIC on narrow low-SNR fragments; a fragment that
-    // already spans >= FLATNESS_WIDE_WAIVER_BINS (~4.7 MHz) is wideband
+    // already spans >= FLATNESS_WIDE_WAIVER_BINS (~3.1 MHz) is wideband
     // evidence by itself, so a WiFi/BT plateau parked in the gate..floor
     // band no longer escapes Flat (it was owned only by MaxW/sharpness
     // there). Applies in BOTH modes. DOCUMENTED COST: weak wide BLUNT-TOP
@@ -3804,9 +3804,10 @@ bool DroneScanner::apply_shape_filters(
     //     -> empty -> pass, because Sens OFF skips them as well;
     //   - Sens OFF: sens_parallel is false -> fallback never engages.
     // Threshold semantics unchanged: the SAME clamped score (50..100,
-    // DEFAULT 75 — 4 of 5 armed steps must pass; on the 3-seat raw set 75
-    // reads as AND, so the fallback can never be LOOSER than the eased
-    // path) applies to the raw set exactly as it does to the eased set —
+    // DEFAULT 100 = strict AND — every armed step must pass on BOTH sets,
+    // so the fallback can never be LOOSER than the eased path; on the
+    // 3-seat raw set even a lowered 75 still reads as AND) applies to the
+    // raw set exactly as it does to the eased set —
     // lowering shape_sim_threshold_pct stays a permissive opt-in in both
     // regimes. DOCUMENTED RESIDUAL (audit D2, fail-closed BY DESIGN): the
     // fallback band w ∈ {0, 5, 10} judges at FULL Sens-OFF stringency, so
@@ -4218,7 +4219,7 @@ bool DroneScanner::apply_shape_filters(
     // (ARMED, strict) — a fat blunt-topped FPV peak measured 45-70% and is
     // rejected here on strong peaks BY DESIGN (user-elected; this step
     // normally engages above ~8 dB margin, i.e. exactly on strong visible
-    // peaks; A-3 waiver: also on wide fragments >= 60 bins even below the
+    // peaks; A-3 waiver: also on wide fragments >= 40 bins even below the
     // margin floor — wideband evidence by itself).
     // Lower Flat toward 40-45 in Settings to recover blunt-top FPV (cost:
     // WiFi/BT discrimination weakens; 0 disables the filter). Weak peaks
@@ -4480,13 +4481,15 @@ bool DroneScanner::tbd_peak_is_narrowband(
     // The exempt is CONDITIONAL on MinW sitting at the default floor
     // (DEFAULT_SPECTRUM_MIN_WIDTH); above it MinW is enforced for EVERY TBD
     // target, in-frame or below-gate.
-    // FLOOR SEMANTICS (2026-10 default change, MinW floor 2 → 60): at the
-    // new floor the exempt is no longer a no-op — below-gate targets with
-    // width < 60 bins pass the MinW guard BY DESIGN while the user stays at
-    // defaults (the below-gate path still owns MaxW + the TBD-owned
+    // FLOOR SEMANTICS (2026-10 default changes, MinW floor 2 → 60 → 40): at
+    // the default floor the exempt is no longer a no-op — below-gate targets
+    // with width < 40 bins pass the MinW guard BY DESIGN while the user
+    // stays at defaults (the below-gate path still owns MaxW + the TBD-owned
     // BOTH-EDGES wideband rule + persistence). A user raising MinW ABOVE
-    // 60 gets the full below-gate enforcement (the original hole fix). The
-    // in-frame path always enforces the exact config value.
+    // 40 gets the full below-gate enforcement (the original hole fix) —
+    // NOTE for upgraders: a saved file still carrying the OLD default 60
+    // now counts as "raised" and gets that enforcement. The in-frame path
+    // always enforces the exact config value.
     // Stack: 0 B. Flash: ~24 bytes.
     const bool minw_applies =
         (peak_margin >= eff_margin)

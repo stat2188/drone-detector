@@ -306,8 +306,10 @@ public:
     // Preset loader — local row 11 (a couple of rows below Name:), left
     // column, so the encoder path Name → Down → preset is a single step.
     // Applies the Flash-resident Demo preset band plan to ALL 4 windows
-    // (sweep_presets.hpp): enables every window, sets the preset spans and
-    // fills the drone-bearing detection ranges. UI-side only — like DEFAULTS
+    // (sweep_presets.hpp): sets the preset spans and fills the drone-bearing
+    // detection ranges on every window, but stages Enabled per the table —
+    // only W1 ships enabled, W2/W3/W4 come up off (re-enable individually;
+    // slots are pre-filled for them). UI-side only — like DEFAULTS
     // it does NOT save; SAVE persists and pushes to the scanner.
     // Label length 11 <= 15 chars → libstdc++ SSO, zero heap.
     ui::Button button_preset_{{UI_POS_X(0), UI_POS_Y(11), UI_POS_WIDTH(16), 20}, "Demo preset"};

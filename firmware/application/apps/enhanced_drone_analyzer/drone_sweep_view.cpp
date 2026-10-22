@@ -669,7 +669,8 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     };
 
     // Preset loader (child button of sweep_view_, see SweepWindowView) —
-    // applies the Flash-resident Demo preset band plan to all 4 windows.
+    // applies the Flash-resident Demo preset band plan to all 4 windows
+    // (Enabled staged by the table: only W1 comes up on).
     // Closure [this] = 4 B → std::function inline storage, zero heap.
     sweep_view_.on_preset = [this]() {
         apply_sweep_preset(SWEEP_PRESET_DEMO);
@@ -816,7 +817,7 @@ void DroneSweepView::apply_sweep_preset(const uint8_t preset_index) noexcept {
         windows_[w].start_freq = win.start_hz;
         windows_[w].end_freq = win.end_hz;
         windows_[w].step_freq = SWEEP_GAPLESS_STEP_MAX_HZ;  // honest gapless pitch
-        windows_[w].enabled = win.enabled || (w == 0);      // Window 1 is always on
+        windows_[w].enabled = win.enabled || (w == 0);      // W1 forced on; others take the table's flag
         for (uint8_t i = 0; i < DETECTION_WINDOWS_PER_WINDOW; ++i) {
             windows_[w].det_windows[i].start_hz =
                 static_cast<FreqHz>(win.slots[i].from_mhz) * MHZ;

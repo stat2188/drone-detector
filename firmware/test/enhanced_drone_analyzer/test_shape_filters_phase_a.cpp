@@ -243,24 +243,25 @@ TEST_CASE("A-5: static floor-vs-default invariant (constants.hpp assert)") {
 // A-3: wide-fragment waiver of the flatness margin floor
 // ============================================================================
 
-TEST_CASE("A-3: waiver constant equals the MinW default (60 bins)") {
+TEST_CASE("A-3: waiver constant equals the MinW default (40 bins)") {
     using namespace phase_a;
-    CHECK(FLATNESS_WIDE_WAIVER_BINS == 60);
+    CHECK(FLATNESS_WIDE_WAIVER_BINS == 40);
+    CHECK(FLATNESS_WIDE_WAIVER_BINS == DEFAULT_SPECTRUM_MIN_WIDTH);
     CHECK(FLATNESS_WIDE_WAIVER_BINS > FLATNESS_MIN_SIGNAL_WIDTH);
 }
 
 TEST_CASE("A-3: margin floor unchanged for narrow fragments") {
     using namespace phase_a;
-    // margin 30 < 40, width 50 < 60: Flat stays disarmed (old behavior).
-    CHECK(!flat_struct_at_default(25, 30, 50));
-    // margin 39, width 59: still disarmed (both bounds strict).
-    CHECK(!flat_struct_at_default(25, 39, 59));
+    // margin 30 < 40, width 39 < 40: Flat stays disarmed (old behavior).
+    CHECK(!flat_struct_at_default(25, 30, 39));
+    // margin 39, width 39: still disarmed (both bounds strict).
+    CHECK(!flat_struct_at_default(25, 39, 39));
 }
 
 TEST_CASE("A-3: waiver arms Flat for wide fragments below the floor") {
     using namespace phase_a;
-    // The WiFi-plateau hole: margin in the gate..floor band, width >= 60.
-    CHECK(flat_struct_at_default(25, 30, 60));
+    // The WiFi-plateau hole: margin in the gate..floor band, width >= 40.
+    CHECK(flat_struct_at_default(25, 30, 40));
     CHECK(flat_struct_at_default(25, 8, 110));
 }
 

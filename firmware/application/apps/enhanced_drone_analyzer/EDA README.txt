@@ -299,10 +299,10 @@ Key Structures:
     uint8_t cfar_ref_cells/guard_cells/threshold_x10
     uint8_t cfar_hybrid_alpha/beta/gamma, os_cfar_k_percent, vi_cfar_threshold_x10
     bool shape_bypass_enabled, robust_width_floor_enabled, sensitive_mode
-    uint8_t shape_sim_threshold_pct (50..100, default 75 = 4-of-5 armed
-        steps must agree, only read when sensitive_mode ON; files stamped
-        <= 1.3 migrate a stored 50 to the current default on load — audit
-        D-FULL-PASS)
+    uint8_t shape_sim_threshold_pct (50..100, default 100 = strict AND
+        (every armed similarity step must agree), only read when
+        sensitive_mode ON; files stamped <= 1.3 migrate a stored 50 to
+        the current default on load — audit D-FULL-PASS)
     bool kurtosis_enabled, adaptive_cfar_enabled
     uint8_t rssi_decrease_cycles, freq_match_radius_mhz
 
@@ -382,11 +382,14 @@ Preset band plans (SWEEP_PRESETS, sweep_presets.hpp):
   The SWP tab's Demo preset button applies a factory band plan to all four
   windows at once: the window span, the Enabled flag, and the detection
   ranges — each labelled from RANGE_NAMES, unused slots left 0/0 (off).
-  Like DEFAULTS it is a UI-side edit: nothing is written until SAVE. The
-  table lives in Flash and is validated at compile time (name fits the
-  button SSO, spans inside the hardware range, every slot inside its own
-  window, no two slots overlapping beyond their shared boundary), so an
-  invalid preset fails the build instead of shipping.
+  Since 2026-10-22 the Enabled flag is staged by the table: only W1 ships
+  enabled, W2/W3/W4 come up OFF with their spans and slots pre-filled —
+  re-enable them individually and the full band plan is restored with no
+  re-entry. Like DEFAULTS it is a UI-side edit: nothing is written until
+  SAVE. The table lives in Flash and is validated at compile time (name
+  fits the button SSO, spans inside the hardware range, every slot inside
+  its own window, no two slots overlapping beyond their shared boundary),
+  so an invalid preset fails the build instead of shipping.
   The Demo preset totals 2100 MHz (700 + 300 + 500 + 600), all spans
   user-editable (2026-10 user-elected plan): W1 5300..6000 with detection
   in 5 gapless priority zones 5645..5950 (slot 0 first; the guard slices
@@ -869,7 +872,7 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
       they all measure the SAME [left..right] band
 
   Step 5: Minimum Width
-    signal_width must exceed spectrum_min_width (default 60 bins ≈ 4.69 MHz)
+    signal_width must exceed spectrum_min_width (default 40 bins ≈ 3.13 MHz)
     → Rejects narrow noise spikes AND narrowband links (ELRS/FrSky 2-8
       bins die at defaults; note: below-gate TBD targets are exempt
       while MinW sits at the default floor — see tbd_peak_is_narrowband)
@@ -1617,10 +1620,11 @@ width/margin frames remain user-tunable):
                                            post-filters own FP rejection.
                                            Floor: ≥ 2×TBD_MIN_ELEVATION_UNITS
                                            and ≥ SHAPE_ADAPT_GATE_FLOOR+2)
-  DEFAULT_SPECTRUM_MIN_WIDTH      = 60    (≈4.69 MHz — rejects narrowband
+  DEFAULT_SPECTRUM_MIN_WIDTH      = 40    (≈3.13 MHz — rejects narrowband
                                            control links & narrow spikes;
                                            below-gate TBD exempt at this
-                                           floor, see Step 5 note)
+                                           floor, see Step 5 note; flatness
+                                           wide-waiver follows this floor)
   DEFAULT_SPECTRUM_MAX_WIDTH      = 110   (≈8.6 MHz — A-2: AT the DB
                                             110-bin extent cap (inert in
                                             DB); real cap in sweep where
@@ -1639,9 +1643,11 @@ width/margin frames remain user-tunable):
   DEFAULT_SPECTRUM_SYMMETRY       = 25    (ARMED, strict — weaker flank must
                                            carry >= ¼ of the stronger; slight
                                            FM asymmetry clips by design)
-  DEFAULT_SHAPE_SIM_THRESHOLD_PCT = 75    (Shape score — 4 of 5 armed
-                                           similarity steps must agree;
-                                           between majority-50 and AND-100)
+  DEFAULT_SHAPE_SIM_THRESHOLD_PCT = 100   (Shape score — STRICT AND: every
+                                           armed similarity step must agree
+                                           (= legacy Sens-OFF verdict); the
+                                           4-of-5 middle ground 75 stays a
+                                           settings-UI opt-in)
 
 CFAR Defaults:
   DEFAULT_CFAR_MODE           = CFARMode::OFF (USER DEFAULT; fixed threshold.
@@ -1864,6 +1870,14 @@ WiFi — ШИРОКОПОЛОСНЫЙ сигнал (20-40+ МГц), а окно 
 ================================================================================
   END OF DOCUMENTATION
   Generated: 2026-09-06
+  Updated:   2026-10-22 (defaults re-elected: MinW 60→40 (≈3.13 MHz, the
+             flatness wide-waiver FLATNESS_WIDE_WAIVER_BINS follows it
+             automatically), Shape score 75→100 (STRICT AND — every armed
+             similarity step must agree; 75 remains a settings-UI opt-in),
+             Demo preset stages W2/W3/W4 OFF — only W1 enabled on apply,
+             spans/slots of all four windows preserved; upgraders with a
+             saved MinW of 60 now count as "raised" and get full
+             below-gate TBD MinW enforcement)
   Updated:   2026-10-20 (STRICT SHAPE SET defaults, user-elected: MinW
              20→60 (≈4.69 MHz), Mar 20→10 (permissive gate; TBD floor 6→5
              and shape-adapt floor 10→8 retuned for the noise-model

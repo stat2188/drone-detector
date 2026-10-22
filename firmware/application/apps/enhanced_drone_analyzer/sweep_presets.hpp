@@ -110,6 +110,14 @@ struct SweepPreset {
 //     700..1000 control/telemetry band stay in-window).
 //     R1 400..1000  CTRL  433/700/868/915 MHz RC, telemetry, LoRa links
 //
+// ENABLED FLAGS (2026-10-22 user-elected): only W1 ships enabled — the
+// preset's spans and detection slots are staged for W2/W3/W4 but their
+// Enabled flag is false, so applying Demo gives exactly ONE scan window
+// (5.8 GHz video). The user re-enables W2/W3/W4 individually from the SWP
+// window's Enabled gate; ranges and slots above are preserved verbatim so
+// re-enabling restores the full band plan with no re-entry. apply_sweep_
+// preset() forces W1 on regardless (windows_[0].enabled = true).
+//
 // Invariants enforced on every preset (sweep_presets_are_valid() below):
 //   1. each window span is ordered and inside the hardware frequency range;
 //   2. an active slot is ordered (from <= to) and inside its own window span,
@@ -136,14 +144,17 @@ constexpr SweepPreset SWEEP_PRESETS[] = {
                {5760, 5820, range_label_index("MAVIC")},
                {5820, 5880, range_label_index("FPV")},
                {5880, 5950, range_label_index("FPV")}}}},
-            // W2 — extended 2.4 GHz ISM, one full-span slot
-            {2300000000, 2600000000, true,
+            // W2 — extended 2.4 GHz ISM, one full-span slot (staged OFF:
+            // spans/slots kept, Enabled false — see ENABLED FLAGS note)
+            {2300000000, 2600000000, false,
              {{{2300, 2600, range_label_index("CTRL")}, {}, {}, {}, {}}}},
             // W3 — 915 ISM RC + 1.2 GHz long-range FPV, one full-span slot
-            {900000000, 1400000000, true,
+            // (staged OFF)
+            {900000000, 1400000000, false,
              {{{900, 1400, range_label_index("FPV")}, {}, {}, {}, {}}}},
             // W4 — sub-GHz control/telemetry (433..1000), one full-span slot
-            {400000000, 1000000000, true,
+            // (staged OFF)
+            {400000000, 1000000000, false,
              {{{400, 1000, range_label_index("CTRL")}, {}, {}, {}, {}}}},
         }},
     },

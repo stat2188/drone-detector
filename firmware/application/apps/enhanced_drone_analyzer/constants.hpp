@@ -1141,22 +1141,29 @@ constexpr uint8_t DEFAULT_SPECTRUM_MARGIN = 10;
 /**
  * @brief Default minimum signal width in bins (1-100)
  * @note Signals narrower than this are rejected as needle spikes
- * @note 60 bins ≈ 4.69 MHz (strict default): rejects narrow noise spikes,
- *       narrowband control links (ELRS/FrSky 2-8 bins die) and narrowband
- *       clutter at the in-frame path. Analog FPV video (8-14 MHz wide)
- *       and wide digital FPV pass comfortably.
+ * @note 40 bins ≈ 3.13 MHz (2026-10-22 user-elected default): rejects
+ *       narrow noise spikes and narrowband control links (ELRS/FrSky
+ *       2-8 bins die; wider narrowband clutter up to 3.13 MHz dies too)
+ *       at the in-frame path, while letting medium-width signals (3-5 MHz
+ *       skirts, marginal digital FPV) through. Analog FPV video (8-14 MHz
+ *       wide) and wide digital FPV pass comfortably. The flatness
+ *       wide-fragment waiver (FLATNESS_WIDE_WAIVER_BINS) follows THIS
+ *       default by construction.
  * @note TBD below-gate EXEMPT side effect: the MinW narrowband guard in
  *       tbd_peak_is_narrowband() exempts below-gate targets while
  *       spectrum_min_width sits at THIS default floor
  *       (minw_applies = peak_margin >= gate || min_width > default). At the
- *       default floor the exempt lets below-gate targets with width < 60
+ *       default floor the exempt lets below-gate targets with width < 40
  *       bins pass the MinW guard by design — the in-frame path still
- *       enforces the full 60-bin edge. Raising MinW above 60 extends
- *       enforcement to the below-gate path too.
+ *       enforces the full 40-bin edge. Raising MinW above 40 extends
+ *       enforcement to the below-gate path too (NOTE for upgraders: a
+ *       saved file that still carries the OLD default 60 now counts as
+ *       "raised" and gets full below-gate enforcement).
  * @note History: 2 bins ≈ 156 kHz (permissive, "pass narrow AND wide"),
- *       9 bins ≈ 700 kHz (older analog-FPV default), 20 ≈ 1.56 MHz.
+ *       9 bins ≈ 700 kHz (older analog-FPV default), 20 ≈ 1.56 MHz,
+ *       60 ≈ 4.69 MHz (strict 2026-10 set), 40 ≈ 3.13 MHz (current).
  */
-constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 60;
+constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 40;
 
 /**
  * @brief Default maximum signal width in bins (1-255)
@@ -1420,14 +1427,14 @@ constexpr uint8_t FLATNESS_MIN_SIGNAL_WIDTH = 4;
  * @note The FLATNESS_MIN_PEAK_MARGIN floor exists because the 90%-bar
  *       flatness statistic is unreliable at LOW SNR on NARROW fragments
  *       (20-50% swing). A fragment that already spans >= THIS many bins
- *       (≈4.7 MHz — the shipped MinW default) is wideband EVIDENCE by
- *       itself: a WiFi/BT plateau parked just above the margin gate
- *       (margin 8..39 at Sens defaults) used to escape Flat entirely and
- *       was owned only by MaxW/sharpness; with the waiver the flatness
- *       statistic runs on it — the wide plateau damps exactly the low-SNR
- *       swing the floor was written to protect.
+ *       (≈3.13 MHz — the shipped MinW default, 2026-10-22) is wideband
+ *       EVIDENCE by itself: a WiFi/BT plateau parked just above the margin
+ *       gate (margin 8..39 at Sens defaults) used to escape Flat entirely
+ *       and was owned only by MaxW/sharpness; with the waiver the
+ *       flatness statistic runs on it — the wide plateau damps exactly the
+ *       low-SNR swing the floor was written to protect.
  * @note DOCUMENTED COST: a weak, wide, BLUNT-TOP analog FPV peak
- *       (margin < floor, width >= 60, flatness 40-70%) is now rejected at
+ *       (margin < floor, width >= 40, flatness 40-70%) is now rejected at
  *       the default Flat = 25 where it previously passed — the same
  *       user-elected trade-off class as arming Flat on strong peaks;
  *       raise Flat toward 40-45 or disable it (0) to recover those.
@@ -1896,12 +1903,15 @@ constexpr uint16_t SHAPE_SIM_MASK = SHAPE_BIT_SHARPNESS | SHAPE_BIT_VALLEY |
 // the "Shape score" checkbox).
 constexpr uint8_t SHAPE_SIM_THRESHOLD_MIN_PCT = 50;
 constexpr uint8_t SHAPE_SIM_THRESHOLD_MAX_PCT = 100;
-// 75 = 4 of 5 armed steps must agree (or 3 of 4, 2 of 3 by the floor rule).
-// STRICTER than the pre-D-FULL-PASS default 50 (majority), LOOSER than the
-// D-FULL-PASS default 100 (strict AND): one dissenting armed shape step can
-// no longer kill a detection outright, but a single agreeing step is far
-// from enough. User-elected middle ground (2026-10).
-constexpr uint8_t DEFAULT_SHAPE_SIM_THRESHOLD_PCT = 75;
+// 100 = STRICT AND (2026-10-22 user-elected default, restoring the
+// D-FULL-PASS product default): EVERY armed similarity step must agree —
+// the Sens score is verdict-identical to the Sens-OFF ladder, so "Shape
+// score" can never be LOOSER than the legacy chain by default. The middle
+// ground 75 (4 of 5 armed steps; user-elected 2026-10, briefly the
+// default) remains reachable from the settings UI as an EXPLICIT opt-in to
+// dissent-tolerance (one dissenting armed shape step no longer kills a
+// detection outright, but a single agreeing step is far from enough).
+constexpr uint8_t DEFAULT_SHAPE_SIM_THRESHOLD_PCT = 100;
 // ENCODER STEP for the settings-UI NumberField — NOT a default value.
 // ui::NumberField's 4th constructor positional is `step`, and the widget has
 // NO default-value parameter at all (value_ starts at 0 and is clamped into
