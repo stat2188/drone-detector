@@ -2355,6 +2355,19 @@ void DroneScanner::clear_lock_state() noexcept {
     // leave a stale "window X last fed" behind, or the next ambiguous
     // cross-window center could be evaluated against dead history.
     last_sweep_win_idx_ = MAX_SWEEP_WINDOWS;
+    // Audit C1: sweep confirm pendings are integration evidence too — a
+    // lock clear must not leave a half-confirmed candidate behind (the
+    // DB primary/secondary pendings are cleared by the loops above).
+    // Visit-debounce state rides along: a stale visit key must not make
+    // the first post-clear sighting look like a repeat frame.
+    for (size_t s = 0; s < SWEEP_CONFIRM_SLOTS; ++s) {
+        sweep_pending_freq_[s] = 0;
+        sweep_pending_time_[s] = 0;
+        sweep_pending_count_[s] = 0;
+        sweep_pending_visit_[s] = 0;
+    }
+    sweep_confirm_visit_freq_ = 0;
+    sweep_confirm_visit_id_ = 0;
     if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
         state_ = ScannerState::SCANNING;
     }
@@ -2381,6 +2394,23 @@ void DroneScanner::reset_sweep_integrators() noexcept {
     // C3 barrier invalid ⇒ the first frame of the new mode forces the shared
     // integrator rebuild (mirrors the per-window keys above being zeroed).
     last_sweep_win_idx_ = MAX_SWEEP_WINDOWS;
+    // Audit C1: mode switch drops sweep confirm pendings along with every
+    // other integration artifact (frames captured in the OTHER mode must
+    // not count toward confirm_count of the new mode). Visit-debounce
+    // state clears with them; the Mahalanobis escalation counters clear
+    // too — one pre-switch sighting must not count toward a post-switch
+    // escalation.
+    for (size_t s = 0; s < SWEEP_CONFIRM_SLOTS; ++s) {
+        sweep_pending_freq_[s] = 0;
+        sweep_pending_time_[s] = 0;
+        sweep_pending_count_[s] = 0;
+        sweep_pending_visit_[s] = 0;
+    }
+    sweep_confirm_visit_freq_ = 0;
+    sweep_confirm_visit_id_ = 0;
+    for (uint8_t i = 0; i < MAX_TRACKED_DRONES; ++i) {
+        mahalanobis_escalation_count_[i] = 0;
+    }
 }
 
 size_t DroneScanner::get_tracked_count() const noexcept {
@@ -3597,9 +3627,10 @@ bool DroneScanner::apply_shape_filters(
     // early-return could never have fired either — skipping the step
     // changes no accept/reject, it only removes the phantom vote and the
     // probe/fused-loop work (a CPU win). The dual-peak skip
-    // (has_secondary_peak) is unaffected: it lives INSIDE the armed
-    // verdict and keeps its documented always-pass semantics (README
-    // paradox (b)).
+    // (has_secondary_peak) still lives INSIDE the armed verdict but,
+    // since audit M2, registers as a NEUTRAL abstention (seat removed
+    // from both sim_armed and sim_pass) instead of the old always-pass
+    // agreement vote.
     const bool sim_armed_valley = valley_outer &&
         ((static_cast<uint16_t>(noise_floor) +
           eased_valley_limit(config_.spectrum_valley_depth, peak_margin, w2))
@@ -4177,25 +4208,31 @@ bool DroneScanner::apply_shape_filters(
         //  (a) very_strong => valley_outer == false => the step is UNARMED.
         //      It contributes nothing to sim_armed (denominator) and nothing
         //      to sim_pass (numerator): a fully NEUTRAL abstention.
-        //  (b) has_secondary_peak => armed, ridge scan RAN, but the veto was
-        //      deliberately withheld. The bit lands in BOTH sim_armed and
-        //      sim_pass, i.e. it counts as AGREEMENT and pulls the score UP.
+        //  (b) has_secondary_peak => the ridge scan RAN but the veto was
+        //      deliberately withheld. Audit M2: the seat is now REMOVED from
+        //      BOTH sim_armed and sim_pass (neutral abstention, same shape
+        //      as (a)) — previously it counted as AGREEMENT and pulled the
+        //      score UP. The legacy accept/reject path is unchanged (the
+        //      skip still never early-returns below), and at the default
+        //      shape_sim_threshold_pct = 100 the accept set is identical
+        //      (every remaining armed step must pass either way — removing
+        //      a 1/1 pass seat from both numerator and denominator cannot
+        //      flip a ==100 comparison). What changes is the LOWERED
+        //      threshold band: a WiFi/BT flat-top with one narrow side
+        //      lobe + dip (dual-peak geometry) no longer gets a free
+        //      forgiveness vote that could mask a dissenting Sharp/Flat
+        //      verdict at score >= 50 opt-in.
         //  (c) noise_floor + eased_valley_limit() > 255 (D-ARM ext. 2026-10,
         //      regime (3)) => sim_armed_valley == false even when
         //      valley_outer is true: max_valley is structurally bounded by
         //      255 − noise_floor, so ok ≡ true and the step would have been
         //      a permanent always-pass seat. Kind (c) is a fully NEUTRAL
         //      abstention, identical to (a) — the block above never runs.
-        //
-        // (b) is correct rather than accidental: the dual-peak skip is a
-        // POSITIVE FPV identification ("exactly one narrow extra ridge with a
-        // real dip beside it" = video + audio subcarrier), so its silence is
-        // evidence FOR the candidate, not an absence of evidence. It also
-        // mirrors legacy exactly, which treats the skip as a pass (no
-        // `return false`). Collapsing (b) into (a) would silently tighten
-        // the Sens score by one vote whenever a genuine dual-peak showed up
-        // — the exact population the filter was written to accept.
-        if (ok) verdict.sim_pass |= SHAPE_BIT_VALLEY;
+        if (has_secondary_peak) {
+            verdict.sim_armed &= ~SHAPE_BIT_VALLEY;
+        } else if (ok) {
+            verdict.sim_pass |= SHAPE_BIT_VALLEY;
+        }
         if (!sens_parallel && !ok) return false;
     }
 
@@ -4554,6 +4591,111 @@ void DroneScanner::apply_sweep_tracking(
     // range is dropped; when NO window is active, the full range is allowed.
     if (!is_detection_window_allowed(win_idx, peak_freq)) return;
 
+    // SWEEP CONFIRM GATE (audit C1): DB scan requires config_.confirm_count
+    // sightings before creating a track; sweep previously created drones
+    // from a SINGLE shape-passing frame — a one-shot noise spike or
+    // transient burst became a tracked threat with an immediate alert.
+    // Semantics mirror the DB primary path:
+    //   - confirm_count_enabled == false → no gating (user opt-out);
+    //   - an EXISTING track within the merge radius is never gated (this
+    //     is the update path — updates must flow every revisit);
+    //   - only NEW-track creation counts up; sightings within
+    //     SWEEP_CONFIRM_TOL_HZ accumulate in the pending slots; a lone
+    //     sighting expires after SWEEP_CONFIRM_TIMEOUT_MS (restarts at 1)
+    //     instead of confirming minutes later.
+    // VISIT DEBOUNCE (audit C1-fix): a sighting is one ARRIVAL at a slice
+    // center, not one frame. The same-tick drain burst delivers up to
+    // 1 + SWEEP_MAX_DRAIN_PER_TICK frames at the identical center and the
+    // first-slice dwell adds more (both by design — the TBD/median warm-up
+    // path), so frame counting would satisfy confirm_count=3 within a
+    // single tick (~26 ms) and re-open the transient-burst hole this gate
+    // exists to close. The visit id bumps whenever the sweep arrives at a
+    // different center; each pending slot records the visit that produced
+    // its last count, so an arrival counts at most once per pass — DB
+    // parity: DB delivers one frame per channel dwell and therefore
+    // counts per-visit by construction. Multiple DISTINCT peaks of one
+    // frame share the visit id and each keep their own slot, so parallel
+    // candidates at the same center are unaffected.
+    // Covers BOTH callers of this function (shape-validated peaks and
+    // sweep TBD). Thread: UI drain thread, no mutex — same established
+    // _internal pattern as the Mahalanobis/tracker calls below (scanner
+    // thread is stopped in sweep mode).
+    // confirm_count == 1 skips the machinery entirely: one sighting
+    // confirms by definition (exact DB parity).
+    if (config_.confirm_count_enabled && config_.confirm_count > 1) {
+        const ErrorResult<size_t> existing = find_nearest_drone_internal(
+            peak_freq, static_cast<FreqHz>(config_.freq_match_radius_mhz) * 1'000'000ULL);
+        if (!existing.has_value()) {
+            if (center_freq != sweep_confirm_visit_freq_) {
+                sweep_confirm_visit_freq_ = center_freq;
+                ++sweep_confirm_visit_id_;  // wraps: equality compare only
+            }
+            const SystemTime now_sweep_confirm = chTimeNow();
+            size_t slot = SWEEP_CONFIRM_SLOTS;      // sentinel: no match
+            size_t free_slot = SWEEP_CONFIRM_SLOTS; // sentinel: no free slot
+            for (size_t s = 0; s < SWEEP_CONFIRM_SLOTS; ++s) {
+                if (sweep_pending_freq_[s] == 0) {
+                    if (free_slot >= SWEEP_CONFIRM_SLOTS) free_slot = s;
+                    continue;
+                }
+                const FreqHz diff = (peak_freq > sweep_pending_freq_[s])
+                    ? (peak_freq - sweep_pending_freq_[s])
+                    : (sweep_pending_freq_[s] - peak_freq);
+                if (diff <= SWEEP_CONFIRM_TOL_HZ) {
+                    slot = s;
+                    break;
+                }
+            }
+            if (slot >= SWEEP_CONFIRM_SLOTS) {
+                // No matching pending. Claim a free slot; when the table is
+                // full (flood of distinct candidates), recycle the OLDEST
+                // sighting — an expired/stale pending must never starve a
+                // real new candidate of its slot.
+                if (free_slot >= SWEEP_CONFIRM_SLOTS) {
+                    size_t oldest = 0;
+                    for (size_t s = 1; s < SWEEP_CONFIRM_SLOTS; ++s) {
+                        if (sweep_pending_time_[s] < sweep_pending_time_[oldest]) oldest = s;
+                    }
+                    free_slot = oldest;
+                }
+                sweep_pending_freq_[free_slot] = peak_freq;
+                sweep_pending_count_[free_slot] = 1;
+                sweep_pending_time_[free_slot] = now_sweep_confirm;
+                sweep_pending_visit_[free_slot] = sweep_confirm_visit_id_;
+                return;  // wait for more visits
+            } else {
+                // Matched pending: a stale sighting restarts the window at 1
+                // (same CONFIRM_TIMEOUT_MS semantics as the DB primary pair).
+                if ((now_sweep_confirm - sweep_pending_time_[slot]) >= SWEEP_CONFIRM_TIMEOUT_MS) {
+                    sweep_pending_count_[slot] = 1;
+                    sweep_pending_time_[slot] = now_sweep_confirm;
+                    sweep_pending_visit_[slot] = sweep_confirm_visit_id_;
+                    return;
+                }
+                // Same pending within the visit tolerance: only a NEW visit
+                // may add a confirmation — repeat frames of the current
+                // visit (drain burst / first-slice dwell at the identical
+                // center) already had their say.
+                if (sweep_pending_visit_[slot] == sweep_confirm_visit_id_) {
+                    return;  // same visit — already counted
+                }
+                sweep_pending_visit_[slot] = sweep_confirm_visit_id_;
+                if (sweep_pending_count_[slot] < config_.confirm_count) {
+                    ++sweep_pending_count_[slot];
+                }
+                if (sweep_pending_count_[slot] < config_.confirm_count) {
+                    return;  // still accumulating confirmations
+                }
+                // Confirmed — free the slot; the created track takes over
+                // (future sightings hit the existing-track fast path above).
+                sweep_pending_freq_[slot] = 0;
+                sweep_pending_count_[slot] = 0;
+                sweep_pending_time_[slot] = 0;
+                sweep_pending_visit_[slot] = 0;
+            }
+        }
+    }
+
     // Detection-range label (SWP "Name" selector). Resolved on EVERY visit so
     // a rename in the SWP tab applies live to already-tracked drones.
     // 0 = no label → the drone list falls back to the type string ("Unknown").
@@ -4584,8 +4726,59 @@ void DroneScanner::apply_sweep_tracking(
             if (!mahalanobis_detector_.validate(
                 peak_rssi, peak_freq, stats, config_.mahalanobis_threshold_x10
             )) {
-                mahalanobis_rejected = true;
+                // ESCALATION BYPASS (bugfix: threat frozen at first-detection
+                // level — "detected as MEDIUM, never grows to CRITICAL over
+                // many passes while standing at the source"):
+                // validate() rejects a sample deviating from the stats
+                // accumulated SO FAR, and update_statistics() runs ONLY on
+                // pass — so a rejected sample could never move the model.
+                // A track first seen WEAK (stats anchored at MEDIUM-level
+                // RSSI) then re-observed STRONG stayed a permanent outlier
+                // vs the frozen weak model: update_rssi() never ran and
+                // threat/displayed RSSI were locked at the first-detection
+                // level forever (decay kept working — the asymmetry the
+                // user observed).
+                // K-CONSECUTIVE ESCALATION (audit fix): the staged one-shot
+                // bypass accepted ANY single rejected sample that classified
+                // higher — but the confirm gate above does NOT gate EXISTING
+                // tracks, so its "already cleared confirm" safety claim never
+                // applied here: a one-shot interferer spike could escalate
+                // threat in a single frame AND poison the model by folding
+                // the outlier into the statistics (subsequent REAL samples
+                // then validated as outliers against the dragged mean —
+                // track starvation, the mirror image of the frozen bug).
+                // Accept escalation only after
+                // MAHALANOBIS_ESCALATION_MIN_CONSECUTIVE CONSECUTIVE
+                // higher-classifying rejections (a one-shot spike leaves the
+                // counter at 1 and never fires; a genuine approach — user
+                // walks up to the source, source ramps up — repeats every
+                // revisit). On acceptance RE-SEED the model (reset + fold
+                // this sample) instead of blending into the stale mean: the
+                // frozen weak model is replaced wholesale, the outlier
+                // cannot drag it, and subsequent strong samples validate
+                // cleanly (the gate stays meaningful). Non-escalating
+                // outliers reset the counter and stay rejected as before.
+                // Stack: ~8 B. SRAM: 0 extra (count array declared with the
+                // detector). Flash: ~130 B.
+                uint8_t& esc_count = mahalanobis_escalation_count_[drone_idx];
+                const uint8_t cand_rank = classify_threat_rank(peak_rssi);
+                if (cand_rank > static_cast<uint8_t>(tracked_drones_[drone_idx].get_threat())) {
+                    if (esc_count < MAHALANOBIS_ESCALATION_MIN_CONSECUTIVE) {
+                        ++esc_count;
+                    }
+                    if (esc_count >= MAHALANOBIS_ESCALATION_MIN_CONSECUTIVE) {
+                        MahalanobisDetector::reset(stats);
+                        mahalanobis_detector_.update_statistics(
+                            stats, peak_rssi, center_freq, peak_freq);
+                    } else {
+                        mahalanobis_rejected = true;  // wait for a consecutive escalation
+                    }
+                } else {
+                    esc_count = 0;  // non-escalating outlier — not evidence
+                    mahalanobis_rejected = true;
+                }
             } else {
+                mahalanobis_escalation_count_[drone_idx] = 0;  // healthy sample
                 mahalanobis_detector_.update_statistics(stats, peak_rssi, center_freq, peak_freq);
             }
         } else {
@@ -4605,6 +4798,7 @@ void DroneScanner::apply_sweep_tracking(
                 drone.last_seen_time_ = now_sweep;
                 drone.update_cycle_peak(peak_rssi);
                 drone.get_mahalanobis_stats().last_tuned_frequency = peak_freq;
+                mahalanobis_escalation_count_[out_idx] = 0;  // fresh track (or reused slot)
                 if (drone.threat_level > ThreatLevel::NONE) {
                     raise_alert(drone.threat_level);  // staged — drained at end of this function (D-ALERT-LOCK)
                 }
@@ -5011,10 +5205,12 @@ void DroneScanner::process_spectrum_sweep(
         // touches adaptive_threshold_.
         if (config_.adaptive_cfar_enabled) {
             // RAW shelf (dBm domain, see the NOT-biased list at Step 1):
-            // AdaptiveThreshold classifies `rssi < floor_dBm + 20 dB` and the
-            // rssi argument is the RAW peak in dBm — the floor must be in the
-            // same, offset-independent domain or the user's dial would skew
-            // the false-alarm rate by 0.2 dB * offset (±1.8 dB at ±9).
+            // AdaptiveThreshold (audit C2) now classifies by MARGIN —
+            // `margin = rssi - floor_dBm <= 2x (threshold + 1) dB` — so the
+            // rssi argument (RAW peak in dBm) and the floor MUST share the
+            // same offset-independent domain, or the difference would bake
+            // the user's dial skew into the false-alarm rate
+            // (±0.2 dB * offset, ±1.8 dB at ±9).
             const int32_t floor_dBm = spectrum_value_to_dbm(raw_noise_floor, frame_total_gain);
             if (peak_count > 0) {
                 adaptive_threshold_.update(
@@ -5260,8 +5456,33 @@ void DroneScanner::process_spectrum_sweep(
         // only already-accepted values (old behavior: Md+ was a no-op for
         // pass/reject in sweep).
         int32_t peak_rssi = shape_rssi;
+        // Audit M1 (FP gate): the user RSSI threshold must judge the LIVE
+        // shape measurement. The clamped median below exists only to smooth
+        // fast fading for statistics/threat — it may never carry a
+        // sub-threshold peak through the gate (a decaying emitter whose
+        // warm history sits above the threshold would otherwise stay
+        // tracked; DB gates on the live shape peak, so this restores
+        // sweep/DB parity). apply_sweep_tracking()'s internal gate on the
+        // clamped value remains as the stricter history-side check.
+        if (shape_rssi <= config_.rssi_threshold_dbm) continue;
         if (p == 0 && median_filter_enabled_ && rssi_median_filter_.is_warm()) {
-            peak_rssi = rssi_median_filter_.get_median();
+            // Audit M1 clamp: the median smooths fast fading, but a stale
+            // window (strong emitter occupied this slice earlier in the
+            // pass, then vanished) must not substitute its history for the
+            // CURRENT frame's validated shape RSSI — that inflated
+            // peak_rssi fed threat classification and the > threshold gate,
+            // keeping dead emitters tracked and escalating threat levels.
+            // Clamp the median to ±SWEEP_MEDIAN_CLAMP_DB around this
+            // frame's shape_rssi: normal fading (≤6 dB) is still smoothed,
+            // a vanished emitter's stale median collapses onto the live
+            // measurement. Stack: 0 (reuses registers). Flash: ~24 B.
+            int32_t median_rssi = rssi_median_filter_.get_median();
+            if (median_rssi > shape_rssi + SWEEP_MEDIAN_CLAMP_DB) {
+                median_rssi = shape_rssi + SWEEP_MEDIAN_CLAMP_DB;
+            } else if (median_rssi < shape_rssi - SWEEP_MEDIAN_CLAMP_DB) {
+                median_rssi = shape_rssi - SWEEP_MEDIAN_CLAMP_DB;
+            }
+            peak_rssi = median_rssi;
         }
 
         apply_sweep_tracking(

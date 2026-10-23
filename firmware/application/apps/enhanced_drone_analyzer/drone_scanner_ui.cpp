@@ -733,8 +733,13 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         // Without explicit unregister, MessageHandlerMap hits chDbgPanic("MsgDblReg").
         unregister_handlers();
 
-        // Remember if scanning was active so on_show() can restore it
-        scanning_needs_restore_ = scanning_;
+        // Don't auto-restart scanning after returning from Settings.
+        // Settings is a configuration view — same contract as SWP (see
+        // button_swp_ below): the user starts scanning manually with Start/DB.
+        // The previous `scanning_needs_restore_ = scanning_` made on_show()
+        // silently relaunch DB-mode scanning in on_show() after SAVE —
+        // reported as a bug ("SAVE в Settings сам запускает Database mode").
+        scanning_needs_restore_ = false;
 
         // Save scanning state BEFORE exit_sweep_mode() clears it (line 1095).
         // Without this, the if(scanning_) block below is skipped, leaving the
@@ -922,9 +927,12 @@ DroneScannerUI::~DroneScannerUI() noexcept {
     // Unregister handlers before destroying anything else.
     unregister_handlers();
 
-    // CRITICAL: Exit sweep mode first to stop baseband streaming
+    // CRITICAL: Exit sweep mode first to stop baseband streaming.
+    // suppress_auto_restart=true: restarting DB scan during destruction is
+    // never desired (was_auto path would fire start_scanning + streaming_start
+    // right before destruct_objects/baseband::shutdown tear everything down).
     if (composite_active_) {
-        exit_sweep_mode();
+        exit_sweep_mode(true);
     }
 
     destruct_objects();

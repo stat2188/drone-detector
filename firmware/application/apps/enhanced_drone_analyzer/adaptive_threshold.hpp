@@ -41,10 +41,22 @@ public:
         int32_t noise_floor_dBm,
         uint8_t current_threshold_x10
     ) noexcept {
-        // Record whether this was a likely false alarm:
-        // detected + RSSI close to noise floor = probably noise.
-        // Both values must be in dBm for valid comparison.
-        const bool likely_false_alarm = detected && (rssi < noise_floor_dBm + 20);
+        // Audit C2 fix: the old classifier `rssi < floor_dBm + 20 dB`
+        // labelled nearly every REAL detection as a false alarm (typical
+        // drone detection margins are 6-15 dB, all below +20), driving the
+        // observed FA rate to ~100% and ratcheting the adapted threshold to
+        // CFAR_THRESHOLD_MAX_X10 — a total sensitivity collapse. A
+        // detection is a likely false alarm only when its margin BARELY
+        // exceeds the CFAR threshold it just passed (within 2x + 1 dB):
+        // noise spikes sit at 1-3 dB margin, real signals at 6+ dB. The
+        // comparison uses the ADAPTED threshold (current_threshold_x10_,
+        // the value find_peaks actually enforced this frame), converted
+        // raw-units->dB at 5 units/dB (spectrum_value_to_dbm scale).
+        // Both operands are dBm-domain (call sites pass raw peak + p25
+        // shelf in dBm), so the difference is a true dB margin.
+        const int32_t margin_dB = rssi - noise_floor_dBm;
+        const int32_t thresh_dB = (static_cast<int32_t>(current_threshold_x10_) / 50) + 1;
+        const bool likely_false_alarm = detected && (margin_dB <= 2 * thresh_dB);
 
         history_[history_index_] = likely_false_alarm ? 1 : 0;
         history_index_ = (history_index_ + 1) % HISTORY_SIZE;

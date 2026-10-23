@@ -2756,7 +2756,7 @@ private:
     // Tracked drones (fixed-size array, no heap allocation)
     std::array<TrackedDrone, MAX_TRACKED_DRONES> tracked_drones_;
 
-    // Number of tracked drones (uint8_t sufficient for MAX_TRACKED_DRONES=30)
+    // Number of tracked drones (uint8_t sufficient for MAX_TRACKED_DRONES=25)
     uint8_t tracked_count_;
 
     // Current scan frequency
@@ -2771,6 +2771,42 @@ private:
     // Pending detection hysteresis (prevent noise from adding phantom drones)
     FreqHz pending_frequency_{0};
     uint8_t pending_count_{0};
+
+    // SWEEP CONFIRM PENDINGS (audit C1): DB scan requires confirm_count
+    // sightings before creating a track; sweep's apply_sweep_tracking
+    // previously created drones from a SINGLE shape-passing frame — a
+    // one-shot noise spike or transient wideband burst became a tracked
+    // threat with an immediate alert. These slots mirror the DB primary
+    // pending but are keyed per-frequency (sweep sees up to
+    // CFAR_MAX_CONCURRENT_PEAKS peaks per frame at once) with a 4-bin
+    // tolerance (~312 kHz — covers the documented 1-3 bin inter-cycle
+    // peak drift, far below the 10 MHz tracker merge radius so two
+    // distinct emitters count independently). Existing tracks are NEVER
+    // gated (updates flow every revisit); only NEW-track creation counts
+    // up, exactly like the DB path. Timeout restarts a lone stale
+    // sighting instead of confirming it minutes later. A sighting is one
+    // VISIT (arrival at a slice center), not one frame: the same-tick
+    // drain burst and the first-slice dwell deliver up to 4+ frames at
+    // the identical center, so each pending slot records the visit id of
+    // its last count and repeat frames of the same visit never increment
+    // (audit C1-fix — frame counting would confirm a transient burst
+    // within a single tick). Ownership follows the sweep integrator
+    // pattern: written lockless from the sweep path (scanner thread
+    // stopped), reset under DATA_MUTEX.
+    // SRAM: slots 8x8 + 8x4 + 8x1 + 8x4 = 136 B + visit key 8 + 4 = 148 B
+    // (FreqHz is 8 bytes — an earlier note said 104 B).
+    static constexpr size_t SWEEP_CONFIRM_SLOTS = CFAR_MAX_CONCURRENT_PEAKS;
+    static constexpr FreqHz SWEEP_CONFIRM_TOL_HZ =
+        static_cast<FreqHz>(4) * SWEEP_BIN_SIZE;  // 312_500 Hz
+    FreqHz sweep_pending_freq_[SWEEP_CONFIRM_SLOTS]{};
+    SystemTime sweep_pending_time_[SWEEP_CONFIRM_SLOTS]{};
+    uint8_t sweep_pending_count_[SWEEP_CONFIRM_SLOTS]{};
+    uint32_t sweep_pending_visit_[SWEEP_CONFIRM_SLOTS]{};
+    // Visit-debounce key: the id bumps whenever the sweep arrives at a
+    // different slice center; each slot remembers the id that produced
+    // its last count. 0 = no visit seen yet (any center differs).
+    FreqHz sweep_confirm_visit_freq_{0};
+    uint32_t sweep_confirm_visit_id_{0};
 
     // Secondary-detection confirm slots (FIX B6: secondaries must confirm
     // stability like the primary path instead of creating tracks instantly;
@@ -2937,6 +2973,14 @@ private:
     SystemTime confirm_start_time_{0};
     static constexpr uint32_t CONFIRM_TIMEOUT_MS = 5000;  // 5 seconds to gather confirmations
 
+    // Sweep confirm timeout (audit C1): a sweep pass over a wide window
+    // (200+ MHz at the gapless pitch) revisits a given slice every ~5-12 s,
+    // longer than the DB CONFIRM_TIMEOUT_MS — reusing 5 s would let a lone
+    // sighting expire before its own revisit and a real emitter could NEVER
+    // confirm on wide sweeps. 30 s tolerates ~3 slow revisit periods while
+    // still bounding stale single-sighting memory.
+    static constexpr uint32_t SWEEP_CONFIRM_TIMEOUT_MS = 30000;
+
     // Sort buffer (mutable: used as scratch pad in const methods)
     // Used by analyze_spectrum_shape_multi() for the noise floor and
     // apply_shape_filters() Step 12 for kurtosis — plus the DB TBD block's
@@ -2990,11 +3034,40 @@ private:
     MedianFilter<int32_t, 7> rssi_median_filter_;
     bool median_filter_enabled_{false};
 
+    /**
+     * @brief Max deviation (dB) between the sweep median and this frame's
+     *        validated shape RSSI before the median is clamped (audit M1).
+     * @note 6 dB covers normal per-revisit fading (multipath, AGC) while
+     *       bounding the stale-history inflation of a vanished emitter to
+     *       one threat-threshold step in most configurations.
+     */
+    static constexpr int32_t SWEEP_MEDIAN_CLAMP_DB = 6;
+
     // Neighbor margin checker for anti-false-positive detection
     NeighborMarginChecker neighbor_margin_checker_;
 
     // Mahalanobis detector for statistical outlier detection (Sweep mode only)
     MahalanobisDetector mahalanobis_detector_;
+
+    /**
+     * @brief Consecutive-escalation counters per tracked-drone slot (audit
+     *        fix for the staged one-shot escalation bypass).
+     * @note A rejected sample that classifies to a HIGHER threat than the
+     *       track's current level is accepted only after
+     *       MAHALANOBIS_ESCALATION_MIN_CONSECUTIVE such rejections in a
+     *       row; on acceptance the model is RE-SEEDed from the sample
+     *       (reset + fold — never blended into the stale mean, so an
+     *       outlier cannot poison the model). The confirm gate does NOT
+     *       gate existing tracks, so without the K-consecutive rule a
+     *       one-shot interferer spike could escalate threat in a single
+     *       frame; a genuine approach (persistently stronger revisits)
+     *       still escalates, keeping the frozen-escalation bug fixed.
+     * @note Slot-indexed like tracked_drones_; add_tracked_drone_internal()
+     *       resets the counter of a (re)used slot at creation.
+     * SRAM: MAX_TRACKED_DRONES x 1 = 25 bytes.
+     */
+    static constexpr uint8_t MAHALANOBIS_ESCALATION_MIN_CONSECUTIVE = 2;
+    std::array<uint8_t, MAX_TRACKED_DRONES> mahalanobis_escalation_count_{};
 
     // ========================================================================
     // Phase 1: Foundation Detection Enhancements
@@ -3025,14 +3098,29 @@ private:
     std::array<uint32_t, FFT_BIN_COUNT / 32> shape_veto_mask_{};
 
     /**
-     * @brief Veto `bin` and its ±1 neighbours (1-bin spectral dither).
+     * @brief Spectral dither applied by note_shape_veto (bins each side).
+     * @note Audit M3: a rejected emission's crest migrates 2-3 bins between
+     *       frames (AGC ripple, envelope apex shift); the old ±1 dither
+     *       missed the migrating apex and TBD resurrected the same emission
+     *       at the un-vetoed bin. ±3 keeps the vetoed span (7 bins) strictly
+     *       below the NMS separation, so a distinct neighbour's apex can
+     *       never be swallowed by one emission's veto.
+     */
+    static constexpr uint8_t SHAPE_VETO_DITHER_BINS = 3;
+    static_assert((2u * SHAPE_VETO_DITHER_BINS + 1u) < CFAR_MIN_PEAK_SEPARATION,
+        "shape-veto dither must stay narrower than CFAR_MIN_PEAK_SEPARATION: "
+        "the veto of one emission must never cover a distinct neighbour's apex");
+
+    /**
+     * @brief Veto `bin` and its ±SHAPE_VETO_DITHER_BINS neighbours.
      * @note Call ONLY from shape-rejection sites that already passed the
      *       margin gate (same condition as the per-frame guards).
      * @param bin FFT bin (0..FFT_BIN_COUNT-1); out-of-range bits skipped.
      * Stack: ~16 bytes. SRAM: 0. Flash: ~40 bytes (inlined).
      */
     void note_shape_veto(size_t bin) noexcept {
-        for (int32_t d = -1; d <= 1; ++d) {
+        for (int32_t d = -static_cast<int32_t>(SHAPE_VETO_DITHER_BINS);
+             d <= static_cast<int32_t>(SHAPE_VETO_DITHER_BINS); ++d) {
             const int32_t b = static_cast<int32_t>(bin) + d;
             if (b >= 0 && b < static_cast<int32_t>(FFT_BIN_COUNT)) {
                 const size_t ub = static_cast<size_t>(b);
