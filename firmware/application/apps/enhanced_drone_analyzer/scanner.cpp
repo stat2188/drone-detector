@@ -2666,7 +2666,10 @@ bool DroneScanner::analyze_spectrum_shape_multi(
             config_.cfar_mode, config_.cfar_ref_cells, config_.cfar_guard_cells,
             effective_threshold, FFT_EDGE_SKIP, FFT_EDGE_SKIP,
             config_.cfar_hybrid_alpha, config_.cfar_hybrid_beta, config_.cfar_hybrid_gamma,
-            config_.os_cfar_k_percent, config_.vi_cfar_threshold_x10
+            config_.os_cfar_k_percent, config_.vi_cfar_threshold_x10,
+            // OS-CFAR sliding-histogram scratch (256 B class member);
+            // nullptr here would keep the slower legacy insertion-sort path.
+            cfar_hist_buf_
         );
 
         if (peak_count == 0) {
@@ -5194,7 +5197,10 @@ void DroneScanner::process_spectrum_sweep(
             config_.cfar_hybrid_beta,
             config_.cfar_hybrid_gamma,
             config_.os_cfar_k_percent,
-            config_.vi_cfar_threshold_x10
+            config_.vi_cfar_threshold_x10,
+            // OS-CFAR sliding-histogram scratch (256 B class member);
+            // nullptr here would keep the slower legacy insertion-sort path.
+            cfar_hist_buf_
         );
         // Feed the adaptive loop (DB parity, audit D-C): same dBm domain as
         // process_spectrum_message's calls; noise_floor / frame_total_gain are

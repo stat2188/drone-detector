@@ -1416,7 +1416,8 @@ BSS Allocation:
 Key BSS Structures:
   s_hardware          — HardwareController
   s_database          — DatabaseManager (entries[100])
-  s_scanner           — DroneScanner (tracked_drones_[25], incl. envelope_buf_[256])
+  s_scanner           — DroneScanner (tracked_drones_[25], incl. envelope_buf_[256],
+                       cfar_hist_buf_[256])
   s_scanner_thread    — ScannerThread (wa_[2048])
   g_workspace_cfg     — ScanConfig (368 bytes)
   g_workspace_settings — SettingsStruct (360 bytes)
@@ -1428,8 +1429,11 @@ Key BSS Structures:
    DroneScanner::get_display_entries(), ~1.9 KB heap returned)
 
 Stack-Heavy Functions (monitored):
-  CFARDetector::find_peaks()   — ~32 bytes (candidates[16])
-  OS-CFAR detect()             - ~152 bytes (cells[128] + locals)
+  CFARDetector::find_peaks()   — ~104 bytes (FrameState ~72 + candidates[16]);
+                                 sliding-window engine, O(1) per CUT
+                                 (~12-16x faster than legacy per-CUT recompute)
+  OS-CFAR fallback detect()    — ~240 bytes (cells[128] + FrameState; cold
+                                 path used only without cfar_hist_buf_)
   SpectralKurtosis::compute()  — ~32 bytes (accumulators)
   absorb_from()                — ~128 bytes (merged[12])
   refresh_ui()                 — snapshot via get_display_entries() (no scratch array)

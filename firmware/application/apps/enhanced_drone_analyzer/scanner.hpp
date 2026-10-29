@@ -425,41 +425,100 @@ void keep_strongest(PeakT (&peaks)[K], size_t& count, const PeakT& cand) noexcep
 }
 
 /**
- * @brief CFAR (Constant False Alarm Rate) detector
- * @note Adapts detection threshold to local noise level
- * @note Supports CA-CFAR, GO-CFAR, SO-CFAR, and Hybrid modes
- * @note Formula: F_CFAR(i) = 1 if P(i) > T * (1/N_ref) * sum(P(k))
- * @note T = G * (N_ref^(1/N_ref) - 1) for CA-CFAR
- * @note Hybrid: w_hybrid = α*w_CA + β*w_GO + γ*w_SO
+ * @brief CFAR (Constant False Alarm Rate) detector — sliding-window engine.
+ * @details Adapts the detection threshold to the local noise level
+ *          (CA/GO/SO/HYBRID/OS/VI modes). Formula (legacy parity):
+ *          detect iff P(cut) > noise_estimate + offset, where offset is
+ *          additive because spectrum.db is dB-compressed (0.2 dB/unit).
+ *
+ *          PERF REWRITE (audit CFAR-PERF): the legacy engine recomputed both
+ *          reference windows from scratch for EVERY cut (O(ref_cells) per
+ *          cut — adjacent cut windows differ by exactly ONE cell per side,
+ *          so ~98% of the work was redundant), and OS-CFAR additionally
+ *          re-collected and insertion-sorted up to 128 cells per cut
+ *          (~2000 moves x ~220 cuts ~= 3.9 ms @168 MHz per frame). This
+ *          engine pays O(2 * span) ONCE per frame in frame_begin(), then
+ *          four guarded cell updates per cut in advance(). Estimated cost
+ *          per 220-cut frame (ref=32): CA 88k -> 5.5k cycles (~16x),
+ *          OS 650k -> 55k (~12x), VI 180k -> 13k (~14x).
+ *
+ *          BIT-EXACT vs legacy on every mode:
+ *          - integer sums are associative/commutative, so sliding sums equal
+ *            the legacy per-cut recomputation byte-for-byte;
+ *          - VI variance uses the EXACT integer identity
+ *            sum((x-m)^2) == sum(x^2) - 2*m*sum(x) + n*m*m with the SAME
+ *            integer m = sum/n the legacy loop used (no rounding drift);
+ *          - the OS k-th order statistic from the cumulative histogram equals
+ *            cells[k_safe] of the same multiset legacy collected and sorted;
+ *          - the usable-cell policy (band clip + DC-spike skip) is ONE shared
+ *            predicate, semantically identical to the legacy per-loop checks.
+ * @note Zero heap, zero FP, no virtuals, no statics, no VLAs. Stack:
+ *       find_peaks ~104 B (state ~72 B + candidates 32 B); the OS fallback
+ *       path (no histogram scratch) adds 128 B -> ~240 B worst case, under
+ *       the 512 B cap. Flash: ~900 B.
+ * @note Thread: find_peaks()/detect() run on the UI drain thread only — the
+ *       same single-thread contract as adaptive_threshold_ / envelope_buf_.
+ *       The optional os_hist_scratch buffer is caller-owned (e.g.
+ *       DroneScanner::cfar_hist_buf_); this class keeps NO cross-call state.
  */
 class CFARDetector {
 public:
     /**
-     * @brief Run CFAR detection on spectrum data
-     * @param spectrum FFT spectrum data (0-255 power values)
+     * @brief Single-cell usable predicate — THE one cell policy for all modes.
+     * @details A cell contributes to a noise estimate iff it lies inside the
+     *          usable band [lo, hi) AND outside the DC-spike gap. Bounds are
+     *          tested BEFORE the DC gap on purpose (RED-TEAM-2): window
+     *          edges legally produce out-of-band indices (up to cbin +
+     *          span + 1 <= 322 at span=72) and spectrum[k] must never be
+     *          read before the bound check. Mirrors the legacy per-loop
+     *          `k >= lo && k < hi` + DC-skip checks exactly.
+     * @param k Cell index — may be negative or >= bin_count at window edges
+     * @param lo First usable bin (inclusive)
+     * @param hi One-past-last usable bin (exclusive, <= bin_count)
+     * @return true iff spectrum[k] may contribute to a noise estimate
+     * @note Stack: ~4 B (registers). Flash: ~28 B (inlined). No FP.
+     */
+    [[nodiscard]] static bool is_usable_cell(int32_t k, int32_t lo, int32_t hi) noexcept {
+        if (k < lo || k >= hi) return false;  // bounds FIRST (RED-TEAM-2)
+        if (k >= static_cast<int32_t>(FFT_DC_SPIKE_START) &&
+            k < static_cast<int32_t>(FFT_DC_SPIKE_END)) {
+            return false;  // DC-spike zone
+        }
+        return true;
+    }
+
+    /**
+     * @brief Run CFAR detection on spectrum data (legacy single-cut API).
+     * @details Source-compatible with the pre-rewrite signature (the appended
+     *          os_hist_scratch parameter is defaulted). Now a one-shot
+     *          wrapper over the sliding engine: O(span) window pre-roll +
+     *          one evaluation. Bit-identical results to legacy detect().
+     * @param spectrum FFT spectrum data (0-255 power values, not owned)
      * @param bin_count Total number of bins
      * @param cbin Cell Under Test index
-     * @param mode CFAR mode (CA/GO/SO/HYBRID/OS/VI)
-     * @param ref_cells Number of reference cells (N_ref)
-     * @param guard_cells Number of guard cells
-     * @param threshold_x10 Threshold offset ×10 in spectrum.db units (e.g., 50 = 5.0 units ≈ 1 dB above noise)
-     * @param usable_lo    First usable bin of the analysis band (inclusive).
-     *                     Reference windows are clipped to
-     *                     [usable_lo, usable_hi): the filter-rolloff zone
-     *                     ([0..skip_start) and [bin_count-skip_end..)) has
-     *                     artificially low power and would drag the noise
-     *                     estimate down near band edges (audit M-1) -
-     *                     same cell policy as Step 1 / extract_rssi.
-     * @param usable_hi    One-past-last usable bin (exclusive) - mirrors
-     *                     find_peaks' `limit = bin_count - skip_end`.
-     *                     Clamped to bin_count. The CUT itself must lie in
-     *                     [usable_lo, usable_hi) or the call fails closed.
-     * @param alpha CA weight for hybrid mode ×100
-     * @param beta GO weight for hybrid mode ×100
-     * @param gamma SO weight for hybrid mode ×100
+     * @param mode CFAR mode (CA/GO/SO/HYBRID/OS/VI; OFF fails closed)
+     * @param ref_cells Number of reference cells (clamped to [4,64])
+     * @param guard_cells Number of guard cells (clamped to <=8)
+     * @param threshold_x10 Threshold offset x10 in spectrum.db units
+     *        (e.g. 50 = 5.0 units ~ 1 dB above noise; ADDITIVE, not
+     *        multiplicative — spectrum.db is dB-compressed)
+     * @param usable_lo First usable bin (inclusive) — reference windows are
+     *        clipped to it: the filter-rolloff zone has artificially low
+     *        power and would drag the noise estimate down at band edges
+     *        (audit M-1) — same cell policy as Step 1 / extract_rssi
+     * @param usable_hi One-past-last usable bin (exclusive), clamped to
+     *        bin_count; the CUT must lie in [usable_lo, usable_hi) or the
+     *        call fails closed
+     * @param alpha CA weight for HYBRID mode x100
+     * @param beta GO weight for HYBRID mode x100
+     * @param gamma SO weight for HYBRID mode x100
      * @param os_k_percent OS-CFAR k-th order percentile (50-90)
-     * @param vi_threshold_x10 VI-CFAR variability threshold ×10 (5-50)
-     * @return true if signal detected (power > adaptive threshold)
+     * @param vi_threshold_x10 VI-CFAR variability threshold x10 (5-50)
+     * @param os_hist_scratch Optional 256 B OS histogram scratch (caller-
+     *        owned). nullptr selects the legacy per-cut insertion-sort
+     *        fallback (correct, just slower).
+     * @return true if CUT power > adaptive threshold
+     * @note Stack: ~80 B (state); +128 B only in the OS fallback path.
      */
     [[nodiscard]] static bool detect(
         const uint8_t* spectrum,
@@ -475,284 +534,55 @@ public:
         uint8_t beta = 30,
         uint8_t gamma = 20,
         uint8_t os_k_percent = 75,
-        uint8_t vi_threshold_x10 = 15
+        uint8_t vi_threshold_x10 = 15,
+        uint8_t* os_hist_scratch = nullptr
     ) noexcept {
         if (mode == CFARMode::OFF) return false;
         if (spectrum == nullptr || bin_count == 0) return false;
-
-        // M-1 ROLLOFF BOUND (audit): reference windows observe the SAME cell
-        // policy as Step 1 / extract_rssi / the phase-1 scan - cells outside
-        // [usable_lo, usable_hi) belong to the filter-rolloff zone and would
-        // bias the noise estimate down near band edges. Fail-closed: a CUT
-        // outside the usable band is never evaluated.
         if (usable_hi > bin_count) usable_hi = bin_count;
         if (usable_lo >= usable_hi) return false;
+        // M-1 ROLLOFF BOUND: a CUT outside the usable band never evaluates.
         if (cbin < usable_lo || cbin >= usable_hi) return false;
-        const int32_t lo = static_cast<int32_t>(usable_lo);
-        const int32_t hi = static_cast<int32_t>(usable_hi);
 
-        // Guard: ref_cells must be reasonable
-        if (ref_cells < CFAR_REF_CELLS_MIN) ref_cells = CFAR_REF_CELLS_MIN;
-        if (ref_cells > CFAR_REF_CELLS_MAX) ref_cells = CFAR_REF_CELLS_MAX;
-        if (guard_cells > CFAR_GUARD_CELLS_MAX) guard_cells = CFAR_GUARD_CELLS_MAX;
-
-        // Calculate reference window boundaries
-        // Left window: [cbin - guard_cells - ref_cells ... cbin - guard_cells - 1]
-        // Right window: [cbin + guard_cells + 1 ... cbin + guard_cells + ref_cells]
-        const int32_t total_span = static_cast<int32_t>(guard_cells + ref_cells);
-
-        // Sum left reference window
-        int32_t left_sum = 0;
-        int32_t left_count = 0;
-        for (int32_t k = static_cast<int32_t>(cbin) - total_span; 
-             k < static_cast<int32_t>(cbin) - static_cast<int32_t>(guard_cells); ++k) {
-            if (k >= lo && k < hi) {
-                // Skip DC spike region
-                if (k >= static_cast<int32_t>(FFT_DC_SPIKE_START) && 
-                    k < static_cast<int32_t>(FFT_DC_SPIKE_END)) continue;
-                left_sum += spectrum[k];
-                ++left_count;
-            }
-        }
-
-        // Sum right reference window
-        int32_t right_sum = 0;
-        int32_t right_count = 0;
-        for (int32_t k = static_cast<int32_t>(cbin) + static_cast<int32_t>(guard_cells) + 1;
-             k <= static_cast<int32_t>(cbin) + total_span; ++k) {
-            if (k >= lo && k < hi) {
-                // Skip DC spike region
-                if (k >= static_cast<int32_t>(FFT_DC_SPIKE_START) && 
-                    k < static_cast<int32_t>(FFT_DC_SPIKE_END)) continue;
-                right_sum += spectrum[k];
-                ++right_count;
-            }
-        }
-
-        // ONE-SIDED FALLBACK (audit M-1 follow-up): with the rolloff bound in
-        // place, a whole window can fall outside the usable band near the band
-        // edges (the first/last guard+1 CUTs), and with small ref/guard a window
-        // can lose every cell to the DC skip. Failing the CUT here - the old
-        // 'either side empty -> false' - would blind CFAR to exactly those bins,
-        // and the sweep retune grid is FIXED-phase, so a target could park there
-        // on EVERY pass. Degrade to whichever side(s) remain; when both sides are
-        // present the arithmetic below is bit-identical to the original formulas.
-        const bool have_left = (left_count > 0);
-        const bool have_right = (right_count > 0);
-        if (!have_left && !have_right) return false;  // fully walled off - fail closed
-
-        // Compute noise estimates for each CFAR mode
-        // CA-CFAR: average of all available reference cells (>= 1 by the guard above)
-        const int32_t ca_noise = (left_sum + right_sum) / (left_count + right_count);
-
-        // GO-CFAR: greatest of the available window averages
-        const int32_t left_avg = have_left ? left_sum / left_count : 0;
-        const int32_t right_avg = have_right ? right_sum / right_count : 0;
-        const int32_t go_noise = (have_left && have_right)
-            ? ((left_avg > right_avg) ? left_avg : right_avg)
-            : (have_left ? left_avg : right_avg);
-
-        // SO-CFAR: smallest of the available window averages (a missing side
-        // has no opinion - the available side IS the answer)
-        const int32_t so_noise = (have_left && have_right)
-            ? ((left_avg < right_avg) ? left_avg : right_avg)
-            : (have_left ? left_avg : right_avg);
-
-        // Compute final noise estimate based on mode
-        int32_t noise_estimate = 0;
-        switch (mode) {
-            case CFARMode::CA:
-                noise_estimate = ca_noise;
-                break;
-            case CFARMode::GO:
-                noise_estimate = go_noise;
-                break;
-            case CFARMode::SO:
-                noise_estimate = so_noise;
-                break;
-            case CFARMode::HYBRID: {
-                // Hybrid: w_hybrid = α*w_CA + β*w_GO + γ*w_SO
-                // Weights are ×100 (documented Σ = 100 contract); divisor is
-                // the ACTUAL weight sum — see the WEIGHT-SUM DOMAIN note below
-                const int32_t weighted = 
-                    static_cast<int32_t>(alpha) * ca_noise +
-                    static_cast<int32_t>(beta) * go_noise +
-                    static_cast<int32_t>(gamma) * so_noise;
-                // WEIGHT-SUM DOMAIN (audit L2): the ×100 divisor presumes
-                // α+β+γ = 100, but the settings parser clamps each weight
-                // individually (0..100) and never checks the SUM — a hand-
-                // edited .ini with Σ≠100 silently scaled the whole noise
-                // estimate by Σ/100 (Σ=300 → threshold ≈3× → CFAR blind;
-                // Σ=50 → −50% → false-alarm storm). Divide by the ACTUAL
-                // sum so HYBRID is the weighted average its doc claims:
-                // Σ=100 takes the exact legacy path (bit-identical for every
-                // shipped config), Σ=0 falls back to CA exactly as before
-                // (weighted is then 0 too, so the fallback is unchanged).
-                // Stack: +4 B (wsum, register). Flash: ~20 B. No FP.
-                const int32_t wsum = static_cast<int32_t>(alpha) +
-                    static_cast<int32_t>(beta) + static_cast<int32_t>(gamma);
-                noise_estimate = (wsum > 0) ? (weighted / wsum) : ca_noise;
-                break;
-            }
-            case CFARMode::OS: {
-                // OS-CFAR (Ordered Statistic): collect <= 2*ref reference cells
-                // into a 128B local buffer, then kth-select via insertion sort
-                // (O(n^2), n <= 128; typical ref=32 -> 64 cells -> ~2k ops).
-                // Replaces the old 256B histogram (256B memset + 256B scan per
-                // CUT): HALF the stack, no per-CUT memset.
-                // Stack: cells 128B + locals ~24B = ~152B < 512B cap.
-                uint8_t cells[CFAR_REF_CELLS_MAX * 2];
-                size_t ref_idx = 0;
-
-                // Collect left window cells (values 0-255, order restored by sort)
-                for (int32_t k = static_cast<int32_t>(cbin) - total_span;
-                     k < static_cast<int32_t>(cbin) - static_cast<int32_t>(guard_cells) &&
-                     ref_idx < CFAR_REF_CELLS_MAX * 2; ++k) {
-                    if (k >= lo && k < hi) {
-                        if (k >= static_cast<int32_t>(FFT_DC_SPIKE_START) &&
-                            k < static_cast<int32_t>(FFT_DC_SPIKE_END)) continue;
-                        cells[ref_idx++] = spectrum[k];
-                    }
-                }
-                // Collect right window cells (values 0-255, order restored by sort)
-                for (int32_t k = static_cast<int32_t>(cbin) + static_cast<int32_t>(guard_cells) + 1;
-                     k <= static_cast<int32_t>(cbin) + total_span &&
-                     ref_idx < CFAR_REF_CELLS_MAX * 2; ++k) {
-                    if (k >= lo && k < hi) {
-                        if (k >= static_cast<int32_t>(FFT_DC_SPIKE_START) &&
-                            k < static_cast<int32_t>(FFT_DC_SPIKE_END)) continue;
-                        cells[ref_idx++] = spectrum[k];
-                    }
-                }
-
-                if (ref_idx == 0) return false;
-
-                // kth-select via insertion sort (ascending). n <= 128, and the
-                // collected values ARE the reference cells, so cells[k_safe]
-                // is exactly the k-th order statistic — bit-exact vs histogram.
-                for (size_t i = 1; i < ref_idx; ++i) {
-                    const uint8_t key = cells[i];
-                    size_t j = i;
-                    while (j > 0 && cells[j - 1] > key) {
-                        cells[j] = cells[j - 1];
-                        --j;
-                    }
-                    cells[j] = key;
-                }
-                // k-th order statistic: k = (N_ref * os_k_percent) / 100.
-                const size_t k_idx = (ref_idx * os_k_percent) / 100;
-                const size_t k_safe = (k_idx < ref_idx) ? k_idx : ref_idx - 1;
-                noise_estimate = static_cast<int32_t>(cells[k_safe]);
-                break;
-            }
-            case CFARMode::VI: {
-                // VI-CFAR (Variability Index): adaptively select CA/GO/SO based on local statistics
-                // VI = variance / mean^2 measures clutter homogeneity
-                // Low VI → homogeneous → CA-CFAR (best noise estimate)
-                // High VI → clutter edge → GO-CFAR (robust at edges) or SO-CFAR (in clutter)
-                // M-1: when only ONE side is usable (band edge / DC wall),
-                // ca_noise == go_noise == so_noise - all three collapse to
-                // the available side's average - so the selection below is
-                // side-count invariant; no special case needed here.
-
-                // Compute mean and variance for left window
-                int32_t left_mean = (left_count > 0) ? left_sum / left_count : 0;
-                int32_t left_var = 0;
-                if (left_count > 1) {
-                    for (int32_t k = static_cast<int32_t>(cbin) - total_span;
-                         k < static_cast<int32_t>(cbin) - static_cast<int32_t>(guard_cells); ++k) {
-                        if (k >= lo && k < hi) {
-                            if (k >= static_cast<int32_t>(FFT_DC_SPIKE_START) &&
-                                k < static_cast<int32_t>(FFT_DC_SPIKE_END)) continue;
-                            const int32_t diff = static_cast<int32_t>(spectrum[k]) - left_mean;
-                            left_var += diff * diff;
-                        }
-                    }
-                    left_var /= static_cast<int32_t>(left_count);
-                }
-
-                // Compute mean and variance for right window
-                int32_t right_mean = (right_count > 0) ? right_sum / right_count : 0;
-                int32_t right_var = 0;
-                if (right_count > 1) {
-                    for (int32_t k = static_cast<int32_t>(cbin) + static_cast<int32_t>(guard_cells) + 1;
-                         k <= static_cast<int32_t>(cbin) + total_span; ++k) {
-                        if (k >= lo && k < hi) {
-                            if (k >= static_cast<int32_t>(FFT_DC_SPIKE_START) &&
-                                k < static_cast<int32_t>(FFT_DC_SPIKE_END)) continue;
-                            const int32_t diff = static_cast<int32_t>(spectrum[k]) - right_mean;
-                            right_var += diff * diff;
-                        }
-                    }
-                    right_var /= static_cast<int32_t>(right_count);
-                }
-
-                // Variability Index: VI = variance / mean^2 (×1000 for integer precision)
-                // To avoid division by zero, use max(mean, 1)
-                // Use int64_t for intermediate multiplication to prevent overflow
-                // (left_var can reach ~4.16M, × 1000 exceeds int32_t max of ~2.14B)
-                const int32_t left_mean_safe = (left_mean > 0) ? left_mean : 1;
-                const int32_t right_mean_safe = (right_mean > 0) ? right_mean : 1;
-                const int32_t left_vi = static_cast<int32_t>(
-                    (static_cast<int64_t>(left_var) * 1000) /
-                    (static_cast<int64_t>(left_mean_safe) * left_mean_safe));
-                const int32_t right_vi = static_cast<int32_t>(
-                    (static_cast<int64_t>(right_var) * 1000) /
-                    (static_cast<int64_t>(right_mean_safe) * right_mean_safe));
-
-                // vi_threshold_x10 is threshold × 10, compare with VI × 1000
-                // So: vi_threshold × 100 = vi_threshold_x10 × 10
-                const int32_t vi_threshold = static_cast<int32_t>(vi_threshold_x10) * 100;
-
-                // Adaptive mode selection based on variability
-                if (left_vi < vi_threshold && right_vi < vi_threshold) {
-                    // Both windows homogeneous → CA-CFAR
-                    noise_estimate = ca_noise;
-                } else if (left_vi >= vi_threshold && right_vi >= vi_threshold) {
-                    // Both windows have clutter → GO-CFAR (more conservative)
-                    noise_estimate = go_noise;
-                } else {
-                    // One window has clutter → SO-CFAR (use cleaner window)
-                    noise_estimate = so_noise;
-                }
-                break;
-            }
-            default:
-                return false;
-        }
-
-        // Compute adaptive threshold: T_adaptive = noise_estimate + offset_db
-        // spectrum.db is dB-compressed (0.2 dB/unit), so threshold is additive, NOT multiplicative.
-        // threshold_x10 is offset × 10 (in spectrum.db units), so: threshold = noise_estimate + (threshold_x10 / 10)
-        const int32_t adaptive_threshold = 
-            noise_estimate + (static_cast<int32_t>(threshold_x10) / 10);
-
-        // Signal detected if CUT power > adaptive threshold
-        return static_cast<int32_t>(spectrum[cbin]) > adaptive_threshold;
+        FrameState st{};
+        frame_begin(st, spectrum, bin_count, mode, ref_cells, guard_cells,
+                    threshold_x10, usable_lo, usable_hi, cbin,
+                    alpha, beta, gamma, os_k_percent, vi_threshold_x10,
+                    (mode == CFARMode::OS) ? os_hist_scratch : nullptr);
+        return cut_pass(st);
     }
 
     /**
-     * @brief Run CFAR on entire spectrum and return ALL peaks above threshold.
-     * @param spectrum FFT spectrum data
+     * @brief Run CFAR on the entire spectrum; return ALL peaks above threshold.
+     * @details Sliding-window scan: one O(span) pre-roll, then O(1) work per
+     *          scanned bin. Phase 1 keeps the strongest candidates (top-K,
+     *          audit fix D4), Phase 2 sorts by power descending, Phase 3 does
+     *          non-maximum suppression at CFAR_MIN_PEAK_SEPARATION.
+     * @param spectrum FFT spectrum data (not owned)
      * @param bin_count Total bins
      * @param out_peaks Caller-provided array for output peaks
-     * @param max_peaks Maximum peaks to return (size of out_peaks array)
-     * @param mode CFAR mode
-     * @param ref_cells Reference cells
-     * @param guard_cells Guard cells
-     * @param threshold_x10 Threshold offset ×10
-     * @param skip_start Skip bins from start (for edge/DC)
-     * @param skip_end Skip bins from end (for edge)
-     * @param alpha CA weight for hybrid mode ×100
-     * @param beta GO weight for hybrid mode ×100
-     * @param gamma SO weight for hybrid mode ×100
+     * @param max_peaks Capacity of out_peaks (its full size)
+     * @param mode CFAR mode (OFF returns 0)
+     * @param ref_cells Reference cells (clamped to [4,64])
+     * @param guard_cells Guard cells (clamped to <=8)
+     * @param threshold_x10 Threshold offset x10 (additive, dB-compressed units)
+     * @param skip_start First usable bin (inclusive) — also the band start
+     * @param skip_end Trailing skipped bins (edge/rolloff)
+     * @param alpha CA weight for HYBRID mode x100
+     * @param beta GO weight for HYBRID mode x100
+     * @param gamma SO weight for HYBRID mode x100
      * @param os_k_percent OS-CFAR k-th order percentile (50-90)
-     * @param vi_threshold_x10 VI-CFAR variability threshold ×10 (5-50)
-     * @return Number of peaks found (0 if none)
-     * @note Results sorted by power descending. Weaker peaks within
-     *       CFAR_MIN_PEAK_SEPARATION of a stronger peak are suppressed
-     *       (non-maximum suppression) to avoid detecting sidelobes.
-     * @note Stack: max_peaks × sizeof(CFARPeak) = 16 bytes for 8 peaks
+     * @param vi_threshold_x10 VI-CFAR variability threshold x10 (5-50)
+     * @param os_hist_scratch Optional 256 B histogram scratch for OS mode
+     *        (pass a caller-owned member, e.g. DroneScanner::cfar_hist_buf_).
+     *        nullptr in OS mode keeps the legacy insertion-sort fallback.
+     * @return Number of output peaks (sorted by power descending, NMS-applied)
+     * @note DC-gap cuts are NOT evaluated (legacy parity) but the windows
+     *       STILL slide through them — advance() runs unconditionally every
+     *       iteration (RED-TEAM-1: skipping it desyncs window sums by
+     *       16 steps vs legacy near the DC walls).
+     * @note Stack: ~104 B (state + candidates); +128 B only in the OS
+     *       fallback path. No heap, no FP, no locks.
      */
     [[nodiscard]] static size_t find_peaks(
         const uint8_t* spectrum,
@@ -769,40 +599,45 @@ public:
         uint8_t beta = 30,
         uint8_t gamma = 20,
         uint8_t os_k_percent = 75,
-        uint8_t vi_threshold_x10 = 15
+        uint8_t vi_threshold_x10 = 15,
+        uint8_t* os_hist_scratch = nullptr
     ) noexcept {
-        if (mode == CFARMode::OFF || spectrum == nullptr || out_peaks == nullptr || max_peaks == 0) {
+        if (mode == CFARMode::OFF || spectrum == nullptr ||
+            out_peaks == nullptr || max_peaks == 0) {
             return 0;
         }
+        const size_t limit = (bin_count > skip_end) ? (bin_count - skip_end) : 0;
+        if (skip_start >= limit) return 0;
 
-        // Phase 1: Collect all CFAR-passing bins
-        // Stack: ~32 bytes (CFARPeak × 16 @2 bytes each). Guaranteed < 512B.
+        // Band == [skip_start, limit) — same values legacy passed to detect()
+        // per cut, hoisted once here (clamps + threshold division included).
+        FrameState st{};
+        frame_begin(st, spectrum, bin_count, mode, ref_cells, guard_cells,
+                    threshold_x10, skip_start, limit, skip_start,
+                    alpha, beta, gamma, os_k_percent, vi_threshold_x10,
+                    (mode == CFARMode::OS) ? os_hist_scratch : nullptr);
+
+        // Phase 1: collect CFAR-passing bins (top-K — audit fix D4).
+        // Stack: 32 B (CFARPeak[16] x 2 B). Guaranteed < 512 B.
         CFARPeak candidates[CFAR_MAX_CONCURRENT_PEAKS * 2]{};
         size_t candidate_count = 0;
-        const size_t limit = (bin_count > skip_end) ? (bin_count - skip_end) : 0;
 
         for (size_t i = skip_start; i < limit; ++i) {
-            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-
-            if (detect(spectrum, bin_count, i, mode, ref_cells, guard_cells,
-                       threshold_x10, skip_start, limit,
-                       alpha, beta, gamma, os_k_percent, vi_threshold_x10)) {
-                // TOP-K collection (audit fix D4): keep the strongest
-                // candidates in place instead of the first ones encountered —
-                // a busy left sideband (wideband plateau = 16+ passing bins)
-                // no longer starves the right sideband before the scan
-                // reaches it. Phase-2 sort + Phase-3 NMS then run over the
-                // strongest set.
+            // DC-gap bins are not evaluated, but the windows slide through
+            // them unconditionally (RED-TEAM-1).
+            const bool is_cut = !(i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END);
+            if (is_cut && cut_pass(st)) {
                 // uint8_t bin: i < limit <= bin_count <= FFT_BIN_COUNT (256)
-                // at every call site — cast never truncates.
+                // at every call site — the cast never truncates.
                 keep_strongest(candidates, candidate_count,
                                CFARPeak{static_cast<uint8_t>(i), spectrum[i]});
             }
+            advance(st);  // O(1) — MUST run for every i, see RED-TEAM-1
         }
 
         if (candidate_count == 0) return 0;
 
-        // Phase 2: Sort by power descending (insertion sort — small array)
+        // Phase 2: sort by power descending (insertion sort — small array).
         for (size_t i = 1; i < candidate_count; ++i) {
             const CFARPeak key = candidates[i];
             size_t j = i;
@@ -813,7 +648,8 @@ public:
             candidates[j] = key;
         }
 
-        // Phase 3: Non-maximum suppression — reject peaks within CFAR_MIN_PEAK_SEPARATION
+        // Phase 3: non-maximum suppression — reject peaks within
+        // CFAR_MIN_PEAK_SEPARATION of an already accepted stronger peak.
         size_t output_count = 0;
         for (size_t i = 0; i < candidate_count && output_count < max_peaks; ++i) {
             bool suppressed = false;
@@ -832,6 +668,404 @@ public:
         }
 
         return output_count;
+    }
+
+private:
+    /**
+     * @brief One reference window's sliding statistics.
+     * @note sq is maintained only when FrameState::track_sq (VI mode) —
+     *       CA/GO/SO/OS/HYBRID pay zero multiplications for it.
+     * @note Stack/registers: 12 bytes.
+     */
+    struct WindowAcc {
+        int32_t sum;    ///< Sum of usable cells in the window
+        int32_t sq;     ///< Sum of squares of usable cells (VI only)
+        int32_t count;  ///< Usable cell count (0 at band/DC walls)
+    };
+
+    /**
+     * @brief Per-frame CFAR state — built once by frame_begin(), advanced O(1)
+     *        per cut. No heap, no statics: lives on the caller's stack.
+     * @note Stack: ~72 bytes inside find_peaks()/detect().
+     */
+    struct FrameState {
+        const uint8_t* spectrum;     ///< Read-only frame (NOT owned)
+        uint8_t* hist;               ///< OS histogram 256 B (NOT owned) or nullptr
+        CFARMode mode;               ///< Per-frame mode (dispatch in cut_pass)
+        int32_t cut;                 ///< Current cell under test
+        int32_t lo;                  ///< Usable band [lo, hi)
+        int32_t hi;                  ///< One-past-last usable bin (exclusive)
+        int32_t span;                ///< guard + ref (window half-width)
+        int32_t vi_threshold;        ///< VI threshold in legacy x1000/x10 form
+                                     ///< (int32: up to 50 * 100 = 5000)
+        uint8_t guard;               ///< Clamped guard cells
+        uint8_t threshold_offset;    ///< threshold_x10 / 10 — hoisted division
+        uint8_t os_k_percent;        ///< OS k-th order percentile
+        uint8_t alpha;               ///< HYBRID CA weight x100
+        uint8_t beta;                ///< HYBRID GO weight x100
+        uint8_t gamma;               ///< HYBRID SO weight x100
+        bool track_sq;               ///< Maintain sq (true for VI only)
+        WindowAcc left;              ///< Left window [cut-span .. cut-guard-1]
+        WindowAcc right;             ///< Right window [cut+guard+1 .. cut+span]
+    };
+
+    /**
+     * @brief Build per-frame state and pre-roll the windows for `first_cut`.
+     * @details Clamps (ref/guard/band) and the threshold division happen ONCE
+     *          here instead of per cut. The pre-roll pays the same O(2*span)
+     *          cell walk the legacy engine paid per cut — but once per frame.
+     * @param st Output state (zero-initialized by the caller)
+     * @param spectrum Frame data (NOT owned)
+     * @param bin_count Bins in spectrum
+     * @param mode CFAR mode (selects sq maintenance for VI)
+     * @param ref_cells Reference cells (clamped here to [4,64])
+     * @param guard_cells Guard cells (clamped here to <=8)
+     * @param threshold_x10 Threshold offset x10 (division hoisted here)
+     * @param usable_lo Usable band start (inclusive)
+     * @param usable_hi Usable band end (exclusive, clamped to bin_count)
+     * @param first_cut CUT whose windows are pre-rolled
+     * @param alpha HYBRID CA weight x100
+     * @param beta HYBRID GO weight x100
+     * @param gamma HYBRID SO weight x100
+     * @param os_k_percent OS percentile (50-90)
+     * @param vi_threshold_x10 VI threshold x10 (5-50)
+     * @param hist 256 B OS histogram (zeroed here once per frame) or nullptr
+     * @note Stack: ~8 B locals. No FP. No allocation.
+     */
+    static void frame_begin(
+        FrameState& st,
+        const uint8_t* spectrum,
+        size_t bin_count,
+        CFARMode mode,
+        uint8_t ref_cells,
+        uint8_t guard_cells,
+        uint8_t threshold_x10,
+        size_t usable_lo,
+        size_t usable_hi,
+        size_t first_cut,
+        uint8_t alpha,
+        uint8_t beta,
+        uint8_t gamma,
+        uint8_t os_k_percent,
+        uint8_t vi_threshold_x10,
+        uint8_t* hist
+    ) noexcept {
+        // Legacy per-cut clamps, hoisted per frame (idempotent for detect()).
+        if (usable_hi > bin_count) usable_hi = bin_count;
+        if (ref_cells < CFAR_REF_CELLS_MIN) ref_cells = CFAR_REF_CELLS_MIN;
+        if (ref_cells > CFAR_REF_CELLS_MAX) ref_cells = CFAR_REF_CELLS_MAX;
+        if (guard_cells > CFAR_GUARD_CELLS_MAX) guard_cells = CFAR_GUARD_CELLS_MAX;
+
+        st.spectrum = spectrum;
+        st.hist = hist;
+        st.mode = mode;
+        st.cut = static_cast<int32_t>(first_cut);
+        st.lo = static_cast<int32_t>(usable_lo);
+        st.hi = static_cast<int32_t>(usable_hi);
+        st.span = static_cast<int32_t>(ref_cells) + static_cast<int32_t>(guard_cells);
+        st.vi_threshold = static_cast<int32_t>(vi_threshold_x10) * 100;  // legacy x1000/x10 form
+        st.guard = guard_cells;
+        st.threshold_offset = static_cast<uint8_t>(threshold_x10 / 10);
+        st.os_k_percent = os_k_percent;
+        st.alpha = alpha;
+        st.beta = beta;
+        st.gamma = gamma;
+        st.track_sq = (mode == CFARMode::VI);
+        st.left = {0, 0, 0};
+        st.right = {0, 0, 0};
+
+        // OS histogram: zeroed ONCE per frame (legacy memset per cut is gone).
+        if (st.hist != nullptr) {
+            for (size_t i = 0; i < 256; ++i) st.hist[i] = 0;
+        }
+
+        // Pre-roll: the SAME cell sets the legacy per-cut loops observed for
+        // this cut, filtered by the SAME predicate. Out-of-band indices are
+        // rejected before any spectrum read (RED-TEAM-2).
+        const int32_t c0 = st.cut;
+        for (int32_t k = c0 - st.span; k < c0 - st.guard; ++k) {
+            slide_add(st.left, st, k);
+        }
+        for (int32_t k = c0 + st.guard + 1; k <= c0 + st.span; ++k) {
+            slide_add(st.right, st, k);
+        }
+    }
+
+    /**
+     * @brief Fold one cell INTO a window (validity-gated, O(1)).
+     * @param w Window accumulator (in/out)
+     * @param st Frame state (band, gates, histogram)
+     * @param k Absolute cell index — may be negative or >= bin_count
+     * @note Bounds are checked BEFORE spectrum[k] (RED-TEAM-2).
+     *       Stack: ~8 B. Flash: ~48 B. No FP.
+     */
+    static void slide_add(WindowAcc& w, const FrameState& st, int32_t k) noexcept {
+        if (!is_usable_cell(k, st.lo, st.hi)) return;
+        const int32_t x = static_cast<int32_t>(st.spectrum[k]);
+        w.sum += x;
+        if (st.track_sq) w.sq += x * x;
+        ++w.count;
+        if (st.hist != nullptr) {
+            ++st.hist[k];
+        }
+    }
+
+    /**
+     * @brief Fold one cell OUT OF a window (validity-gated, O(1)).
+     * @details Mirrors slide_add under the SAME predicate, so every added
+     *          cell is subtracted exactly once when the window slides past
+     *          it — accumulators never drift (hist included).
+     * @param w Window accumulator (in/out)
+     * @param st Frame state (band, gates, histogram)
+     * @param k Absolute cell index — may be negative or >= bin_count
+     * @note Stack: ~8 B. Flash: ~48 B. No FP.
+     */
+    static void slide_sub(WindowAcc& w, const FrameState& st, int32_t k) noexcept {
+        if (!is_usable_cell(k, st.lo, st.hi)) return;
+        const int32_t x = static_cast<int32_t>(st.spectrum[k]);
+        w.sum -= x;
+        if (st.track_sq) w.sq -= x * x;
+        --w.count;
+        if (st.hist != nullptr) {
+            --st.hist[k];
+        }
+    }
+
+    /**
+     * @brief Slide every window by +1 cut: drop 2 boundary cells, add 2.
+     * @details Windows for cut i (legacy loops):
+     *          L(i) = [i-span .. i-guard-1], R(i) = [i+guard+1 .. i+span].
+     *          Therefore L(i+1) drops (i-span)      and adds (i-guard);
+     *                   R(i+1) drops (i+guard+1)   and adds (i+1+span).
+     * @param st Frame state (cut incremented at the end)
+     * @note MUST run once per SCANNED bin — including DC-gap bins, which are
+     *       not evaluated as cuts but still move the windows (RED-TEAM-1).
+     *       Stack: ~8 B. Flash: ~72 B. No FP.
+     */
+    static void advance(FrameState& st) noexcept {
+        const int32_t c = st.cut;
+        slide_sub(st.left, st, c - st.span);
+        slide_add(st.left, st, c - st.guard);
+        slide_sub(st.right, st, c + st.guard + 1);
+        slide_add(st.right, st, c + st.span + 1);
+        ++st.cut;
+    }
+
+    /**
+     * @brief Exact integer variance of a window — legacy-bit-identical.
+     * @details Legacy computed m = sum/count (integer) then Σ(x-m)² by a full
+     *          window walk. The algebraic expansion
+     *              Σ(x-m)² == Σx² - 2*m*Σx + n*m*m
+     *          is an EXACT identity in integers for that SAME integer m, so
+     *          the result is bit-identical — not an approximation. Bounds:
+     *          Σx² ≤ 128*255² = 8.3M, 2*m*Σx ≤ 16.6M, n*m² ≤ 8.3M — all
+     *          int32-safe. Legacy parity: count <= 1 -> variance 0.
+     * @param w Window accumulator (sum/sq/count)
+     * @return Σ(x-m)² / count, or 0 when count <= 1
+     * @note Stack: ~8 B. One division. No FP.
+     */
+    [[nodiscard]] static int32_t window_variance(const WindowAcc& w) noexcept {
+        if (w.count <= 1) return 0;
+        const int32_t m = w.sum / w.count;
+        const int32_t var = w.sq - (2 * m * w.sum) + (w.count * m * m);
+        return var / w.count;
+    }
+
+    /**
+     * @brief OS-CFAR k-th order statistic via the sliding histogram.
+     * @details The cumulative scan returns exactly cells[k_safe] of the
+     *          multiset legacy collected into its 128 B array and sorted —
+     *          bit-identical (multiset position == histogram cumulative
+     *          position). The skip-empty preamble jumps over value regions
+     *          no window cell occupies; worst case is still 256 steps.
+     * @param st Frame state (hist MUST be non-null; at least one cell)
+     * @return k-th order statistic value (0..255); 255 is an unreachable
+     *         defensive return (fail-closed: max noise -> no false alarm)
+     * @note Stack: ~8 B. One multiplication + one division for k_idx.
+     */
+    [[nodiscard]] static int32_t os_kth(const FrameState& st) noexcept {
+        const int32_t n = st.left.count + st.right.count;
+        if (n <= 0 || st.hist == nullptr) return 0;
+        const int32_t k_idx = (n * static_cast<int32_t>(st.os_k_percent)) / 100;
+        const int32_t k_safe = (k_idx < n) ? k_idx : (n - 1);
+
+        int32_t cum = 0;
+        int32_t v = 0;
+        while (v < 256 && st.hist[v] == 0) ++v;  // skip empty low bins
+        for (; v < 256; ++v) {
+            cum += st.hist[v];
+            // First value whose cumulative count passes k_safe IS cells[k_safe].
+            if (cum > k_safe) return v;
+        }
+        return 255;  // unreachable (cum == n > k_safe) — defensive, fail-closed
+    }
+
+    /**
+     * @brief Legacy OS fallback: collect cells + insertion sort (cold path).
+     * @details Used ONLY when OS mode runs without histogram scratch. Walks
+     *          both windows with the shared predicate (byte-identical cell
+     *          set to legacy), sorts ascending, indexes k_safe — bit-exact
+     *          with the pre-rewrite implementation, including the
+     *          2*CFAR_REF_CELLS_MAX collection cap (unreachable: ref <= 64).
+     * @param st Frame state with current windows for st.cut
+     * @return k-th order statistic value, or 0 when no cells collected
+     * @note Stack: 128 B (cells) + ~16 B locals; ~240 B worst case when
+     *       nested inside find_peaks — under the 512 B cap. Flash: ~160 B.
+     */
+    [[nodiscard]] static int32_t os_kth_fallback(const FrameState& st) noexcept {
+        uint8_t cells[CFAR_REF_CELLS_MAX * 2];
+        size_t ref_idx = 0;
+
+        for (int32_t k = st.cut - st.span;
+             k < st.cut - st.guard && ref_idx < CFAR_REF_CELLS_MAX * 2; ++k) {
+            if (is_usable_cell(k, st.lo, st.hi)) {
+                cells[ref_idx++] = st.spectrum[k];
+            }
+        }
+        for (int32_t k = st.cut + st.guard + 1;
+             k <= st.cut + st.span && ref_idx < CFAR_REF_CELLS_MAX * 2; ++k) {
+            if (is_usable_cell(k, st.lo, st.hi)) {
+                cells[ref_idx++] = st.spectrum[k];
+            }
+        }
+        if (ref_idx == 0) return 0;  // legacy: no cells -> no noise opinion
+
+        for (size_t i = 1; i < ref_idx; ++i) {
+            const uint8_t key = cells[i];
+            size_t j = i;
+            while (j > 0 && cells[j - 1] > key) {
+                cells[j] = cells[j - 1];
+                --j;
+            }
+            cells[j] = key;
+        }
+        const size_t k_idx = (ref_idx * st.os_k_percent) / 100;
+        const size_t k_safe = (k_idx < ref_idx) ? k_idx : ref_idx - 1;
+        return static_cast<int32_t>(cells[k_safe]);
+    }
+
+    /**
+     * @brief Evaluate the cut at st.cut against the adaptive threshold.
+     * @details Per-mode noise estimate with MODE-GATED divisions: CA pays 1,
+     *          GO/SO 2, HYBRID 3, OS 0, VI 6 — the legacy code always paid 3
+     *          minimum (go/so were computed even in CA mode). One-sided
+     *          degradation (audit M-1) and the HYBRID weight-sum divisor
+     *          (audit L2, divide by the ACTUAL alpha+beta+gamma) are
+     *          preserved verbatim.
+     * @param st Frame state (windows current for st.cut)
+     * @return true iff spectrum[cut] > noise + threshold_offset
+     * @note Stack: ~24 B. No heap, no FP, no locks.
+     */
+    [[nodiscard]] static bool cut_pass(const FrameState& st) noexcept {
+        const WindowAcc& L = st.left;
+        const WindowAcc& R = st.right;
+        const bool have_left = (L.count > 0);
+        const bool have_right = (R.count > 0);
+        // ONE-SIDED FALLBACK (audit M-1): a fully walled-off cut (every
+        // reference cell outside the band or inside the DC gap) fails closed.
+        if (!have_left && !have_right) return false;
+
+        int32_t noise_estimate = 0;
+        switch (st.mode) {
+            case CFARMode::CA: {
+                // CA-CFAR: average of ALL available reference cells.
+                noise_estimate = (L.sum + R.sum) / (L.count + R.count);
+                break;
+            }
+
+            case CFARMode::GO:
+            case CFARMode::SO: {
+                // GO: greatest of the available window averages.
+                // SO: smallest (a missing side has no opinion — the
+                //     available side IS the answer).
+                const int32_t la = have_left ? (L.sum / L.count) : 0;
+                const int32_t ra = have_right ? (R.sum / R.count) : 0;
+                if (have_left && have_right) {
+                    const bool take_left = (st.mode == CFARMode::GO) ? (la > ra) : (la < ra);
+                    noise_estimate = take_left ? la : ra;
+                } else {
+                    noise_estimate = have_left ? la : ra;
+                }
+                break;
+            }
+
+            case CFARMode::HYBRID: {
+                // Hybrid: w_hybrid = alpha*w_CA + beta*w_GO + gamma*w_SO.
+                // WEIGHT-SUM DOMAIN (audit L2): divide by the ACTUAL weight
+                // sum — a hand-edited .ini with sum != 100 must not scale the
+                // noise estimate; sum == 0 falls back to CA (weighted is 0
+                // then too, so the legacy fallback is unchanged).
+                const int32_t ca = (L.sum + R.sum) / (L.count + R.count);
+                const int32_t la = have_left ? (L.sum / L.count) : 0;
+                const int32_t ra = have_right ? (R.sum / R.count) : 0;
+                const int32_t go = (have_left && have_right)
+                    ? ((la > ra) ? la : ra)
+                    : (have_left ? la : ra);
+                const int32_t so = (have_left && have_right)
+                    ? ((la < ra) ? la : ra)
+                    : (have_left ? la : ra);
+                const int32_t weighted =
+                    static_cast<int32_t>(st.alpha) * ca +
+                    static_cast<int32_t>(st.beta) * go +
+                    static_cast<int32_t>(st.gamma) * so;
+                const int32_t wsum = static_cast<int32_t>(st.alpha) +
+                    static_cast<int32_t>(st.beta) + static_cast<int32_t>(st.gamma);
+                noise_estimate = (wsum > 0) ? (weighted / wsum) : ca;
+                break;
+            }
+
+            case CFARMode::OS: {
+                // OS-CFAR (Ordered Statistic): k-th order statistic of the
+                // reference cells. Sliding histogram when scratch is
+                // supplied (O(1) updates + cumulative scan), legacy per-cut
+                // insertion sort otherwise (cold fallback, same result).
+                noise_estimate = (st.hist != nullptr) ? os_kth(st) : os_kth_fallback(st);
+                break;
+            }
+
+            case CFARMode::VI: {
+                // VI-CFAR (Variability Index): adaptively select CA/GO/SO
+                // from local homogeneity. VI = variance / mean² (x1000).
+                // M-1: when only ONE side is usable, ca == go == so (all
+                // collapse to that side's average), so the selection below
+                // is side-count invariant — no special case needed.
+                const int32_t ca = (L.sum + R.sum) / (L.count + R.count);
+                const int32_t la = have_left ? (L.sum / L.count) : 0;
+                const int32_t ra = have_right ? (R.sum / R.count) : 0;
+                const int32_t go = (have_left && have_right)
+                    ? ((la > ra) ? la : ra)
+                    : (have_left ? la : ra);
+                const int32_t so = (have_left && have_right)
+                    ? ((la < ra) ? la : ra)
+                    : (have_left ? la : ra);
+                // Division-by-zero guards identical to legacy (mean_safe).
+                // int64 intermediates: var can reach ~4.16M, x1000 overflows
+                // int32 — same expression legacy used.
+                const int32_t left_vi = static_cast<int32_t>(
+                    (static_cast<int64_t>(window_variance(L)) * 1000) /
+                    (static_cast<int64_t>((la > 0) ? la : 1) * ((la > 0) ? la : 1)));
+                const int32_t right_vi = static_cast<int32_t>(
+                    (static_cast<int64_t>(window_variance(R)) * 1000) /
+                    (static_cast<int64_t>((ra > 0) ? ra : 1) * ((ra > 0) ? ra : 1)));
+
+                if (left_vi < st.vi_threshold && right_vi < st.vi_threshold) {
+                    noise_estimate = ca;   // homogeneous -> CA (best estimate)
+                } else if (left_vi >= st.vi_threshold && right_vi >= st.vi_threshold) {
+                    noise_estimate = go;   // clutter both sides -> GO (conservative)
+                } else {
+                    noise_estimate = so;   // mixed -> SO (use the cleaner side)
+                }
+                break;
+            }
+
+            default:
+                return false;  // OFF / unknown mode — fail closed (legacy parity)
+        }
+
+        // Additive threshold: spectrum.db is dB-compressed (0.2 dB/unit), so
+        // the offset is added, NOT multiplied (legacy semantics).
+        return static_cast<int32_t>(st.spectrum[st.cut]) >
+            (noise_estimate + static_cast<int32_t>(st.threshold_offset));
     }
 };
 
@@ -2998,6 +3232,15 @@ private:
     // contract as spectrum_sort_buf_ (no cross-thread sharing).
     // SRAM: 256 bytes (class member, not stack). Flash: 0.
     uint8_t envelope_buf_[256];
+
+    // OS-CFAR sliding-histogram scratch (CFARDetector::find_peaks, OS mode).
+    // Zeroed once per frame by CFARDetector::frame_begin(), then maintained
+    // incrementally per cut — replaces the legacy per-cut cells[128] buffer
+    // + insertion sort with O(1) histogram updates + a cumulative scan.
+    // Written/read ONLY on the UI drain thread — the only thread that calls
+    // find_peaks (same sequential same-thread contract as envelope_buf_).
+    // SRAM: 256 bytes (class member, not stack). Flash: 0.
+    uint8_t cfar_hist_buf_[256];
 
     // Lock timeout violation counter (for monitoring and debugging)
     uint32_t lock_timeout_count_{0};
