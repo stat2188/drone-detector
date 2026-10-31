@@ -38,6 +38,11 @@ add_executable(enhanced_drone_analyzer_test EXCLUDE_FROM_ALL
 	${PROJECT_SOURCE_DIR}/test_database_parser.cpp
 	${PROJECT_SOURCE_DIR}/test_settings_persistence.cpp
 	${PROJECT_SOURCE_DIR}/test_shape_filters_phase_a.cpp
+	# Gate regression tests (next_detectable_center / span_intersects_
+	# active_slot): sweep_processor.hpp is host-clean by design — the gate
+	# logic is inline there and ChannelSpectrum is only forward-declared —
+	# so this target needs NO ChibiOS objects and no extra sources.
+	${PROJECT_SOURCE_DIR}/test_sweep_processor.cpp
 )
 
 target_include_directories(enhanced_drone_analyzer_test PRIVATE

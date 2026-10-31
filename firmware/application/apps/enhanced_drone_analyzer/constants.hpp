@@ -915,6 +915,41 @@ constexpr FreqHz SWEEP_FIRST_SLICE_LEAD_HZ =
     static_cast<FreqHz>(SWEEP_DETECT_EDGE_OFFSET_BINS) * SWEEP_BIN_SIZE;  // 9,375,000 Hz
 
 /**
+ * @brief How far ABOVE the slice center the slice's HIGHEST detection bin
+ *        reaches (Hz) — the mirror of SWEEP_FIRST_SLICE_LEAD_HZ.
+ * @note The upper sideband defines the slice's BOTTOM edge (center − 120
+ *       bins); the lower sideband defines its TOP edge. The lower sideband's
+ *       highest usable detection bin is FFT_BIN_COUNT − 1 − FFT_EDGE_SKIP_NARROW
+ *       (= 249), and freq(bin) = center + (bin − SWEEP_BIAS_LOWER)·SWEEP_BIN_SIZE
+ *       so the reach above center is (249 − 120) = 129 bins:
+ *       (FFT_BIN_COUNT − 1 − FFT_EDGE_SKIP_NARROW − SWEEP_BIAS_LOWER)·78,125
+ *       = 129 · 78,125 = 10,078,125 Hz.
+ * @note A slice centered at c is therefore DETECTABLE exactly on
+ *       [c − SWEEP_FIRST_SLICE_LEAD_HZ, c + SWEEP_SLICE_REACH_HIGH_HZ]. The
+ *       gate-aware skip (SweepProcessor::next_detectable_center) uses this
+ *       closed span to elide centers whose span intersects NO active
+ *       detection slot — mirroring DroneScanner::is_detection_window_allowed
+ *       so a skipped center is provably one the detector would have
+ *       rejected anyway (apply_sweep_tracking range gate). Behavior-neutral.
+ * @note Derived, not literal — if the usable-bin geometry changes, both
+ *       edges move together and the skip stays in lock-step with the gate.
+ */
+constexpr FreqHz SWEEP_SLICE_REACH_HIGH_HZ =
+    static_cast<FreqHz>(FFT_BIN_COUNT - 1 - FFT_EDGE_SKIP_NARROW - SWEEP_BIAS_LOWER)
+    * SWEEP_BIN_SIZE;  // 10,078,125 Hz
+
+// TILING INVARIANT: at the gapless pitch every slice's detectable span
+// [c − LEAD, c + REACH] (width LEAD + REACH = 19,453,125 Hz) must overlap its
+// neighbour's, so useful-center intervals [lo − REACH, hi + LEAD] tile the
+// window without holes and SweepProcessor::next_detectable_center()'s
+// guard-gap walk can never elide a detectable center. If a future geometry
+// change pushes the pitch above the span width, adjacent slices stop
+// overlapping and both the gapless coverage and the O1 skip become unsound —
+// fail at compile time, not at runtime.
+static_assert(SWEEP_GAPLESS_STEP_MAX_HZ <= SWEEP_FIRST_SLICE_LEAD_HZ + SWEEP_SLICE_REACH_HIGH_HZ,
+              "gapless pitch must stay within one slice's detectable span (neighbouring slices must overlap)");
+
+/**
  * @brief Minimum number of slices per sweep window.
  * @note A single slice ALWAYS leaves its 23-bin DC notch undetected (no
  *       neighbour exists to cover it). With >= 2 slices the derived pitch is

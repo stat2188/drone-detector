@@ -63,7 +63,8 @@ public:
     ) noexcept {
         GainSetting result{current_lna, current_vga, current_rf_amp};
 
-        // Rate limiting FIRST (P0-2 hot-path fix): the 236-bin scan below is
+        // Rate limiting FIRST (P0-2 hot-path fix): the 220-bin scan below
+        // (FFT_USABLE_BINS = 256 − 16 DC-spike − 2×10 edge) is
         // wasted whenever fewer than 500 ms elapsed since the last change
         // (~29 of 30 ticks at 60 fps). Unsigned subtraction stays correct
         // across the ~49-day now_ms wrap.

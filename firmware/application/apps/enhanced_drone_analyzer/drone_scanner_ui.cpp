@@ -17,6 +17,7 @@
 #include "audio_alerts.hpp"
 #include "audio.hpp"
 #include "constants.hpp"
+#include "sweep_processor.hpp"
 #include "sweep_sensitivity.hpp"
 #include "string_format.hpp"
 #include "baseband_api.hpp"
@@ -215,8 +216,9 @@ void DroneScannerUI::register_handlers() noexcept {
                             // same 0 margin => passes. Blocking here would
                             // stall the 60 Hz DisplayFrameSync tick and drop
                             // FIFO frames (= sensitivity loss).
-                            // Peak/noise scanned here: one 236-bin min/max
-                            // pass, stack ~8 B, no quickselect. The scan is
+                            // Peak/noise scanned here: one 228-bin min/max
+                            // pass (FFT_USABLE_BINS_NARROW: upper 6..119 ∪
+                            // lower 136..249), stack ~8 B, no quickselect. The scan is
                             // min-based: min <= p25 holds, and BOTH shelves
                             // carry the SAME SWEEP_SHELF_OFFSET (sweep_shelf_
                             // offset_try), so clamp(min+off) <= clamp(p25+off)
@@ -254,52 +256,14 @@ void DroneScannerUI::register_handlers() noexcept {
                             // No blocking locks: the sweep path runs on the
                             // UI thread with the scanner thread stopped (see
                             // process_spectrum_sweep() docs in scanner.hpp).
-                            bool drain_detect = true;
-                            if (this->scanner_ptr_ != nullptr) {
-                                uint8_t d_peak = 0;
-                                uint8_t d_nf = UINT8_MAX;  // min-accumulator seed
-                                const uint8_t* d_db = discard.db.data();
-                                for (size_t di = FFT_EDGE_SKIP_NARROW;
-                                     di < FFT_DC_SPIKE_START; ++di) {
-                                    const uint8_t v = d_db[di];
-                                    if (v > d_peak) d_peak = v;
-                                    if (v < d_nf) d_nf = v;
-                                }
-                                for (size_t di = FFT_DC_SPIKE_END;
-                                     di < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW;
-                                     ++di) {
-                                    const uint8_t v = d_db[di];
-                                    if (v > d_peak) d_peak = v;
-                                    if (v < d_nf) d_nf = v;
-                                }
-                                const bool d_shape_on =
-                                    this->scanner_ptr_->is_spectrum_shape_enabled_try();
-                                // SHELF PARITY (SWEEP_SHELF_OFFSET_*): gate on
-                                // the SAME biased shelf the detector uses —
-                                // clamp(min + off) vs clamp(p25 + off) keeps the
-                                // subset proof above valid for every offset; a
-                                // contention on the accessor fails OPEN to the
-                                // MINIMUM offset (lowest shelf = loosest gate).
-                                // Stack: ~8 B (int16 temp). No heap, no FP.
-                                const int16_t d_nf_biased =
-                                    static_cast<int16_t>(d_nf) + static_cast<int16_t>(
-                                        this->scanner_ptr_->sweep_shelf_offset_try());
-                                const uint8_t d_nf_shelf = static_cast<uint8_t>(
-                                    (d_nf_biased < 0) ? 0
-                                    : (d_nf_biased > 255 ? 255 : d_nf_biased));
-                                drain_detect = sweep_fast_prefilter(
-                                    d_shape_on,
-                                    d_peak,
-                                    d_nf_shelf,
-                                    this->scanner_ptr_->shape_gate_margin_try());
-                                if (!drain_detect) {
-                                    drain_detect = sweep_tbd_frame_reachable(
-                                        d_shape_on,
-                                        d_peak,
-                                        d_nf_shelf,
-                                        this->scanner_ptr_->sweep_tbd_threshold_units_try());
-                                }
-                            }
+                            // PREFILTER (CPU fix): pure-noise drained slices
+                            // skip detector entry (quickselect + waterfall push
+                            // + CFAR + 12-step shape + TBD scan) instead of
+                            // paying ~2000+ cycles for them. SINGLE SOURCE OF
+                            // TRUTH: drain_frame_may_detect() — the SAME helper
+                            // drain_late_frames_for_current_slice() uses, so
+                            // the two drain paths can never drift.
+                            const bool drain_detect = drain_frame_may_detect(discard);
                             if (drain_detect && this->scanner_ptr_ != nullptr) {
                                 auto& dwin = this->sweep_[this->active_sweep_idx_];
                                 const FreqHz d_fft_freq = (this->last_tuned_freq_ != 0)
@@ -1737,6 +1701,65 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum, bool dis
     if (win.step_hz == 0) {
         win.pixel_index = COMPOSITE_SIZE;
     } else {
+        // O1 ENTRY SKIP — fire BEFORE the first-slice dwell arms and BEFORE
+        // process_bins(), so a guard-zone entry center is never dwelled on or
+        // painted. On the FIRST tick of a pass (pixel_index == 0 && bins_hz_acc
+        // == 0, i.e. nothing credited yet), if f_center_ini's detectable span
+        // intersects NO active detection slot, jump straight to the first
+        // detectable center. Without this the dwell would burn 2 ticks (arm +
+        // revisit) on a center the detector would reject via apply_sweep_tracking's
+        // range gate, and paint 2 max-hold writes into guard pixels.
+        // Gated on pixel_index == 0 && bins_hz_acc == 0 so it fires exactly
+        // once per pass (credit_span below advances one of them, closing the
+        // gate); identity (no jump) when the entry center is already
+        // detectable or when NO slot is active (fully-open sweep).
+        //
+        // ENTRY-DETECTABILITY GUARD (CRITICAL): next_detectable_center()
+        // searches STRICTLY ABOVE f_center_ini, so it cannot vouch for the
+        // entry center itself. When the entry center IS signal-bearing but no
+        // grid point above it lands inside the slot's useful interval, it
+        // honestly returns the pass-completion anchor — which the jump test
+        // below would misread as "entry is guard-zone", credit the whole
+        // window and permanently elide the ONLY slice covering that slot
+        // (every subsequent pass restarts from the mutated f_center_ini).
+        // Concrete trigger: sweep [2400, 2700] MHz + slot [2400, 2405] MHz —
+        // f_center_ini = f_min + 9.375 MHz detects [2400.000, 2419.45] ⊇
+        // slot, yet next(f_center_ini) = anchor. span_intersects_active_slot()
+        // answers exactly the question next() cannot ("is THIS center
+        // detectable?") and keeps the skip disarmed in that case. Shares
+        // slot_useful_interval() with next_detectable_center(), so guard and
+        // walk can never drift apart.
+        if (win.pixel_index == 0 && win.bins_hz_acc == 0 && !win.first_slice_dwell_done_ &&
+            !SweepProcessor::span_intersects_active_slot(
+                g_workspace_cfg.sweep_det_win_start_mhz[active_sweep_idx_],
+                g_workspace_cfg.sweep_det_win_end_mhz[active_sweep_idx_],
+                DETECTION_WINDOWS_PER_WINDOW,
+                win.f_center_ini)) {
+            const FreqHz entry_next = SweepProcessor::next_detectable_center(
+                g_workspace_cfg.sweep_det_win_start_mhz[active_sweep_idx_],
+                g_workspace_cfg.sweep_det_win_end_mhz[active_sweep_idx_],
+                DETECTION_WINDOWS_PER_WINDOW,
+                win.f_min, win.f_max, win.step_hz, win.f_center_ini);
+            // A jump (entry_next > ini + step) means the entry center is in a
+            // guard zone. Re-anchor the pass at the first DETECTABLE center so
+            // the dwell reinforces a signal-bearing edge instead of a guard one.
+            if (entry_next > win.f_center_ini + win.step_hz) {
+                win.credit_span(entry_next - win.f_center_ini - win.step_hz);
+                // f_center_ini is PER-WINDOW state, not per-pass: reset()
+                // restores f_center FROM it on every pass, so this jump is
+                // preserved across passes — correct AND idempotent, because
+                // (a) the guard zone at f_min is a property of the unchanged
+                // slot config, and (b) entry_next is either a DETECTABLE
+                // center (the guard above then disarms the skip on every
+                // later pass) or the completion anchor (whose successor
+                // fails the `> +step` jump test). Only init_sweep_window() /
+                // on_show() recompute f_center_ini from f_min.
+                win.f_center_ini = entry_next;
+                win.f_center = entry_next;
+                retune_sweep_window(win, nullptr);  // arms stale budget for the discarded frame
+                return;
+            }
+        }
         // FIRST-SLICE DOUBLE DWELL — revisit tick runs WITHOUT progress credit
         // (identical discipline to the drained live frames, C2): pixel_index /
         // bins_hz_acc / line_full / scan-head pacing stay at exactly one step
@@ -1823,8 +1846,39 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum, bool dis
             win.first_slice_dwell_done_ = true;
             return;  // stay on f_center_ini; the next tick is the revisit
         }
-        // Normal step: advance frequency within current window
-        win.f_center += win.step_hz;
+        // O1 GATE-AWARE SKIP + O2 LATE DRAIN. This is the NORMAL advance path
+        // (not pass completion). Two optimizations run just before retuning:
+        //
+        // O2 PRE-RETUNE LATE DRAIN — on_sweep_spectrum() runs AFTER the
+        // frame-sync handler's top drain loop. Any frame the M0 completes while
+        // this handler was busy (detector + display) was captured ENTIRELY at
+        // win.f_center (the radio has not retuned yet), but the imminent
+        // retune_sweep_window() will arm retune_pending_frames_ = len()+1 and
+        // the NEXT tick would drop it as stale — ~1 valid 6.5 ms frame wasted
+        // per slice. Drain it now, at the CURRENT center, BEFORE the retune
+        // re-arms the budget. (Deliberately NOT on the completion path below:
+        // that handler is already the longest — waterfall push + pair completion
+        // + AGC + round-robin retune — and a drain there would widen the
+        // straddler window for the NEW window.)
+        drain_late_frames_for_current_slice();
+        // O1 GATE-AWARE SKIP — advance to the next DETECTABLE slice center,
+        // eliding guard-zone centers whose span intersects no active slot.
+        // SweepProcessor::next_detectable_center mirrors the detector gate, so
+        // a skipped center is provably one is_detection_window_allowed() would
+        // have rejected. Identity (plain + step_hz) when no slot is active.
+        const FreqHz next_c = SweepProcessor::next_detectable_center(
+            g_workspace_cfg.sweep_det_win_start_mhz[active_sweep_idx_],
+            g_workspace_cfg.sweep_det_win_end_mhz[active_sweep_idx_],
+            DETECTION_WINDOWS_PER_WINDOW,
+            win.f_min, win.f_max, win.step_hz, win.f_center);
+        if (next_c > win.f_center + win.step_hz) {
+            // Skipped >= 1 guard center(s): credit their progress so pixel_index
+            // keeps tracking the true RF position (line_full stays in lock-step
+            // with freq_covered). Documented O1 trade-off: those columns are left
+            // unpainted; detection is unaffected (the range gate rejects them).
+            win.credit_span(next_c - win.f_center - win.step_hz);
+        }
+        win.f_center = next_c;
         retune_sweep_window(win, nullptr);
         return;
     }
@@ -2184,6 +2238,29 @@ void DroneScannerUI::SweepWindow::reset() noexcept {
     first_slice_dwell_done_ = false;
 }
 
+void DroneScannerUI::SweepWindow::credit_span(const FreqHz skipped_hz) noexcept {
+    // Guard clauses: a zero span is a no-op; a zero pixel_step_hz would make
+    // the promotion loop's comparison degenerate (bins_hz_acc never reaches it
+    // → unbounded growth) — init() guarantees pixel_step_hz > 0 for an enabled
+    // window, but a corrupted/uninitialized one must not spin.
+    if (skipped_hz == 0 || pixel_step_hz == 0) return;
+
+    // Same accumulator discipline as process_frame() (see its promotion loop):
+    // add the skipped Hz, promote whole pixels into pixel_index at
+    // pixel_step_hz, keep the sub-pixel remainder in bins_hz_acc so NO drift
+    // accumulates across a pass. The COMPOSITE CAPPING matches process_frame:
+    // once pixel_index reaches COMPOSITE_SIZE the line is "painted" for the
+    // line_full check, and the remainder is absorbed instead of overflowing.
+    bins_hz_acc += skipped_hz;
+    while (bins_hz_acc >= pixel_step_hz && pixel_index < COMPOSITE_SIZE) {
+        ++pixel_index;
+        bins_hz_acc -= pixel_step_hz;
+    }
+    // Absorb any remainder past the line so bins_hz_acc cannot run away when
+    // the skip lands the scan head exactly on (or beyond) the line end.
+    if (pixel_index >= COMPOSITE_SIZE) bins_hz_acc = 0;
+}
+
 void DroneScannerUI::SweepWindow::process_bins(
     const ChannelSpectrum& spectrum,
     const bool credit_progress
@@ -2257,6 +2334,93 @@ void DroneScannerUI::SweepWindow::process_bins(
             f_min,
             f_max
         );
+    }
+}
+
+bool DroneScannerUI::drain_frame_may_detect(const ChannelSpectrum& frame) noexcept {
+    // RSSI-only bypass + half-gate rule live in sweep_sensitivity.hpp (the
+    // single source of truth process_spectrum_sweep() also uses). When the
+    // scanner is absent we cannot evaluate the gate — return true so the
+    // caller's own nullptr check governs (fail-open on the safe side).
+    if (scanner_ptr_ == nullptr) return true;
+
+    // One 228-bin min/max pass (FFT_USABLE_BINS_NARROW: upper 6..119 ∪
+    // lower 136..249 = 2 × 114; the DC spike 120..135 and the wide edge bins
+    // {0..5, 250..255} are excluded exactly like the detector's usable range).
+    uint8_t peak = 0;
+    uint8_t nf = UINT8_MAX;  // min-accumulator seed
+    const uint8_t* db = frame.db.data();
+    for (size_t di = FFT_EDGE_SKIP_NARROW; di < FFT_DC_SPIKE_START; ++di) {
+        const uint8_t v = db[di];
+        if (v > peak) peak = v;
+        if (v < nf) nf = v;
+    }
+    for (size_t di = FFT_DC_SPIKE_END; di < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW; ++di) {
+        const uint8_t v = db[di];
+        if (v > peak) peak = v;
+        if (v < nf) nf = v;
+    }
+
+    // Config snapshot via TryLock (fail-open): contention ⇒ margin 0 (everything
+    // analyzed) and shape gate evaluated with a 0 shelf; blocking would stall
+    // the 60 Hz DisplayFrameSync tick and drop FIFO frames (= sensitivity loss).
+    const bool shape_on = scanner_ptr_->is_spectrum_shape_enabled_try();
+    // SHELF PARITY: gate on the SAME biased shelf the detector uses —
+    // clamp(min + off) vs clamp(p25 + off) keeps this a strict SUBSET of the
+    // detector's 25th-percentile gate for every offset; contention fails OPEN
+    // to the minimum (loosest) offset.
+    const int16_t nf_biased =
+        static_cast<int16_t>(nf) + static_cast<int16_t>(scanner_ptr_->sweep_shelf_offset_try());
+    const uint8_t nf_shelf = static_cast<uint8_t>(
+        (nf_biased < 0) ? 0 : (nf_biased > 255 ? 255 : nf_biased));
+
+    if (sweep_fast_prefilter(shape_on, peak, nf_shelf, scanner_ptr_->shape_gate_margin_try())) {
+        return true;
+    }
+    // A frame failing the half-gate is still ADMITTED when it could contribute
+    // a weak-signal vote to the multi-frame integrator (TBD) — that decision
+    // belongs to the integrator's own criterion, not to half the shape gate.
+    return sweep_tbd_frame_reachable(
+        shape_on, peak, nf_shelf, scanner_ptr_->sweep_tbd_threshold_units_try());
+}
+
+void DroneScannerUI::drain_late_frames_for_current_slice() noexcept {
+    // PRE-RETUNE LATE DRAIN (O2): on_sweep_spectrum() runs AFTER the frame-sync
+    // handler's top drain. Any frame the M0 completes while this handler is
+    // busy (detector + display) was captured ENTIRELY at the current f_center
+    // (the radio has not retuned yet), but the imminent retune_sweep_window()
+    // will arm retune_pending_frames_ = len()+1 and the NEXT tick would drop it
+    // as stale — ~1 valid 6.5 ms frame wasted per slice. Recover it here.
+    if (spectrum_fifo_ == nullptr || scanner_ptr_ == nullptr) return;
+    if (active_sweep_idx_ >= MAX_SWEEP_WINDOWS) return;
+    auto& win = sweep_[active_sweep_idx_];
+    if (win.step_hz == 0) return;  // degenerate window — nothing to integrate
+
+    ChannelSpectrum& late = spectrum_discard_;  // BSS buffer, NOT the stack
+    uint8_t drained = 0;
+    while (spectrum_fifo_->out(late)) {
+        // Composite: display-only (credit=false) — pacing stays one step per
+        // retune; this only reinforces the max-hold at true RF positions.
+        win.process_bins(late, false);
+
+        // Detector: SAME prefilter + per-slice look budget as the top drain
+        // loop (drain_frame_may_detect is the shared single source of truth),
+        // so a late frame can never raise the slice's false-alarm rate above
+        // the capped norm — chronological order holds (out() pops FIFO order,
+        // so these are strictly NEWER than the frame already integrated).
+        if (drain_frame_may_detect(late)) {
+            const FreqHz fft_freq = (last_tuned_freq_ != 0) ? last_tuned_freq_ : win.f_center;
+            if (win.spend_detector_look(active_sweep_idx_, fft_freq)) {
+                scanner_ptr_->process_spectrum_sweep(
+                    active_sweep_idx_, late, fft_freq, win.f_min, win.f_max);
+            }
+        }
+        // Bounded: at most SWEEP_MAX_DRAIN_PER_TICK (= FIFO depth − 1) frames,
+        // matching the top drain loop's per-tick ceiling so the handler can
+        // never spin. The retune_sweep_window() call that follows re-arms
+        // retune_pending_frames_ from the (now smaller) FIFO len(), so nothing
+        // stale slips through.
+        if (++drained >= SWEEP_MAX_DRAIN_PER_TICK) break;
     }
 }
 

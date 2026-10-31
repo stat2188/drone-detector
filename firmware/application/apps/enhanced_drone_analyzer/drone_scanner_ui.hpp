@@ -184,8 +184,10 @@ private:
 
     /**
      * @brief Encapsulates all state for a single sweep window (Meyers: replace duplication with data)
-     * @note SRAM cost: ~300B per window (240 bytes composite + ~50 bytes metadata)
-     * @note Total for MAX_SWEEP_WINDOWS (4) windows: ~1,200B BSS
+     * @note SRAM cost: ~328B per window (240 bytes composite + ~80 bytes
+     *       metadata: 9 × FreqHz + pixel_index/pixel_max + retune/look-budget
+     *       bytes + flags, rounded up to 8-byte alignment)
+     * @note Total for MAX_SWEEP_WINDOWS (4) windows: ~1,312B BSS
      * @note Within 128KB SRAM budget but significant for resource-constrained system
      */
     struct SweepWindow {
@@ -295,6 +297,35 @@ private:
         }
 
         /**
+         * @brief Credit RF progress for a SKIPPED slice span WITHOUT painting
+         *        it — gate-aware skip (O1) bookkeeping.
+         * @param skipped_hz Frequency span of the elided guard-zone centers
+         *        (next_center − current_center − step_hz, i.e. only the centers
+         *        between the slice just integrated and the one being retuned to).
+         * @note Replicates process_frame()'s progress accumulator EXACTLY
+         *       (bins_hz_acc += span; promote whole pixels to pixel_index at
+         *       pixel_step_hz; remainder stays in bins_hz_acc) so pixel_index
+         *       keeps tracking the true RF position of the scan head even though
+         *       the guard-zone pixels were never painted. This keeps line_full
+         *       (pixel_index >= COMPOSITE_SIZE) in lock-step with freq_covered
+         *       — without it a skipped pass would never satisfy line_full and
+         *       the completion path would never fire.
+         * @note DRIFT-FREE: the sub-pixel remainder is preserved in bins_hz_acc
+         *       across calls (integer-only), never discarded, so skipping N
+         *       guard centers advances pixel_index by the SAME total as visiting
+         *       them (which would have painted them). Composite max-hold for
+         *       those columns is intentionally NOT written (documented O1
+         *       trade-off: guard zones are left unpainted; the detector would
+         *       have rejected every peak there via apply_sweep_tracking's range
+         *       gate, so detection is unaffected).
+         * @note pixel_index is capped at COMPOSITE_SIZE (never overflows into
+         *       line_full prematurely — the promotion loop has the same bound
+         *       as process_frame). Stack: ~8 B. Flash: ~40 B. No heap, no FP,
+         *       no locks. @pre Called on the UI thread only.
+         */
+        void credit_span(FreqHz skipped_hz) noexcept;
+
+        /**
          * @brief Derive the gapless sweep pitch and reset the window.
          * @note Contract: step_hz == 0 after init() ⇔ the range is degenerate
          *       (unsweepable after hardware clamps — f_min at the ceiling).
@@ -364,6 +395,53 @@ private:
     // votes and median weight). Live path uses display_only=false.
     void on_sweep_spectrum(const ChannelSpectrum& spectrum, bool display_only = false) noexcept;
     void retune_sweep_window(SweepWindow& win, const char* prefix = nullptr) noexcept;
+    /**
+     * @brief O2 PRE-RETUNE LATE DRAIN — integrate frames that completed during
+     *        this handler's own execution, at the CURRENT slice center, just
+     *        before retuning.
+     * @note WHY: on_sweep_spectrum() runs AFTER the frame-sync handler's top
+     *       drain loop. Any frame the M0 completes while this handler is busy
+     *       (detector loop + display update) is captured ENTIRELY at the
+     *       current f_center (the radio has not retuned yet), but the imminent
+     *       retune_sweep_window() will arm retune_pending_frames_ = len() + 1
+     *       and the NEXT tick would drop it as stale — ~1 valid 6.5 ms frame
+     *       wasted per slice. This recovers it.
+     * @note CHRONOLOGY: FIFO::out() pops in completion order, so the late
+     *       frames are strictly NEWER than the one just integrated — the
+     *       median filter / TBD waterfall stay time-ordered.
+     * @note DETECTOR: each late frame charges the SAME per-pass look budget
+     *       via SweepWindow::spend_detector_look(active_sweep_idx_, f_center),
+     *       so the slice's false-alarm rate stays capped exactly as a normal
+     *       slice (no unbounded drain — the historical "false spike" defect).
+     *       Composite integration is display-only (credit=false): pacing stays
+     *       one step per retune.
+     * @note Only called on the NORMAL advance path, never on the pass-
+     *       completion path (that handler is already the longest: waterfall
+     *       push + pair completion + AGC + round-robin retune — adding a drain
+     *       there would widen the straddler window for the NEW window).
+     * @note Bounded: the loop drains at most SWEEP_MAX_DRAIN_PER_TICK frames
+     *       (FIFO depth − 1). No heap, no FP, no locks (sweep path runs on the
+     *       UI thread with the scanner thread stopped).
+     */
+    void drain_late_frames_for_current_slice() noexcept;
+    /**
+     * @brief Shared prefilter for a drained live frame: may it reach the sweep
+     *        detector at all, or is it pure noise worth skipping?
+     * @param frame The drained FFT frame (its db[] bins are scanned).
+     * @return true  — caller MAY feed the frame to process_spectrum_sweep()
+     *         (subject to the per-slice look budget);
+     *         false — pure-noise frame, skip detector entry (CPU save).
+     * @note SINGLE SOURCE OF TRUTH for the drain-path prefilter, consumed by
+     *       BOTH the frame-sync handler's top drain loop AND
+     *       drain_late_frames_for_current_slice() so the two can never drift.
+     *       Uses sweep_fast_prefilter + sweep_tbd_frame_reachable (the SAME
+     *       helpers process_spectrum_sweep() itself uses) with config read via
+     *       TryLock (fail-open on contention): never blocks the 60 Hz
+     *       DisplayFrameSync tick. Peak/noise from one 228-bin min/max pass
+     *       (FFT_USABLE_BINS_NARROW).
+     * @note Stack: ~8 B. No heap, no FP, no locks. @pre UI thread only.
+     */
+    [[nodiscard]] bool drain_frame_may_detect(const ChannelSpectrum& frame) noexcept;
     void update_sweep_pair_display() noexcept;
     [[nodiscard]] uint8_t pair_first(uint8_t idx) const noexcept;
 
