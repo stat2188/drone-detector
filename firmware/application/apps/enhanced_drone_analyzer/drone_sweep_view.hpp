@@ -336,8 +336,10 @@ public:
 
     void focus() override;
 
-    std::string title() const override {
-        static const std::string t = "SWP Settings";  // SSO — no heap allocation
+    [[nodiscard]] std::string title() const override {
+        // Zero-allocation: function-local static, initialized once on first call.
+        // "SWP Settings" = 12 chars fits libstdc++ SSO buffer (15 bytes) — no heap.
+        static const std::string t = "SWP Settings";
         return t;
     }
 

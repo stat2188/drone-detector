@@ -45,8 +45,11 @@ public:
     DroneScannerUI(const DroneScannerUI&) = delete;
     DroneScannerUI& operator=(const DroneScannerUI&) = delete;
 
-    std::string title() const override {
-        static const std::string t = "RSA";  // SSO — no heap allocation for ≤15 chars
+    [[nodiscard]] std::string title() const override {
+        // Zero-allocation: function-local static, initialized once on first call.
+        // "RSA" = 3 chars fits libstdc++ SSO buffer (15 bytes) — no heap, no per-call copy cost.
+        // Base class ui::View declares virtual std::string title() const — return type must match.
+        static const std::string t = "RSA";
         return t;
     }
     void paint(Painter& painter) override;

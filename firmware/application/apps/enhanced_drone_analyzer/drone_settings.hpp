@@ -41,9 +41,14 @@ class DroneDisplay;
 class CfarModeSelector : public ui::Widget {
 public:
     using value_t = int32_t;
+    using on_change_cb = void (*)(void* ctx, size_t index, value_t value);
 
-    // OptionsField-compatible callback: (selected_index, option_value).
-    std::function<void(size_t, value_t)> on_change{};
+    // Zero-heap callback: raw function pointer + context pointer.
+    // Replaces std::function which can heap-allocate for non-trivial callables.
+    // API mirrors ui::OptionsField (on_change(size_t, int32_t)) but with
+    // an extra ctx parameter for the user data pointer.
+    on_change_cb on_change{nullptr};
+    void* on_change_ctx{nullptr};
 
     CfarModeSelector(ui::Point parent_pos, size_t length) noexcept
         : ui::Widget{{parent_pos, {8 * static_cast<int>(length), 16}}},
@@ -86,8 +91,10 @@ public:
 
     void focus() override;
 
-    std::string title() const override {
-        static const std::string t = "RSA Settings";  // SSO — no heap allocation
+    [[nodiscard]] std::string title() const override {
+        // Zero-allocation: function-local static, initialized once on first call.
+        // "RSA Settings" = 12 chars fits libstdc++ SSO buffer (15 bytes) — no heap.
+        static const std::string t = "RSA Settings";
         return t;
     }
 

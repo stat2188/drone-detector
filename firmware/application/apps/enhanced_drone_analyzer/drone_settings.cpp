@@ -68,8 +68,8 @@ void CfarModeSelector::set_selected_index(
     if (new_index >= CFAR_OPTION_COUNT) return;
     if (new_index != selected_index_ || trigger_change) {
         selected_index_ = new_index;
-        if (on_change) {
-            on_change(selected_index_, CFAR_OPTIONS[selected_index_].value);
+        if (on_change != nullptr) {
+            on_change(on_change_ctx, selected_index_, CFAR_OPTIONS[selected_index_].value);
         }
         set_dirty();
     }
@@ -649,9 +649,11 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     };
 
     // CFAR callbacks
-    field_cfar_mode_.on_change = [this](size_t, int32_t v) {
-        settings_.cfar_mode = static_cast<CFARMode>(v);
-        settings_dirty_ = true;
+    field_cfar_mode_.on_change_ctx = this;
+    field_cfar_mode_.on_change = [](void* ctx, size_t, int32_t v) {
+        auto* self = static_cast<DroneSettingsView*>(ctx);
+        self->settings_.cfar_mode = static_cast<CFARMode>(v);
+        self->settings_dirty_ = true;
     };
 
     field_cfar_ref_cells_.on_change = [this](int32_t v) {
