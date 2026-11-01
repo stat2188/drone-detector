@@ -71,12 +71,14 @@ template<LockOrder ORDER>
 class MutexLock {
 public:
     explicit MutexLock(Mutex& mutex) noexcept
-        : mutex_(mutex) {
+        : mutex_(mutex), locked_(true) {
         chMtxLock(&mutex_);
     }
 
     ~MutexLock() noexcept {
-        chMtxUnlock();
+        if (locked_) {
+            chMtxUnlock();
+        }
     }
 
     MutexLock(const MutexLock&) = delete;
@@ -86,6 +88,7 @@ public:
 
 private:
     Mutex& mutex_;
+    bool locked_;
 };
 
 template<LockOrder ORDER>

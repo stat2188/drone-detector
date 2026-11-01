@@ -51,8 +51,8 @@ void RangeNameSelector::set_selected_index(
     if (new_index >= RANGE_NAME_COUNT) return;
     if (new_index != selected_index_ || trigger_change) {
         selected_index_ = new_index;
-        if (on_change) {
-            on_change(selected_index_, static_cast<int32_t>(selected_index_));
+        if (on_change != nullptr) {
+            on_change(on_change_ctx, selected_index_, static_cast<value_t>(selected_index_));
         }
         set_dirty();
     }
@@ -358,12 +358,14 @@ SweepWindowView::SweepWindowView(NavigationView& nav, const Rect parent_rect, Dr
     // propagates it into ScanConfig + the settings file).
     // Hardened: the stored index is clamped before use (load-time normalization
     // guarantees < DETECTION_WINDOWS_PER_WINDOW; zero-cost defensive check).
-    field_label_name_.on_change = [this](size_t, int32_t v) {
-        if (bound_data_ == nullptr) return;
-        const uint8_t slot = (label_slot_ < DETECTION_WINDOWS_PER_WINDOW)
-            ? label_slot_
+    field_label_name_.on_change_ctx = this;
+    field_label_name_.on_change = [](void* ctx, size_t, int32_t v) {
+        auto* self = static_cast<SweepWindowView*>(ctx);
+        if (self->bound_data_ == nullptr) return;
+        const uint8_t slot = (self->label_slot_ < DETECTION_WINDOWS_PER_WINDOW)
+            ? self->label_slot_
             : static_cast<uint8_t>(DETECTION_WINDOWS_PER_WINDOW - 1);
-        bound_data_->name_idx[slot] =
+        self->bound_data_->name_idx[slot] =
             (v >= 0 && v < static_cast<int32_t>(RANGE_NAME_COUNT))
                 ? static_cast<uint8_t>(v) : 0U;
     };

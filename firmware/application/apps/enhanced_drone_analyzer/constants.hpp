@@ -222,6 +222,9 @@ constexpr uint8_t DEFAULT_LNA_GAIN = 32;
  */
 constexpr uint8_t DEFAULT_VGA_GAIN = 32;
 
+/** @brief Maximum valid LNA gain (dB) — MAX2837 hardware limit */
+constexpr uint16_t MAX_GAIN_DB = 40;
+
 // ============================================================================
 // Time Constants
 // ============================================================================

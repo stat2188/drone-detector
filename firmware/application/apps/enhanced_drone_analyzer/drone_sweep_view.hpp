@@ -80,8 +80,10 @@ struct DetRangeWindowClamp {
 class RangeNameSelector : public ui::Widget {
 public:
     using value_t = int32_t;
+    using on_change_cb = void (*)(void* ctx, size_t index, value_t value);
 
-    std::function<void(size_t, value_t)> on_change{};
+    on_change_cb on_change{nullptr};
+    void* on_change_ctx{nullptr};
 
     RangeNameSelector(ui::Point parent_pos, size_t length) noexcept
         : ui::Widget{{parent_pos, {8 * static_cast<int>(length), 16}}},

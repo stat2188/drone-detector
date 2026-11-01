@@ -1707,23 +1707,19 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum, bool dis
         return;
     }
 
+    // Consume the entry-skip flag: the first frame after sweep entry (or
+    // window switch) may be stale from the previous mode/tune. The frame-sync
+    // handler already dropped drained frames under entry_skip; this final
+    // frame is guaranteed clean because PLL lock (~200 µs) < FFT frame period
+    // (~6.5 ms). Clearing here ensures subsequent frames are processed normally.
+    skip_next_fft_ = false;
+
     // NOTE: streaming stays RUNNING continuously across sweep steps.
     // retune_sweep_window() retunes the radio and arms the exact stale-frame
     // budget (retune_pending_frames_ = len() + 1). Stopping+restarting
     // streaming here would reset the channel FIFO twice per step and inject two
     // M0 control messages into the UI event loop on every frame — the main
     // cause of sweep stutter.
-
-    // Skip first FFT after sweep entry — may be stale from previous mode.
-    // MUST check BEFORE process_bins() to prevent stale data from being written
-    // into the composite buffer. Looking Glass avoids this entirely by stopping
-    // streaming before processing (no stale frames possible).
-    if (skip_next_fft_) {
-        skip_next_fft_ = false;
-        auto& win = sweep_[active_sweep_idx_];
-        retune_sweep_window(win, nullptr);
-        return;
-    }
 
     auto& win = sweep_[active_sweep_idx_];
 
@@ -1741,16 +1737,15 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum, bool dis
         // (identical discipline to the drained live frames, C2): pixel_index /
         // bins_hz_acc / line_full / scan-head pacing stay at exactly one step
         // per retune, while the composite max-hold below gets the second look
-        // at f_center_ini. The DETECTOR is charged the same per-pass budget as
-        // every other slice (spend_detector_look below) instead of being
-        // doubled, so the revisit contributes only while that budget has room —
-        // never above the uniform cap, never below an interior slice. See
+        // at f_center_ini. The DETECTOR is intentionally NOT charged on the
+        // revisit (guard above) — both ticks contribute only composite max-hold,
+        // so FAR stays uniform across the window (one look per slice). See
         // SweepWindow::first_slice_dwell_done_ for the full rationale.
         const bool first_slice_revisit =
             win.first_slice_dwell_done_ && (win.f_center == win.f_center_ini);
         win.process_bins(spectrum, !first_slice_revisit);
 
-        if (scanner_ptr_ != nullptr && !display_only) {
+        if (scanner_ptr_ != nullptr && !display_only && !first_slice_revisit) {
             // Use the exact frequency the radio was tuned to when this FFT was captured.
             // f_center may have already been incremented from the previous frame's step.
             const FreqHz fft_freq = (last_tuned_freq_ != 0) ? last_tuned_freq_ : win.f_center;

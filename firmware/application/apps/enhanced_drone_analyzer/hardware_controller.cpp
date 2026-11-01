@@ -384,7 +384,7 @@ ErrorCode HardwareController::reset() noexcept {
 
 ErrorCode HardwareController::get_last_error() const noexcept {
     MutexTryLock<LockOrder::STATE_MUTEX> lock(mutex_);
-    return lock.is_locked() ? last_error_ : ErrorCode::SUCCESS;
+    return lock.is_locked() ? last_error_ : ErrorCode::MUTEX_LOCK_FAILED;
 }
 
 ErrorCode HardwareController::validate_frequency_internal(FreqHz frequency) const noexcept {
@@ -394,10 +394,8 @@ ErrorCode HardwareController::validate_frequency_internal(FreqHz frequency) cons
     
     return ErrorCode::SUCCESS;
 }
-
 ErrorCode HardwareController::validate_gain_internal(uint16_t gain) const noexcept {
-    constexpr uint16_t MAX_GAIN = 40;
-    if (gain > MAX_GAIN) {
+    if (gain > MAX_GAIN_DB) {
         return ErrorCode::INVALID_PARAMETER;
     }
     
