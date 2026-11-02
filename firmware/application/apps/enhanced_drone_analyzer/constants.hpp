@@ -2079,6 +2079,26 @@ constexpr uint8_t CFAR_GUARD_CELLS_MIN = 0;
 constexpr uint8_t CFAR_GUARD_CELLS_MAX = 8;
 
 /**
+ * @brief CFAR integer-arithmetic scales (implementation domains)
+ * @note CFAR_HIST_BINS: the OS-CFAR sliding histogram is indexed by the
+ *       sample VALUE (spectrum.db is uint8_t), so its bin count is the
+ *       value range 0..255 — NOT the FFT bin count (also 256, coincidence).
+ * @note CFAR_THRESHOLD_X10_DIV: converts the x10 threshold storage
+ *       (CFAR_THRESHOLD_MIN_X10..CFAR_THRESHOLD_MAX_X10) into
+ *       spectrum.db units (threshold = noise + value / 10).
+ * @note CFAR_PERCENT_SCALE: percent domain shared by the OS k-index
+ *       (k = N_ref * OS_CFAR_K_PERCENT / CFAR_PERCENT_SCALE) and the
+ *       hybrid weight sum (alpha + beta + gamma = 100).
+ * @note CFAR_VI_SCALE: VI-CFAR variance/mean^2 is kept x1000 in integers;
+ *       the threshold arrives x10 and is rescaled by
+ *       CFAR_VI_SCALE / 10 in CFARDetector::frame_begin().
+ */
+constexpr size_t CFAR_HIST_BINS = 256;
+constexpr uint8_t CFAR_THRESHOLD_X10_DIV = 10;
+constexpr uint8_t CFAR_PERCENT_SCALE = 100;
+constexpr uint16_t CFAR_VI_SCALE = 1000;
+
+/**
  * @brief CFAR hybrid mode weights (×100 for integer storage)
  * @note w_hybrid = α*w_CA + β*w_GO + γ*w_SO
  * @note α + β + γ = 100

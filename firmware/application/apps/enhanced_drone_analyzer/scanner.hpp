@@ -690,7 +690,8 @@ private:
      */
     struct FrameState {
         const uint8_t* spectrum;     ///< Read-only frame (NOT owned)
-        uint8_t* hist;               ///< OS histogram 256 B (NOT owned) or nullptr
+        uint8_t* hist;               ///< OS histogram CFAR_HIST_BINS B, indexed by
+                                     ///< sample VALUE (NOT owned) or nullptr
         CFARMode mode;               ///< Per-frame mode (dispatch in cut_pass)
         int32_t cut;                 ///< Current cell under test
         int32_t lo;                  ///< Usable band [lo, hi)
@@ -699,7 +700,7 @@ private:
         int32_t vi_threshold;        ///< VI threshold in legacy x1000/x10 form
                                      ///< (int32: up to 50 * 100 = 5000)
         uint8_t guard;               ///< Clamped guard cells
-        uint8_t threshold_offset;    ///< threshold_x10 / 10 — hoisted division
+        uint8_t threshold_offset;    ///< threshold_x10 / CFAR_THRESHOLD_X10_DIV — hoisted
         uint8_t os_k_percent;        ///< OS k-th order percentile
         uint8_t alpha;               ///< HYBRID CA weight x100
         uint8_t beta;                ///< HYBRID GO weight x100
@@ -729,7 +730,8 @@ private:
      * @param gamma HYBRID SO weight x100
      * @param os_k_percent OS percentile (50-90)
      * @param vi_threshold_x10 VI threshold x10 (5-50)
-     * @param hist 256 B OS histogram (zeroed here once per frame) or nullptr
+     * @param hist CFAR_HIST_BINS B OS histogram indexed by sample VALUE
+     *        (zeroed here once per frame) or nullptr
      * @note Stack: ~8 B locals. No FP. No allocation.
      */
     static void frame_begin(
@@ -763,9 +765,9 @@ private:
         st.lo = static_cast<int32_t>(usable_lo);
         st.hi = static_cast<int32_t>(usable_hi);
         st.span = static_cast<int32_t>(ref_cells) + static_cast<int32_t>(guard_cells);
-        st.vi_threshold = static_cast<int32_t>(vi_threshold_x10) * 100;  // legacy x1000/x10 form
+        st.vi_threshold = static_cast<int32_t>(vi_threshold_x10) * (CFAR_VI_SCALE / 10);  // legacy x1000/x10 form
         st.guard = guard_cells;
-        st.threshold_offset = static_cast<uint8_t>(threshold_x10 / 10);
+        st.threshold_offset = static_cast<uint8_t>(threshold_x10 / CFAR_THRESHOLD_X10_DIV);
         st.os_k_percent = os_k_percent;
         st.alpha = alpha;
         st.beta = beta;
@@ -776,7 +778,7 @@ private:
 
         // OS histogram: zeroed ONCE per frame (legacy memset per cut is gone).
         if (st.hist != nullptr) {
-            for (size_t i = 0; i < 256; ++i) st.hist[i] = 0;
+            for (size_t i = 0; i < CFAR_HIST_BINS; ++i) st.hist[i] = 0;
         }
 
         // Pre-roll: the SAME cell sets the legacy per-cut loops observed for
@@ -806,7 +808,12 @@ private:
         if (st.track_sq) w.sq += x * x;
         ++w.count;
         if (st.hist != nullptr) {
-            ++st.hist[k];
+            // Bin = the cell's sample VALUE (0..255), NOT its index k: os_kth()
+            // walks the histogram by value to recover the k-th order
+            // STATISTIC (a spectrum.db level). Indexing by k would count
+            // cells by position and cumulative positions would return a bin
+            // index — a noise estimate unrelated to the actual levels.
+            ++st.hist[x];
         }
     }
 
@@ -827,7 +834,9 @@ private:
         if (st.track_sq) w.sq -= x * x;
         --w.count;
         if (st.hist != nullptr) {
-            --st.hist[k];
+            // Exact mirror of slide_add: subtract from the VALUE bin so the
+            // histogram never drifts (see slide_add).
+            --st.hist[x];
         }
     }
 
@@ -886,18 +895,18 @@ private:
     [[nodiscard]] static int32_t os_kth(const FrameState& st) noexcept {
         const int32_t n = st.left.count + st.right.count;
         if (n <= 0 || st.hist == nullptr) return 0;
-        const int32_t k_idx = (n * static_cast<int32_t>(st.os_k_percent)) / 100;
+        const int32_t k_idx = (n * static_cast<int32_t>(st.os_k_percent)) / CFAR_PERCENT_SCALE;
         const int32_t k_safe = (k_idx < n) ? k_idx : (n - 1);
 
         int32_t cum = 0;
         int32_t v = 0;
-        while (v < 256 && st.hist[v] == 0) ++v;  // skip empty low bins
-        for (; v < 256; ++v) {
+        while (v < static_cast<int32_t>(CFAR_HIST_BINS) && st.hist[v] == 0) ++v;  // skip empty low bins
+        for (; v < static_cast<int32_t>(CFAR_HIST_BINS); ++v) {
             cum += st.hist[v];
             // First value whose cumulative count passes k_safe IS cells[k_safe].
             if (cum > k_safe) return v;
         }
-        return 255;  // unreachable (cum == n > k_safe) — defensive, fail-closed
+        return static_cast<int32_t>(CFAR_HIST_BINS) - 1;  // unreachable (cum == n > k_safe) — defensive, fail-closed
     }
 
     /**
@@ -939,7 +948,7 @@ private:
             }
             cells[j] = key;
         }
-        const size_t k_idx = (ref_idx * st.os_k_percent) / 100;
+        const size_t k_idx = (ref_idx * st.os_k_percent) / CFAR_PERCENT_SCALE;
         const size_t k_safe = (k_idx < ref_idx) ? k_idx : ref_idx - 1;
         return static_cast<int32_t>(cells[k_safe]);
     }
@@ -1042,10 +1051,10 @@ private:
                 // int64 intermediates: var can reach ~4.16M, x1000 overflows
                 // int32 — same expression legacy used.
                 const int32_t left_vi = static_cast<int32_t>(
-                    (static_cast<int64_t>(window_variance(L)) * 1000) /
+                    (static_cast<int64_t>(window_variance(L)) * CFAR_VI_SCALE) /
                     (static_cast<int64_t>((la > 0) ? la : 1) * ((la > 0) ? la : 1)));
                 const int32_t right_vi = static_cast<int32_t>(
-                    (static_cast<int64_t>(window_variance(R)) * 1000) /
+                    (static_cast<int64_t>(window_variance(R)) * CFAR_VI_SCALE) /
                     (static_cast<int64_t>((ra > 0) ? ra : 1) * ((ra > 0) ? ra : 1)));
 
                 if (left_vi < st.vi_threshold && right_vi < st.vi_threshold) {
@@ -3239,8 +3248,8 @@ private:
     // + insertion sort with O(1) histogram updates + a cumulative scan.
     // Written/read ONLY on the UI drain thread — the only thread that calls
     // find_peaks (same sequential same-thread contract as envelope_buf_).
-    // SRAM: 256 bytes (class member, not stack). Flash: 0.
-    uint8_t cfar_hist_buf_[256];
+    // SRAM: CFAR_HIST_BINS bytes (class member, not stack). Flash: 0.
+    uint8_t cfar_hist_buf_[CFAR_HIST_BINS];
 
     // Lock timeout violation counter (for monitoring and debugging)
     uint32_t lock_timeout_count_{0};

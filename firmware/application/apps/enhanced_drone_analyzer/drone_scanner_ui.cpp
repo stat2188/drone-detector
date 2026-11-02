@@ -1707,19 +1707,34 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum, bool dis
         return;
     }
 
-    // Consume the entry-skip flag: the first frame after sweep entry (or
-    // window switch) may be stale from the previous mode/tune. The frame-sync
-    // handler already dropped drained frames under entry_skip; this final
-    // frame is guaranteed clean because PLL lock (~200 µs) < FFT frame period
-    // (~6.5 ms). Clearing here ensures subsequent frames are processed normally.
-    skip_next_fft_ = false;
-
     // NOTE: streaming stays RUNNING continuously across sweep steps.
     // retune_sweep_window() retunes the radio and arms the exact stale-frame
     // budget (retune_pending_frames_ = len() + 1). Stopping+restarting
     // streaming here would reset the channel FIFO twice per step and inject two
     // M0 control messages into the UI event loop on every frame — the main
     // cause of sweep stutter.
+
+    // ENTRY-SKIP BRANCH (restored from 08559b98, see RED-TEAM-2): under
+    // entry_skip the frame-sync handler drops every QUEUED frame but hands
+    // the final one over here — and that frame is NOT provably post-retune:
+    // its capture may have completed before the entry retune reached the M0,
+    // so "PLL lock (~200 us) < FFT frame period (~6.5 ms)" only guarantees
+    // the FIRST FULL post-retune frame is clean, not THIS one (it can be
+    // entirely pre-retune, not merely mixed). Discard it and retune instead:
+    // retune_sweep_window() re-arms retune_pending_frames_ = len() + 1, so
+    // the next tick drops exactly the queued frames plus the in-flight
+    // straddler and only clean captures are painted or fed to the detector.
+    // The flag is cleared exactly once and is never re-set inside this
+    // function, so the re-armed budget is spent on the NEXT tick — no
+    // "never-expires" retune loop (the 164ee320 settle-counter pathology).
+    // MUST run BEFORE process_bins() so stale data never reaches the
+    // composite buffer or the detector.
+    if (skip_next_fft_) {
+        skip_next_fft_ = false;
+        auto& win = sweep_[active_sweep_idx_];
+        retune_sweep_window(win, nullptr);
+        return;
+    }
 
     auto& win = sweep_[active_sweep_idx_];
 

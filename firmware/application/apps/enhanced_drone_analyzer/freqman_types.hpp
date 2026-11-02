@@ -7,11 +7,11 @@
 namespace drone_analyzer {
 
 enum class freqman_type : uint8_t {
-    Single,    
-    Range,     
-    HamRadio,  
-    Repeater,  
-    Raw,       
+    Single,
+    Range,
+    HamRadio,
+    Repeater,
+    Raw,
     Unknown,
 };
 

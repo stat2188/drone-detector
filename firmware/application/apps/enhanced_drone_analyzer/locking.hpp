@@ -71,14 +71,15 @@ template<LockOrder ORDER>
 class MutexLock {
 public:
     explicit MutexLock(Mutex& mutex) noexcept
-        : mutex_(mutex), locked_(true) {
+        : mutex_(mutex) {
         chMtxLock(&mutex_);
     }
 
     ~MutexLock() noexcept {
-        if (locked_) {
-            chMtxUnlock();
-        }
+        // Unconditional unlock: chMtxLock() does not return on failure, so
+        // the object always owns exactly one lock on construction (the old
+        // locked_ flag was a constant true — dead state).
+        chMtxUnlock();
     }
 
     MutexLock(const MutexLock&) = delete;
@@ -88,7 +89,6 @@ public:
 
 private:
     Mutex& mutex_;
-    bool locked_;
 };
 
 template<LockOrder ORDER>
