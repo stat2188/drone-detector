@@ -31,9 +31,13 @@ public:
 private:
     // Initializers ARE the constants.hpp defaults (single source of truth —
     // a default change there updates this preview automatically; the old
-    // hardcoded set still said sharpness=120 / valley=80 after the defaults
-    // moved to 100 / 90); runtime values always arrive via set_params()
-    // from DroneSettingsView.
+    // hardcoded set once said sharpness=120 / valley=80 and was left behind
+    // by later default moves — it now reads 165 / 0, i.e. VLY OFF); runtime
+    // values always arrive via set_params() from DroneSettingsView.
+    // NOTE valley_depth_ is an ABSOLUTE flank-margin threshold (higher =
+    // more permissive) and the preview normalizes the useful band 0..84
+    // (SPECTRUM_VALLEY_SMOOTH_REACH) onto its pedestal — see
+    // spectrum_preview_widget.cpp.
     uint8_t margin_{DEFAULT_SPECTRUM_MARGIN};
     uint8_t min_width_{DEFAULT_SPECTRUM_MIN_WIDTH};
     uint8_t max_width_{DEFAULT_SPECTRUM_MAX_WIDTH};

@@ -271,6 +271,17 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , field_spectrum_max_width_({UI_POS_X(5), UI_POS_Y(5)}, 3, {2, 255}, 1, ' ')
     , field_spectrum_peak_sharpness_({UI_POS_X(5), UI_POS_Y(6)}, 3, {50, 250}, 5, ' ')
     , field_spectrum_peak_ratio_({UI_POS_X(12), UI_POS_Y(5)}, 3, {0, 255}, 5, ' ')
+    // VLY (Step 9 valley): ABSOLUTE flank-margin threshold in raw dB units.
+    // 0 = OFF (the whole block, including the O(width) dual-peak ridge scan,
+    // is skipped outright). RAISING it LOOSENS the filter — the Step-9 pass
+    // rule is "max flank margin < VLY". Range 0..200, step 5.
+    // DEPENDENCY: the settings preview does NOT scale 0..200 linearly — it
+    // normalizes the useful smooth-flank band 0..SPECTRUM_VALLEY_SMOOTH_REACH
+    // (constants.hpp = 84) onto its pedestal and saturates above it, because
+    // on a smooth monotone skirt the filter itself is inert above 84
+    // (margin >= 3*(D+1)). Values > 84 still bite plateau / second-lobe
+    // terrain inside the 6-bin probe window — that is why the UI range stays
+    // 200 instead of being clamped to 84.
     , field_spectrum_valley_depth_({UI_POS_X(12), UI_POS_Y(6)}, 3, {0, 200}, 5, ' ')
     // AUDIT FIX W3 (step 5 -> 1): flatness_pct = floor(high_count * 100 /
     // width) with high_count >= 1 always, so its PASS region collapses as

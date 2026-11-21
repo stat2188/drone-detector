@@ -173,6 +173,12 @@ inline uint16_t eased_flatness_limit(uint8_t user_flatness, uint16_t w2) noexcep
  *         w² = 10000 (Sens OFF byte-identity), the smooth-flank ceiling
  *         (margin/3 + 1) added at w² = 0. MAX-POLARITY (a HIGHER limit is
  *         MORE permissive: reject iff max_valley >= limit).
+ * @note SMOOTH-FLANK REACH: the settings-preview scale reads the same bound
+ *       from constants.hpp (SPECTRUM_VALLEY_SMOOTH_REACH = 84) — on a smooth
+ *       monotone skirt the Step-4 walk caps the FIRST probed flank bin at
+ *       peak_margin/3, so a user D above that bound can never reject there;
+ *       only terrain that RISES inside the 6-bin window (plateau / second
+ *       lobe beyond a one-bin edge dip) can. One bound, two documents.
  * @note Consumed by apply_shape_filters Step 9 AND the Step-9
  *       INFORMATIVE-ARMING capability test (audit D-ARM ext. 2026-10,
  *       regime (3) in constants.hpp): one formula, so the arming test

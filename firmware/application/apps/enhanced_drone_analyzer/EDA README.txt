@@ -972,6 +972,15 @@ below matches the scanner.cpp comments 1:1 (DB executes 13→15, sweep
       (the old margin/4 was inert for margin >= 15 — audit D-1 fix). Flat-top
       (0 extra runs) and ripple-top (2+ runs) never skip; SPLIT emissions
       (null below the bar) are invisible to the scan — their flank IS the null.
+    -> Settings preview (spectrum_preview_widget.cpp): VLY is drawn as a
+      YELLOW dashed threshold line at the tolerated flank level plus a red
+      edge bar (green 1-px stub = VLY 0 / OFF), with a "V" label. The
+      pedestal height is NOT linear over 0..200 — it normalizes the provable
+      smooth-flank band 0..SPECTRUM_VALLEY_SMOOTH_REACH (= (255-1)/3 = 84,
+      constants.hpp) onto peak_h/3 and saturates above it, so every encoder
+      step is visible and the tail honestly reads "beyond smooth-flank
+      reach". Where that line lands on the orange Mar line it switches to a
+      phase-shifted dash so neither threshold masks the other.
 
   Step 10: Flatness
     flatness_pct = (high_power_bins * 100) / signal_width

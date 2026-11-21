@@ -2,6 +2,7 @@
 #include <algorithm>
 
 #include "spectrum_preview_widget.hpp"
+#include "constants.hpp"
 #include "theme.hpp"
 
 namespace drone_analyzer {
@@ -94,9 +95,27 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
     int half_px = static_cast<int>(max_width_) * w / (2 * PREVIEW_BIN_SPAN);
     half_px = std::max(2, std::min(w / 2 - 2, half_px));
 
-    // Valley floor height (pixels above baseline). Maps 0-200 to 0-50% of peak_h.
-    int valley_px = static_cast<int>(valley_depth_) * peak_h / 400;
-    valley_px = std::min(valley_px, peak_h / 3);
+    // Valley floor height (pixels above baseline) = the tallest flank the
+    // VLY setting still tolerates. VLY is an ABSOLUTE flank-margin threshold
+    // in raw dB units (Step 9: pass iff max flank margin < VLY), so a HIGHER
+    // VLY is MORE permissive and the preview draws a HIGHER pedestal — the
+    // direction is deliberate (see constants.hpp DEFAULT_SPECTRUM_VALLEY_DEPTH).
+    //
+    // SCALE FIX (observability): the old VLY*peak_h/400 mapping made the
+    // first encoder step (0 -> 5) round to ZERO pixels and saturated at
+    // peak_h/3 for VLY >= 134, leaving the top third of the 0..200 range
+    // visually inert. On a smooth flank the filter itself is inert above
+    // SPECTRUM_VALLEY_SMOOTH_REACH (84), so normalize THAT useful band onto
+    // the pedestal and round UP: every non-zero step is now visible and the
+    // saturating tail honestly means "beyond smooth-flank reach".
+    const int valley_cap_px = peak_h / 3;
+    int valley_px = 0;
+    if (valley_depth_ > 0 && valley_cap_px > 0) {
+        constexpr int reach = static_cast<int>(SPECTRUM_VALLEY_SMOOTH_REACH);
+        const int v = std::min(static_cast<int>(valley_depth_), reach);
+        valley_px = (v * valley_cap_px + reach - 1) / reach;  // ceil, never 0
+        valley_px = std::max(1, std::min(valley_px, valley_cap_px));
+    }
 
     // Flat top width (pixels). Maps flatness 0-100 to 0-50% of half_px.
     // SEMANTICS: the drawn peak is the FLATTEST signal that still passes
@@ -179,14 +198,57 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
         }
     }
 
-    // --- Valley indicators: small filled bars at signal edge ---
-    // Red if valley_depth > 0 (filter active), green if disabled.
-    for (int side = -1; side <= 1; side += 2) {
-        const int vx = center + side * (half_px + 1);
-        if (vx >= 0 && vx < w && valley_px > 0) {
-            const int vh = std::min(valley_px, h - 4);
-            const ui::Color vc = (valley_depth_ == 0) ? ui::Color::green() : ui::Color::red();
-            painter.fill_rectangle({x0 + vx - 1, floor_y - vh, 3, vh}, vc);
+    // --- Valley threshold: yellow dashed line at the tolerated flank level ---
+    // Makes the pedestal level explicit: a flank that rises above this line
+    // is rejected by Step 9; a flank below it passes. Drawn full-width like
+    // the margin line so the two levels are directly comparable; the "V"
+    // label below disambiguates it from "M".
+    //
+    // DASH PHASE: this line is drawn AFTER the orange margin line, so where
+    // valley_px == margin_px a same-phase yellow dash would fully MASK the
+    // margin line and one threshold would vanish. Collisions are possible
+    // only while the orange line is actually drawn (margin_px > 2, i.e.
+    // Mar >= 19) and only while valley_px <= peak_h/3 (Mar <= 95): e.g.
+    // VLY=35 meets Mar=42. valley_px = ceil(VLY/6) holds VLY for exactly
+    // 6 consecutive units, so 1-2 of the 41 encoder steps collide at any
+    // such Mar. On that collision only, the segment is shrunk to
+    // DASH_SEGMENT_PX-1 (2 px) and phase-shifted by DASH_SEGMENT_PX (3 px)
+    // so it fills exactly the 2-px gaps of the orange pattern: period 5 =
+    // orange [0,3) + yellow [3,5) + orange [5,8) + ...
+    // Both thresholds stay visible, alternating, precisely when they coincide.
+    // Otherwise the line keeps the normal 3-px/5-px pattern from x0, so it
+    // never differs from the margin line for no reason.
+    if (valley_px > 0) {
+        const int vy = floor_y - valley_px;
+        const bool interleave = (margin_px > 2) && (valley_px == margin_px);
+        const int start = interleave ? DASH_SEGMENT_PX : 0;
+        const int seg = interleave ? std::max(1, DASH_SEGMENT_PX - 1) : DASH_SEGMENT_PX;
+        for (int x = x0 + start; x < x0 + w; x += DASH_PERIOD_PX) {
+            painter.draw_hline({x, vy}, std::min(seg, x0 + w - x), ui::Color::yellow());
+        }
+    }
+
+    // --- Valley indicators: small filled bars at the signal edge ---
+    // Red bar = filter armed, height = tolerated flank level (valley_px).
+    // Green 1-px stub = VLY 0 (OFF). The old `valley_px > 0` guard made the
+    // green branch UNREACHABLE (valley_px is 0 exactly when VLY is 0), so the
+    // disabled state was never shown; the guard now gates the bar height, not
+    // the branch.
+    {
+        const bool valley_on = (valley_depth_ > 0);
+        const int vh = valley_on ? std::max(1, std::min(valley_px, h - 4)) : 1;
+        const ui::Color vc = valley_on ? ui::Color::red() : ui::Color::green();
+        for (int side = -1; side <= 1; side += 2) {
+            const int vx = center + side * (half_px + 1);
+            // The bar is 3 px wide CENTERED on vx, so the guard must reserve
+            // one column on each side. The old `vx >= 0 && vx < w` let
+            // vx == w-1 through and painted x0+w (one column past the widget).
+            // ILI9341::fill_rectangle clips to screen_rect(), so it was never
+            // memory-unsafe — but on a widget that is not flush against the
+            // screen edge it would bleed into the neighbouring widget.
+            if (vx >= 1 && vx <= w - 2) {
+                painter.fill_rectangle({x0 + vx - 1, floor_y - vh, 3, vh}, vc);
+            }
         }
     }
 
@@ -222,6 +284,16 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
     if (margin_px > 4) {
         painter.draw_string({x0 + 1, margin_y - 14}, font,
                             ui::Color::orange(), ui::Color::black(), "M");
+    }
+
+    // "V" near the valley threshold line (yellow) — identifies the VLY
+    // setting (tolerated flank level). Right edge so it cannot collide with
+    // the orange "M"; clamped into the widget so a tall pedestal cannot push
+    // the glyph off-screen.
+    if (valley_px > 0) {
+        const int vy = std::max(y0 + 1, floor_y - valley_px - 14);
+        painter.draw_string({x0 + w - 9, vy}, font,
+                            ui::Color::yellow(), ui::Color::black(), "V");
     }
 
     // "mn" near left red marker — identifies minimum width boundary.

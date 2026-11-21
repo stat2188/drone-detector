@@ -1299,6 +1299,28 @@ constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 0;
 constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 0;
 
 /**
+ * @brief Largest spectrum_valley_depth that can fire on a SMOOTH monotone
+ *        flank — the useful part of the 0..200 UI range.
+ * @details Step 4 stops the width walk at the first bin below
+ *          noise + peak_margin/3, so the FIRST flank bin Step 9 probes is
+ *          always < peak_margin/3. With data[] <= 255 and
+ *          peak_margin <= 255 - noise_floor, the maximum smooth-skirt flank
+ *          margin is floor((255 - 1) / 3) = 84 units. A threshold above this
+ *          can only fire on ELEVATED terrain inside the 6-bin probe window
+ *          (a plateau or a second lobe beyond a one-bin edge dip), never on a
+ *          smooth skirt — see DEFAULT_SPECTRUM_VALLEY_DEPTH's 3*(D+1) rule.
+ * @note SINGLE AUTHOR for the settings-preview scale
+ *       (spectrum_preview_widget.cpp normalizes 0..84 onto the pedestal and
+ *       marks > 84 as beyond smooth-flank reach). The scanner does not need
+ *       this constant at runtime; it compares against eased_valley_limit().
+ * @note 84 = (255 - 1) / 3. Do not raise without redoing the Step-4 walk
+ *       bound — the value is a proof, not a tuning knob.
+ */
+constexpr uint8_t SPECTRUM_VALLEY_SMOOTH_REACH = (255u - 1u) / 3u;  // 84
+static_assert(SPECTRUM_VALLEY_SMOOTH_REACH > 0,
+              "valley preview normalization divides by this constant");
+
+/**
  * @brief Default peak flatness threshold (0-100, percentage)
  * @note flatness = (high_power_bins * 100) / signal_width
  * @note Measures how many bins are at 90%+ of the peak-above-noise
