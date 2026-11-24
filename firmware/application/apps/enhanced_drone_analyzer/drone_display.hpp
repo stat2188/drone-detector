@@ -9,6 +9,7 @@
 #include "ui_font_fixed_5x8.hpp"
 #include "drone_types.hpp"
 #include "constants.hpp"
+#include "gate_activity.hpp"
 #include "mini_waterfall.hpp"
 
 namespace drone_analyzer {
@@ -207,6 +208,26 @@ public:
 
     void set_composite_mode(bool enabled) noexcept { composite_mode_ = enabled; dirty_flags_ = DIRTY_ALL; set_dirty(); }
     void set_composite_data(const uint8_t* data, size_t size) noexcept;
+
+    /**
+     * @brief Push the scanner-view envelope overlay for band 1 (or the only
+     *        band in single-sweep mode).
+     * @param data 240-byte envelope composite (pass max-hold of the 3-tap
+     *             envelope), or nullptr to HIDE the overlay (the scanner's
+     *             spectrum_envelope_enabled is off — the detector then reads
+     *             raw bins, so a smoothed line would misrepresent it).
+     * @param size Composite size; ignored when data == nullptr.
+     * @note Applies the IDENTICAL EMA persistence as set_composite_data()
+     *       (max(raw, old * SWEEP_PERSISTENCE_DECAY_Q8 / 256)). That parity is
+     *       not cosmetic: env[i] >= bar[i] survives the two EMAs only because
+     *       both use the same decay and are pushed on the same frames, so the
+     *       overlay can never dive below a bar top.
+     * @note Raises DIRTY_SPEC_DATA — the overlay is part of the
+     *       neighbour-aware incremental diff (a column must repaint when its
+     *       envelope top moved even if its bar did not).
+     * @note Stack: ~16 B. SRAM: 240 B persist (file-scope s_dd). No heap.
+     */
+    void set_composite_env(const uint8_t* data, size_t size) noexcept;
     void set_sweep_range(FreqHz start, FreqHz end) noexcept {
         sweep_freq_start_ = start;
         sweep_freq_end_ = end;
@@ -222,6 +243,16 @@ public:
         set_dirty();
     }
     void set_sweep2_data(const uint8_t* data, size_t size) noexcept;
+
+    /**
+     * @brief Push the scanner-view envelope overlay for band 2 (dual sweep).
+     * @param data 240-byte envelope composite, or nullptr to hide the overlay.
+     * @param size Composite size; ignored when data == nullptr.
+     * @note Band-2 twin of set_composite_env() — same EMA, same dirty flag,
+     *       same nullptr-hides contract. See that method for the rationale.
+     * @note Stack: ~16 B. SRAM: 240 B persist (file-scope s_dd). No heap.
+     */
+    void set_sweep2_env(const uint8_t* data, size_t size) noexcept;
     void set_sweep2_range(FreqHz start, FreqHz end) noexcept {
         sweep2_freq_start_ = start;
         sweep2_freq_end_ = end;
@@ -302,6 +333,66 @@ public:
         shelf_offset_ = offset;
         dirty_flags_ |= DIRTY_SPEC_DATA;
         set_dirty();
+    }
+
+    /** @brief Set gate verdicts from the detection shape chain.
+     *  @param verdicts Array of GateVerdict (top-K candidates from evaluate_candidate_gates).
+     *  @param count Number of valid verdicts (0..MAX_GATE_VERDICTS).
+     *  @note INTENDED call site: DroneScannerUI, after
+     *        process_spectrum_sweep() / process_spectrum_message().
+     *        NOT WIRED YET — no producer calls this today (see the
+     *        "NOT CALLED" notes in gate_activity.hpp).
+     *  Stack: ~8 bytes. SRAM: 0 (copies into member array). No heap.
+     */
+    void set_gate_verdicts(const GateVerdict* verdicts, size_t count) noexcept {
+        if (verdicts == nullptr) {
+            gate_verdict_count_ = 0;
+            return;
+        }
+        const size_t n = (count > MAX_GATE_VERDICTS) ? MAX_GATE_VERDICTS : count;
+        for (size_t i = 0; i < n; ++i) gate_verdicts_[i] = verdicts[i];
+        gate_verdict_count_ = n;
+        dirty_flags_ |= DIRTY_SPEC_DATA;
+        set_dirty();
+    }
+
+    /** @brief Set gate overlay limits for spectrum visualization.
+     *  @param overlay Gate limits (margin_gate, maxw_limit, valley_limit, etc.).
+     *  @note Called from DroneScannerUI when ScanConfig shape-filter fields change.
+     *  Stack: ~0 bytes. SRAM: 0. No heap.
+     */
+    void set_gate_overlay(const GateOverlay& overlay) noexcept {
+        gate_overlay_ = overlay;
+        dirty_flags_ |= DIRTY_SPEC_DATA;
+        set_dirty();
+    }
+
+    /** @brief Render gate-activity overlay on the spectrum chart.
+     *  @param painter UI painter.
+     *  @param x0,y0 Origin of the spectrum chart area.
+     *  @param w,h Chart width/height in pixels.
+     *  @param f_min,f_max Frequency bounds of the chart.
+     *  @param noise_floor Current noise floor (for floor line).
+     *  @note INTENDED call site: paint(), after the spectrum/composite bars
+     *        are drawn. NOT WIRED YET — paint() has no call site for it.
+     *  Stack: ~32 bytes (delegates to render_gate_activity). No heap.
+     */
+    void render_gate_overlay(
+        Painter& painter,
+        uint16_t x0, uint16_t y0,
+        uint16_t w, uint16_t h,
+        FreqHz f_min, FreqHz f_max,
+        uint8_t noise_floor
+    ) noexcept {
+        if (gate_verdict_count_ == 0) return;
+        render_gate_activity(
+            painter,
+            gate_verdicts_.data(),
+            gate_verdict_count_,
+            x0, y0, w, h,
+            f_min, f_max,
+            noise_floor
+        );
     }
 
     /**
@@ -493,6 +584,16 @@ private:
     // Spectrum data buffer (static storage for stack optimization)
     std::array<uint8_t, SPECTRUM_BUFFER_SIZE> spectrum_buffer_;
 
+    // Gate verdicts for spectrum visualization (from DroneScanner shape chain).
+    // SRAM: MAX_GATE_VERDICTS × 16 B = 128 B BSS (GateVerdict = 8 + uint64
+    // freq). No heap.
+    std::array<GateVerdict, MAX_GATE_VERDICTS> gate_verdicts_{};
+    size_t gate_verdict_count_{0};
+
+    // Gate overlay limits (what the detection chain evaluates against).
+    // Stored per-band so sweep/DB can show different gates.
+    GateOverlay gate_overlay_{};
+
     // Per-window sweep waterfalls (one independent history per sweep window).
     // Each MiniWaterfall stores 15 rows × 30 bytes = 450 bytes.
     // Total: 4 × 450 = 1,800 bytes BSS.
@@ -572,6 +673,13 @@ private:
     // (drone_display.cpp) — saves 480 bytes of heap per DroneDisplay instance.
     bool composite_persist_initialized_{false};
 
+    // SCANNER-VIEW OVERLAY (band 1): EMA-persisted envelope composite, kept
+    // byte-for-byte in step with composite_data_ (same push, same decay).
+    // nullptr = overlay hidden (scanner envelope smoothing disabled).
+    // Persist buffer lives in file-scope s_dd (240 B BSS).
+    const uint8_t* composite_env_{nullptr};
+    bool composite_env_initialized_{false};
+
     // Auto-computed noise floor for composite display noise floor subtraction.
     uint8_t composite_noise_floor_{0};
     bool composite_noise_floor_valid_{false};
@@ -593,6 +701,9 @@ private:
     // sweep2_persist_buf_, sweep2_sort_buf_ moved to file-scope static
     // (drone_display.cpp) — saves 480 bytes of heap per DroneDisplay instance.
     bool sweep2_persist_initialized_{false};
+    // SCANNER-VIEW OVERLAY (band 2) — see composite_env_ above.
+    const uint8_t* sweep2_env_{nullptr};
+    bool sweep2_env_initialized_{false};
     uint8_t sweep2_noise_floor_{0};
     bool sweep2_noise_floor_valid_{false};
 
@@ -642,6 +753,14 @@ private:
         constexpr BandRenderCtx() noexcept = default;
         constexpr explicit BandRenderCtx(uint8_t idx) noexcept : band_idx_(idx) {}
         uint8_t* shadow{nullptr};      // [COMPOSITE_SIZE] rendered values on screen
+        // SCANNER-VIEW OVERLAY: post-noise-floor envelope value currently ON
+        // SCREEN per column. Second half of the incremental diff — a column
+        // repaints when EITHER series moved (own or left neighbour), because
+        // both the bar-top connector and the overlay connector are drawn AT
+        // column i from (i-1, i). Points into file-scope s_dd (BSS), never
+        // owned. May stay nullptr only if the ctor wiring is removed; every
+        // render path null-checks it.
+        uint8_t* env_shadow{nullptr};
         int16_t marker_on_screen{-1};  // marker column currently visible
         bool shadow_valid{false};      // false until first full render
         uint8_t last_noise_floor{0};
@@ -662,12 +781,17 @@ private:
 
     /**
      * @brief Full composite render of one band (clear + title + all columns).
-     * @note Rebuilds band.shadow to match the screen exactly.
-     * @note Stack: ~48 B (title buffer + envelope state). Flash: ~400 B.
+     * @param env_data Scanner-view envelope overlay for this band (same
+     *        length/indices as composite_data), or nullptr to draw no
+     *        overlay. Shares the bar's noise-floor subtraction and column
+     *        mapping, so the line rides on the bars' own scale.
+     * @note Rebuilds band.shadow AND band.env_shadow to match the screen.
+     * @note Stack: ~54 B (title buffer + two envelope states). Flash: ~500 B.
      */
     void render_composite_full_band(
         Painter& painter, BandRenderCtx& band,
         const uint8_t* composite_data, size_t composite_size,
+        const uint8_t* env_data,
         uint16_t start_x, uint16_t start_y, uint16_t width, uint16_t height,
         int16_t scan_head, uint8_t noise_floor,
         FreqHz title_start, FreqHz title_end
@@ -680,22 +804,27 @@ private:
      *        column from shadow + draw new). Screen-visible params changed
      *        (layout/threshold/noise floor/title) → full repaint via
      *        render_composite_full_band.
+     * @param env_data Scanner-view envelope overlay (nullptr = hidden).
      * @note The white envelope connector for transition (i-1 → i) is drawn
      *       AT COLUMN i spanning [min(top[i-1],top[i]), max(...)] — a
-     *       cross-column dependency. The incremental diff therefore expands
-     *       each changed column to its right neighbour
-     *       (redraw(i) ⟺ Δp[i] ∨ Δp[i-1], tracked via loop state): a
+     *       cross-column dependency. The scanner-view overlay connector is a
+     *       SECOND, independent cross-column construct with the same shape.
+     *       The incremental diff therefore expands each changed column to its
+     *       right neighbour for BOTH series:
+     *           redraw(i) ⟺ (Δp[i] ∨ Δp[i-1]) ∨ (Δe[i] ∨ Δe[i-1])
+     *       tracked via two loop-state booleans (zero extra memory). A
      *       top[i-1]-only change moves connector pixels AT COLUMN i, which a
      *       naive per-column value diff would miss (the historical stale
-     *       envelope-line defect). Envelope state is replayed over every
+     *       envelope-line defect). Both states are replayed over every
      *       column, so redrawn columns are pixel-identical to a full repaint.
-     * @note Stack: ~14 B (envelope state + loop scalars). Flash: ~550 B.
+     * @note Stack: ~20 B (two envelope states + loop scalars). Flash: ~700 B.
      *       Typical data frame: 1-60 thin column redraws (vs the former
      *       full clear + 240-column repaint that caused visible flicker).
      */
     void render_composite_partial_band(
         Painter& painter, BandRenderCtx& band,
         const uint8_t* composite_data, size_t composite_size,
+        const uint8_t* env_data,
         uint16_t start_x, uint16_t start_y, uint16_t width, uint16_t height,
         int16_t scan_head, uint8_t noise_floor, bool data_changed,
         FreqHz title_start, FreqHz title_end

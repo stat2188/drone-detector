@@ -25,7 +25,16 @@ public:
 
     /**
      * @brief Process one FFT frame into a composite pixel buffer.
-     * @param spectrum       256-bin FFT power values from baseband
+     * @param bins           256-bin power SOURCE for this frame. The RAW
+     *                       baseband view is ChannelSpectrum::db; the same
+     *                       call may instead be fed a pre-processed view of
+     *                       the SAME frame (the scanner-view overlay feeds
+     *                       the 3-tap envelope here) — anything that is a
+     *                       byte-per-bin image of one capture. Sharing ONE
+     *                       mapper is what guarantees the overlay line and
+     *                       the bars land on the same column for the same
+     *                       RF frequency, so the caller never has to
+     *                       re-derive the Bresenham mapping.
      * @param composite      Output pixel buffer (COMPOSITE_SIZE bytes)
      * @param pixel_index    In/out: progress position (scan-head marker +
      *                       line_full completion bookkeeping). Advanced by the
@@ -61,7 +70,7 @@ public:
      *       slice k is covered by slices k-1/k+1. Stack: ~16 bytes.
      */
     static uint16_t process_frame(
-        const ChannelSpectrum& spectrum,
+        const uint8_t* bins,
         uint8_t* composite,
         uint16_t& pixel_index,
         uint8_t& pixel_max,

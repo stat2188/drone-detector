@@ -30,7 +30,7 @@ bool SweepProcessor::is_detection_window_allowed(
 }
 
 uint16_t SweepProcessor::process_frame(
-    const ChannelSpectrum& spectrum,
+    const uint8_t* bins,
     uint8_t* composite,
     uint16_t& pixel_index,
     uint8_t& pixel_max,
@@ -41,7 +41,7 @@ uint16_t SweepProcessor::process_frame(
     FreqHz f_min,
     FreqHz f_max
 ) noexcept {
-    if (composite == nullptr) {
+    if (composite == nullptr || bins == nullptr) {
         return pixel_index;
     }
     if (pixel_step_hz == 0 || effective_bin_size == 0 || f_max <= f_min) {
@@ -182,7 +182,7 @@ uint16_t SweepProcessor::process_frame(
             // NOTE: no pixel masking — the window is drawn FULLY; detection
             // gating lives exclusively in the scanner (is_detection_window_allowed).
             if (px < COMPOSITE_SIZE) {
-                const uint8_t power = spectrum.db[bin];
+                const uint8_t power = bins[bin];
                 // Max-hold: overlapping slices reinforce the same column.
                 if (power > composite[px]) {
                     composite[px] = power;

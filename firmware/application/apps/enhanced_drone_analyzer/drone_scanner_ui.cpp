@@ -17,6 +17,7 @@
 #include "audio_alerts.hpp"
 #include "audio.hpp"
 #include "constants.hpp"
+#include "spectrum_envelope.hpp"
 #include "sweep_sensitivity.hpp"
 #include "string_format.hpp"
 #include "baseband_api.hpp"
@@ -51,6 +52,20 @@ SettingsStruct g_workspace_settings;
 // writers here run on the UI thread, so no locking is required.
 // If a future feature must access config from another thread, protect ALL
 // readers AND writers with one consistent lock scheme — never partial locking.
+
+// ============================================================================
+// SCANNER-VIEW OVERLAY scratch (spectrum_envelope.hpp 3-tap envelope).
+// ============================================================================
+// Per-frame 256-bin envelope image of the CURRENT slice, produced with the
+// very same helper + sweep constants the detector uses (compute_envelope_frame
+// with FFT_EDGE_SKIP_NARROW / FFT_DC_SPIKE_START / FFT_DC_SPIKE_END), then
+// fed to SweepProcessor::process_frame() so the overlay shares the bars'
+// mapping bit-for-bit.
+// File-scope static (like drone_display.cpp's s_dd): single UI-thread
+// producer, no reentrancy — process_bins() is only ever called from
+// on_sweep_spectrum() on the UI thread, one slice at a time.
+// SRAM: 256 B BSS (vs 1024 B if it were duplicated per SweepWindow).
+static uint8_t s_env_scratch[256];
 
 // ============================================================================
 // Handler registration — placement-new to allow manual lifetime control.
@@ -1974,6 +1989,16 @@ void DroneScannerUI::update_sweep_pair_display() noexcept {
     if (w0 >= MAX_SWEEP_WINDOWS) return;
     if (!sweep_[w0].enabled && (w1 >= MAX_SWEEP_WINDOWS || !sweep_[w1].enabled)) return;
 
+    // SCANNER-VIEW OVERLAY enable: the line shows the 3-tap envelope ONLY
+    // while the scanner itself smooths (ScanConfig::spectrum_envelope_enabled
+    // — the exact flag compute_envelope_frame is gated on inside
+    // process_spectrum_sweep). With smoothing OFF the detector reads raw
+    // bins, so drawing a smoothed line would misrepresent the detector.
+    // g_workspace_cfg is the UI-thread config mirror that
+    // DroneSettingsView::commit_to_scanner() pushes into the scanner — the
+    // same source this function already reads the sweep ranges from.
+    const bool env_overlay_enabled = g_workspace_cfg.spectrum_envelope_enabled;
+
     if (w1 < MAX_SWEEP_WINDOWS && sweep_[w0].enabled && sweep_[w1].enabled) {
         // Dual mode: upper = w0, lower = w1
         if (sweep_[w0].f_min != last_sweep_range_start_ || sweep_[w0].f_max != last_sweep_range_end_) {
@@ -1982,6 +2007,8 @@ void DroneScannerUI::update_sweep_pair_display() noexcept {
             last_sweep_range_end_ = sweep_[w0].f_max;
         }
         drone_display_.set_composite_data(sweep_[w0].composite, COMPOSITE_SIZE);
+        drone_display_.set_composite_env(
+            env_overlay_enabled ? sweep_[w0].composite_env : nullptr, COMPOSITE_SIZE);
         if (!last_dual_sweep_mode_) {
             drone_display_.set_dual_sweep_mode(true);
             last_dual_sweep_mode_ = true;
@@ -1992,6 +2019,8 @@ void DroneScannerUI::update_sweep_pair_display() noexcept {
             last_sweep2_range_end_ = sweep_[w1].f_max;
         }
         drone_display_.set_sweep2_data(sweep_[w1].composite, COMPOSITE_SIZE);
+        drone_display_.set_sweep2_env(
+            env_overlay_enabled ? sweep_[w1].composite_env : nullptr, COMPOSITE_SIZE);
         // Detection-window brackets: band 0 shows w0, band 1 shows w1.
         drone_display_.set_detection_windows(
             0, g_workspace_cfg.sweep_det_win_start_mhz[w0], g_workspace_cfg.sweep_det_win_end_mhz[w0]);
@@ -2005,6 +2034,8 @@ void DroneScannerUI::update_sweep_pair_display() noexcept {
             last_sweep_range_end_ = sweep_[w0].f_max;
         }
         drone_display_.set_composite_data(sweep_[w0].composite, COMPOSITE_SIZE);
+        drone_display_.set_composite_env(
+            env_overlay_enabled ? sweep_[w0].composite_env : nullptr, COMPOSITE_SIZE);
         // Single mode: only band 0 is rendered → brackets from w0 there.
         drone_display_.set_detection_windows(
             0, g_workspace_cfg.sweep_det_win_start_mhz[w0], g_workspace_cfg.sweep_det_win_end_mhz[w0]);
@@ -2020,6 +2051,8 @@ void DroneScannerUI::update_sweep_pair_display() noexcept {
             last_sweep_range_end_ = sweep_[w1].f_max;
         }
         drone_display_.set_composite_data(sweep_[w1].composite, COMPOSITE_SIZE);
+        drone_display_.set_composite_env(
+            env_overlay_enabled ? sweep_[w1].composite_env : nullptr, COMPOSITE_SIZE);
         // Only w1 enabled (shown alone on band 0) → brackets from w1 there.
         drone_display_.set_detection_windows(
             0, g_workspace_cfg.sweep_det_win_start_mhz[w1], g_workspace_cfg.sweep_det_win_end_mhz[w1]);
@@ -2177,6 +2210,11 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
 
 void DroneScannerUI::SweepWindow::reset() noexcept {
     memset(composite, 0, COMPOSITE_SIZE);
+    // Overlay max-hold must die with the bar max-hold: both are per-pass
+    // accumulators and the display applies the SAME EMA to each, so a
+    // surviving envelope byte from the previous pass would sit above the
+    // zeroed bars and break the env >= bar invariant for one pass.
+    memset(composite_env, 0, COMPOSITE_SIZE);
     f_center = f_center_ini;
     pixel_index = 0;
     pixel_max = 0;
@@ -2230,9 +2268,35 @@ void DroneScannerUI::SweepWindow::process_bins(
     if (effective_bin_size == 0 && step_hz != 0) {
         effective_bin_size = step_hz / FFT_SWEEP_USABLE_BINS;
     }
+    // ---- SCANNER-VIEW ENVELOPE (source for the overlay projection below) ----
+    // Byte-identical to the detector's pre-shape smoothing: the SAME helper
+    // (compute_envelope_frame) with the SAME sweep constants, so the two
+    // sidebands stay independent runs and the DC notch is never bridged.
+    // That helper fills only [FFT_EDGE_SKIP_NARROW .. 119] and
+    // [136 .. 255-FFT_EDGE_SKIP_NARROW]; the mapper below additionally
+    // visits the rolloff bins 2..5 and 250..253 (the display paints the
+    // window fully — detection gating lives exclusively in the scanner), so
+    // those are defined as raw. Every index the mapper can read is therefore
+    // written on THIS frame: no stale scratch can ever be max-held in.
+    // Computed UNCONDITIONALLY (even with the scanner's smoothing flag off):
+    // the display-side max-hold must cover the WHOLE pass, or toggling the
+    // overlay mid-pass would restart env's max-hold while the bars keep theirs
+    // and break the env >= bar invariant until the next persistence reset.
+    // Stack: ~0 bytes (file-scope scratch). Cost: one 3-tap pass (~236 bins).
+    compute_envelope_frame(spectrum.db.data(), s_env_scratch,
+                           FFT_EDGE_SKIP_NARROW,
+                           FFT_DC_SPIKE_START, FFT_DC_SPIKE_END);
+    for (uint8_t i = 2; i < FFT_EDGE_SKIP_NARROW; ++i) {
+        s_env_scratch[i] = spectrum.db[i];
+    }
+    for (uint16_t i = 256u - static_cast<uint16_t>(FFT_EDGE_SKIP_NARROW);
+         i <= 253u; ++i) {
+        s_env_scratch[i] = spectrum.db[i];
+    }
+
     if (credit_progress) {
         SweepProcessor::process_frame(
-            spectrum,
+            spectrum.db.data(),
             composite,
             pixel_index,
             pixel_max,
@@ -2256,11 +2320,39 @@ void DroneScannerUI::SweepWindow::process_bins(
         uint8_t pixel_max_dummy = 0;
         FreqHz bins_hz_acc_dummy = 0;
         SweepProcessor::process_frame(
-            spectrum,
+            spectrum.db.data(),
             composite,
             pixel_index_dummy,
             pixel_max_dummy,
             bins_hz_acc_dummy,
+            pixel_step_hz,
+            f_center,
+            effective_bin_size,
+            f_min,
+            f_max
+        );
+    }
+
+    // ---- SCANNER-VIEW OVERLAY PROJECTION ----
+    // The envelope image goes through the IDENTICAL mapper, with DUMMY
+    // progress state: the raw call above already credited this frame to
+    // pixel_index / bins_hz_acc, so a second real advance would complete the
+    // line early and double the scan-head pace (line_full / freq_covered
+    // would fire after half a pass). Max-hold into composite_env mirrors the
+    // bar max-hold, so overlapping slices reinforce the overlay exactly as
+    // they reinforce the bars — that is what keeps env[i] >= composite[i]
+    // column-for-column after the display applies the same EMA to both.
+    // Stack: ~12 bytes (three dummy locals, scoped, all register-allocatable).
+    {
+        uint16_t env_pixel_index = 0;
+        uint8_t env_pixel_max = 0;
+        FreqHz env_bins_hz_acc = 0;
+        SweepProcessor::process_frame(
+            s_env_scratch,
+            composite_env,
+            env_pixel_index,
+            env_pixel_max,
+            env_bins_hz_acc,
             pixel_step_hz,
             f_center,
             effective_bin_size,

@@ -683,6 +683,19 @@ constexpr uint32_t COLOR_TEXT = 0xFFFFFFFF;
  */
 constexpr uint32_t COLOR_DET_WINDOW = 0xFFFF0000;
 
+/**
+ * @brief Scanner-view envelope overlay line (sweep spectrum, over the bars)
+ * @note MAGENTA on purpose: it is the only hue not already claimed by the
+ *       sweep chart (green/yellow/orange/red = threat bands, white = bar-top
+ *       connector + scan head, grey = unknown, red = det-window brackets),
+ *       and cyan is deliberately left free — the settings preview already
+ *       uses cyan for the Rat threshold line, so a future ratio overlay on
+ *       the sweep chart must not collide with this one.
+ * @note Drawn as a 1-px polyline over the bars, one dot + one connector per
+ *       column, mirroring draw_bar_with_envelope()'s cross-column rule.
+ */
+constexpr uint32_t COLOR_SCANNER_ENVELOPE = 0xFFFF00FF;
+
 // ============================================================================
 // FFT Bin Layout Constants (HackRF baseband: 256-bin FFT)
 // ============================================================================

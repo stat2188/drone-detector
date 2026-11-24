@@ -193,6 +193,16 @@ private:
      */
     struct SweepWindow {
         uint8_t composite[COMPOSITE_SIZE]{};  // pixel buffer
+        // SCANNER-VIEW OVERLAY: pass max-hold of the frame's 3-tap upper
+        // envelope (spectrum_envelope.hpp — the EXACT buffer the shape chain
+        // gates on), pushed through the SAME true-position mapper as
+        // `composite`. Because compute_envelope_max3 is monotone-raising
+        // (env[i] >= raw[i]) and both buffers share mapping + max-hold +
+        // display EMA, the invariant composite_env[i] >= composite[i] holds
+        // for every column — the rendered line can never sink below a bar
+        // top. Cleared by reset() together with `composite`.
+        // SRAM: 240 B x MAX_SWEEP_WINDOWS (960 B BSS, no heap).
+        uint8_t composite_env[COMPOSITE_SIZE]{};
         FreqHz f_min{0};
         FreqHz f_max{0};
         FreqHz f_center{0};

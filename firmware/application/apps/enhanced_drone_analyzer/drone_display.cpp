@@ -93,6 +93,16 @@ struct DisplayBuffers {
     // SRAM: +480 B BSS (no heap, no stack).
     uint8_t composite_rendered[COMPOSITE_SIZE]{};
     uint8_t sweep2_rendered[COMPOSITE_SIZE]{};
+    // SCANNER-VIEW OVERLAY (3-tap envelope) — band twins of the two series
+    // above. `*_persist` is the EMA copy (same decay as composite_persist,
+    // pushed on the same frames — that pairing is what keeps env >= bar);
+    // `*_rendered` is the on-screen shadow consumed by the neighbour-aware
+    // incremental diff.
+    // SRAM: +960 B BSS (4 x 240). No heap, no stack.
+    uint8_t sweep_env_persist[COMPOSITE_SIZE]{};
+    uint8_t sweep2_env_persist[COMPOSITE_SIZE]{};
+    uint8_t sweep_env_rendered[COMPOSITE_SIZE]{};
+    uint8_t sweep2_env_rendered[COMPOSITE_SIZE]{};
 };
 static DisplayBuffers s_dd;
 
@@ -184,6 +194,10 @@ DroneDisplay::DroneDisplay(const Rect parent_rect) noexcept
     // Incremental spectrum render shadows (non-owning, point into s_dd BSS).
     band1_.shadow = s_dd.composite_rendered;
     band2_.shadow = s_dd.sweep2_rendered;
+    // Scanner-view overlay shadows — same BSS-owned, never-freed contract as
+    // `shadow` above; both render paths null-check before touching them.
+    band1_.env_shadow = s_dd.sweep_env_rendered;
+    band2_.env_shadow = s_dd.sweep2_env_rendered;
     set_parent_rect(parent_rect);
     set_status_text(STATUS_READY);
 }
@@ -284,6 +298,7 @@ void DroneDisplay::paint(Painter& painter) {
                         ? apply_shelf_offset(composite_noise_floor_)
                         : uint8_t{0};
                     render_composite_partial_band(painter, band1_, composite_data_, composite_data_size_,
+                                                  composite_env_,
                                                   ox, y_offset, w, layout.spec_h,
                                                   scan_head_position_[0], nf1, data,
                                                   sweep_freq_start_, sweep_freq_end_);
@@ -1065,6 +1080,84 @@ void DroneDisplay::set_composite_data(const uint8_t* data, size_t size) noexcept
     set_dirty();
 }
 
+// ============================================================================
+// Scanner-view overlay persistence (3-tap envelope, both bands)
+// ============================================================================
+
+/**
+ * @brief Apply the sweep EMA max-hold to one overlay band's persist buffer.
+ * @param persist     Destination persist buffer (file-scope s_dd, 240 B).
+ * @param data        Incoming per-pass envelope composite.
+ * @param copy_n      Bytes to fold in (<= COMPOSITE_SIZE).
+ * @param initialized In/out fresh-copy latch — same contract as
+ *                    composite_persist_initialized_.
+ * @return true when the buffer moved (caller must raise DIRTY_SPEC_DATA).
+ * @note The decay is byte-identical to set_composite_data()'s
+ *       (SWEEP_PERSISTENCE_DECAY_Q8). That identity is the whole reason the
+ *       overlay cannot dive below the bars: with env[i] >= bar[i] at push
+ *       time and the SAME monotone map f(x) = max(x, old * d) applied to
+ *       both, the ordering is preserved inductively across every frame.
+ *       A different decay here would let the line sink under a bar top
+ *       within a couple of passes and read as a rendering bug.
+ * @note First fill always reports a change: the screen shadow may still
+ *       hold pre-reset values that this fill has to erase.
+ * @note Stack: ~8 B. Flash: ~120 B. No heap, no FP, integer-only.
+ */
+static bool overlay_ema_update(
+    uint8_t* persist,
+    const uint8_t* data,
+    size_t copy_n,
+    bool& initialized
+) noexcept {
+    if (!initialized) {
+        for (size_t i = 0; i < copy_n; ++i) {
+            persist[i] = data[i];
+        }
+        initialized = true;
+        return true;
+    }
+    bool any_changed = false;
+    for (size_t i = 0; i < copy_n; ++i) {
+        const uint8_t old = persist[i];
+        const uint16_t decayed =
+            (static_cast<uint16_t>(old) * SWEEP_PERSISTENCE_DECAY_Q8) >> 8;
+        const uint8_t next = (data[i] > static_cast<uint8_t>(decayed))
+            ? data[i]
+            : static_cast<uint8_t>(decayed);
+        if (next != old) {
+            persist[i] = next;
+            any_changed = true;
+        }
+    }
+    return any_changed;
+}
+
+void DroneDisplay::set_composite_env(const uint8_t* data, size_t size) noexcept {
+    // nullptr / empty = overlay OFF for this band (the scanner's
+    // spectrum_envelope_enabled is off). The pointer transition itself is a
+    // change: without forcing DIRTY_SPEC_DATA here the line would be erased
+    // on disable and then never come back, because a re-enable that folds
+    // into an unchanged EMA buffer reports "no change" — a stuck-off overlay.
+    if (data == nullptr || size == 0) {
+        if (composite_env_ != nullptr) {
+            composite_env_ = nullptr;
+            dirty_flags_ |= DIRTY_SPEC_DATA;
+            set_dirty();
+        }
+        return;
+    }
+    const bool was_off = (composite_env_ == nullptr);
+    const size_t copy_n = (size < COMPOSITE_SIZE) ? size : COMPOSITE_SIZE;
+    const bool any_changed = overlay_ema_update(
+        s_dd.sweep_env_persist, data, copy_n, composite_env_initialized_);
+    composite_env_ = s_dd.sweep_env_persist;
+    if (!any_changed && !was_off) {
+        return;
+    }
+    dirty_flags_ |= DIRTY_SPEC_DATA;
+    set_dirty();
+}
+
 void DroneDisplay::reset_composite_persistence() noexcept {
     // Drop EMA state so the next set_composite_data() rebuilds the buffer from
     // scratch (it enters the "not initialized" branch and copies the raw data).
@@ -1072,11 +1165,22 @@ void DroneDisplay::reset_composite_persistence() noexcept {
     composite_persist_initialized_ = false;
     composite_noise_floor_ = 0;
     composite_noise_floor_valid_ = false;
+    // Scanner-view overlay: same lifetime as the bars it rides on. The
+    // pointer is KEPT (mirroring composite_data_ — nulling it would only
+    // hide the line for a frame) but the EMA state is dropped, so the next
+    // set_composite_env() takes the fresh-copy branch exactly like
+    // set_composite_data() does. Resetting the init flag WITHOUT zeroing the
+    // buffer would let a stale envelope sit above freshly zeroed bars and
+    // break the env >= bar invariant for one pass.
+    std::memset(s_dd.sweep_env_persist, 0, COMPOSITE_SIZE);
+    composite_env_initialized_ = false;
     // Also reset band 2 persistence (dual-sweep mode).
     std::memset(s_dd.sweep2_persist, 0, COMPOSITE_SIZE);
     sweep2_persist_initialized_ = false;
     sweep2_noise_floor_ = 0;
     sweep2_noise_floor_valid_ = false;
+    std::memset(s_dd.sweep2_env_persist, 0, COMPOSITE_SIZE);
+    sweep2_env_initialized_ = false;
     dirty_flags_ = DIRTY_ALL;
     set_dirty();
     // DO NOT null composite_data_ or composite_data_size_ here.
@@ -1210,6 +1314,7 @@ void DroneDisplay::render_composite_full_band(
     BandRenderCtx& band,
     const uint8_t* composite_data,
     size_t composite_size,
+    const uint8_t* env_data,
     uint16_t start_x,
     uint16_t start_y,
     uint16_t width,
@@ -1267,10 +1372,19 @@ void DroneDisplay::render_composite_full_band(
     // White envelope state: connects bar tops (classical spectrum analyzer look).
     // Envelope only draws on above-threshold bars — eliminates the sub-threshold
     // white dot line that previously appeared at the chart bottom.
-    // Stack: ~6 bytes (EnvelopeState struct).
+    // Scanner-view overlay state: same cross-column polyline rule, but keyed
+    // on the ENVELOPE value and deliberately NOT gated by display_threshold —
+    // the scanner has no min_color_power_ gate, so hiding the line behind the
+    // display's own gate would re-create exactly the "rendering lies about
+    // the detector" gap this overlay exists to close.
+    // Stack: ~12 bytes (two EnvelopeState structs).
     const uint16_t envelope_y0 = static_cast<uint16_t>(chart_start_y + chart_height);
     EnvelopeState envelope{envelope_y0, false, 0};
+    EnvelopeState scan_env{envelope_y0, false, 0};
 
+    // INVARIANT: env_data, when non-null, was pushed with the same `size`
+    // as composite_data (DroneScannerUI always calls the pair with
+    // COMPOSITE_SIZE), so indexing it with the bar loop bound is exact.
     for (uint16_t i = 0; i < bar_count; ++i) {
         uint8_t power = composite_data[i];
 
@@ -1301,6 +1415,50 @@ void DroneDisplay::render_composite_full_band(
         // Shadow = exactly what was drawn: the post noise-floor value fully
         // determines color, bar height and dot of this column (1 byte/column).
         band.shadow[i] = power;
+
+        // ---- SCANNER-VIEW OVERLAY (3-tap envelope, over the bars) ----
+        // Same vertical scale as the bars (identical noise-floor subtraction
+        // and height mapping) so the line is directly comparable, but no
+        // display gate. env_shadow is written unconditionally (0 when the
+        // overlay is off) so the incremental diff sees a clean "line gone"
+        // transition when the scanner's envelope smoothing is toggled.
+        uint8_t env_power = 0;
+        if (env_data != nullptr) {
+            env_power = env_data[i];
+            env_power = (env_power > noise_floor)
+                ? static_cast<uint8_t>(env_power - noise_floor)
+                : static_cast<uint8_t>(0);
+        }
+        if (band.env_shadow != nullptr) {
+            band.env_shadow[i] = env_power;
+        }
+        if (env_power > 0) {
+            const uint16_t env_h_raw =
+                (static_cast<uint16_t>(env_power) * chart_height) >> 8;
+            const uint16_t env_h = (env_h_raw > 0) ? env_h_raw : 1;
+            const uint16_t env_y =
+                static_cast<uint16_t>(chart_start_y + chart_height - env_h);
+            // Connector for transition (i-1 → i) is drawn AT column i, exactly
+            // like draw_bar_with_envelope() — which is why the incremental
+            // diff has to expand a changed column to its right neighbour.
+            if (scan_env.prev_valid
+                && (scan_env.gap_count > 0 || env_y != scan_env.prev_y)) {
+                const uint16_t lo = (env_y < scan_env.prev_y) ? env_y : scan_env.prev_y;
+                const uint16_t hi = (env_y < scan_env.prev_y) ? scan_env.prev_y : env_y;
+                draw_rectangle(painter, x, lo, 1,
+                               static_cast<uint16_t>(hi - lo + 1),
+                               COLOR_SCANNER_ENVELOPE);
+            }
+            draw_rectangle(painter, x, env_y, 1, 1, COLOR_SCANNER_ENVELOPE);
+            scan_env.prev_y = env_y;
+            scan_env.prev_valid = true;
+            scan_env.gap_count = 0;
+        } else {
+            ++scan_env.gap_count;
+            if (scan_env.gap_count > EnvelopeState::MAX_GAP) {
+                scan_env.prev_valid = false;
+            }
+        }
     }
 
     // Real-time scan-head marker: 1-px white vertical line at current pixel_index.
@@ -1381,6 +1539,7 @@ void DroneDisplay::render_composite_partial_band(
     BandRenderCtx& band,
     const uint8_t* composite_data,
     size_t composite_size,
+    const uint8_t* env_data,
     uint16_t start_x,
     uint16_t start_y,
     uint16_t width,
@@ -1418,6 +1577,7 @@ void DroneDisplay::render_composite_partial_band(
 
     if (need_full) {
         render_composite_full_band(painter, band, composite_data, composite_size,
+                                   env_data,
                                    start_x, start_y, width, height,
                                    scan_head, noise_floor, title_start, title_end);
         return;
@@ -1425,24 +1585,29 @@ void DroneDisplay::render_composite_partial_band(
 
     // ---- NEIGHBOUR-AWARE INCREMENTAL REDRAW (data may have changed) ----
     //
-    // The white envelope connector for the transition (i-1 → i) is drawn AT
-    // COLUMN i, spanning [min(top[i-1],top[i]), max(...)]:
+    // TWO independent cross-column polylines are drawn at each column, both
+    // from the pair (i-1, i):
+    //   - the white bar-top connector   → f(top_bar[i-1],   top_bar[i])
+    //   - the scanner-view overlay line → f(top_env[i-1],   top_env[i])
     //
-    //     connector(i) = f(top[i-1], top[i])   // cross-column dependency
+    //     connector(i) = f(value[i-1], value[i])   // cross-column dependency
     //
     // A naive per-column diff keyed on `p != shadow[i]` misses the case where
     // top[i-1] moves while top[i] stays equal — the connector AT COLUMN i
     // must move but the column is not selected (the old "envelope line goes
     // stale" defect that motivated a full repaint). The neighbour-aware rule
     //
-    //     redraw(i) ⟺ Δp[i] ∨ Δp[i-1]
+    //     redraw(i) ⟺ (Δp[i] ∨ Δp[i-1]) ∨ (Δe[i] ∨ Δe[i-1])
     //
-    // covers the dependency exactly: a column is redrawn when its OWN top
-    // changed (bar + outgoing connector) OR its LEFT neighbour's top changed
-    // (incoming connector). Δp[i-1] is tracked through loop state
-    // `prev_changed` — zero extra memory. The envelope state below is
-    // replayed over EVERY column (changed or not), mirroring the full-render
-    // loop, so any redrawn column is pixel-identical to a full repaint.
+    // covers both dependencies exactly: a column is redrawn when EITHER
+    // series moved at its OWN top (bar/line + outgoing connector) OR at its
+    // LEFT neighbour (incoming connector). Both deltas are tracked through
+    // loop state (`prev_changed`, `prev_env_changed`) — zero extra memory.
+    // The two envelope states below are replayed over EVERY column (changed
+    // or not), mirroring the full-render loop, so any redrawn column is
+    // pixel-identical to a full repaint. Note the overlay may change while
+    // the bar does not (an envelope-only column) and vice versa — that is
+    // precisely why the diff cannot stay keyed on `p` alone.
     //
     // Old marker column must be restored from shadow (the white marker line
     // is on screen, but shadow holds the true data pixels for that column).
@@ -1457,26 +1622,46 @@ void DroneDisplay::render_composite_partial_band(
     // White envelope state — advanced over EVERY column (unchanged ones too),
     // exactly mirroring the full-render loop in draw_bar_with_envelope(), so
     // redrawn columns redraw their connector from the true neighbour top.
-    // Stack: ~6 bytes.
+    // Scanner-view overlay state — same replay rule, own series.
+    // Stack: ~12 bytes (two EnvelopeState structs).
     const uint16_t envelope_y0 = static_cast<uint16_t>(chart_start_y + chart_height);
     EnvelopeState env{envelope_y0, false, 0};
+    EnvelopeState scan_env{envelope_y0, false, 0};
 
-    bool prev_changed = false;
+    bool prev_changed = false;      // Δp[i-1]
+    bool prev_env_changed = false;  // Δe[i-1]
 
     for (uint16_t i = 0; i < bar_count; ++i) {
         uint8_t p = composite_data[i];
         p = (p > noise_floor) ? static_cast<uint8_t>(p - noise_floor) : static_cast<uint8_t>(0);
 
+        // Scanner-view overlay value — SAME floor subtraction as the bar
+        // (shared vertical scale), but deliberately NOT gated by
+        // display_threshold (the detector has no such gate).
+        uint8_t e = 0;
+        if (env_data != nullptr) {
+            e = env_data[i];
+            e = (e > noise_floor) ? static_cast<uint8_t>(e - noise_floor) : static_cast<uint8_t>(0);
+        }
+
         const bool changed = (p != band.shadow[i]);
+        const bool env_changed = (band.env_shadow != nullptr)
+            && (e != band.env_shadow[i]);
         // Own top moved (bar + outgoing connector) OR left neighbour moved
-        // (incoming connector at this column depends on top[i-1]).
-        const bool redraw = data_changed && (changed || prev_changed);
+        // (incoming connector at this column depends on top[i-1]) — for BOTH
+        // series, since each draws its own cross-column connector here.
+        const bool redraw = data_changed
+            && (changed || prev_changed || env_changed || prev_env_changed);
         const bool is_restore =
             (restore_col >= 0) && (static_cast<uint16_t>(restore_col) == i);
 
         const uint16_t bar_h_raw = (static_cast<uint16_t>(p) * chart_height) >> 8;
         const uint16_t bar_h = (bar_h_raw > 0) ? bar_h_raw : 1;
         const uint16_t y = chart_start_y + chart_height - bar_h;
+
+        const uint16_t env_h_raw = (static_cast<uint16_t>(e) * chart_height) >> 8;
+        const uint16_t env_h = (env_h_raw > 0) ? env_h_raw : 1;
+        const uint16_t env_y = static_cast<uint16_t>(chart_start_y + chart_height - env_h);
 
         if (redraw || is_restore) {
             const uint16_t x = chart_start_x + i;
@@ -1494,6 +1679,24 @@ void DroneDisplay::render_composite_partial_band(
                     draw_rectangle(painter, x, lo, 1, hi - lo + 1, COLOR_TEXT);
                 }
                 draw_rectangle(painter, x, y, 1, 1, COLOR_TEXT);
+            }
+            // Scanner-view overlay — drawn AFTER the bar trace so magenta
+            // stays legible where the two lines coincide (env >= bar means
+            // they touch exactly on flat, fully-revealed crests). Same
+            // connector-at-column-i rule as the white trace above.
+            if (band.env_shadow != nullptr) {
+                if (e > 0) {
+                    if (scan_env.prev_valid
+                        && (scan_env.gap_count > 0 || env_y != scan_env.prev_y)) {
+                        const uint16_t lo = (env_y < scan_env.prev_y) ? env_y : scan_env.prev_y;
+                        const uint16_t hi = (env_y < scan_env.prev_y) ? scan_env.prev_y : env_y;
+                        draw_rectangle(painter, x, lo, 1,
+                                       static_cast<uint16_t>(hi - lo + 1),
+                                       COLOR_SCANNER_ENVELOPE);
+                    }
+                    draw_rectangle(painter, x, env_y, 1, 1, COLOR_SCANNER_ENVELOPE);
+                }
+                band.env_shadow[i] = e;
             }
             // Live scan-head marker column was just cleared above — re-draw
             // the white marker ON TOP (full repaint does the same: bars first,
@@ -1517,7 +1720,21 @@ void DroneDisplay::render_composite_partial_band(
                 env.prev_valid = false;
             }
         }
+        // Overlay state — also replayed over EVERY column, so a column whose
+        // neighbour changed redraws its incoming connector from the CURRENT
+        // neighbour top rather than a stale one.
+        if (e > 0) {
+            scan_env.prev_y = env_y;
+            scan_env.prev_valid = true;
+            scan_env.gap_count = 0;
+        } else {
+            ++scan_env.gap_count;
+            if (scan_env.gap_count > EnvelopeState::MAX_GAP) {
+                scan_env.prev_valid = false;
+            }
+        }
         prev_changed = changed;
+        prev_env_changed = env_changed;
     }
 
     // Marker diff: at most one white 1×chart_height line per band.
@@ -1552,6 +1769,7 @@ void DroneDisplay::render_composite(
     const FreqHz title_start = (freq_start_override != 0) ? freq_start_override : sweep_freq_start_;
     const FreqHz title_end   = (freq_end_override != 0)   ? freq_end_override   : sweep_freq_end_;
     render_composite_full_band(painter, band1_, composite_data, composite_size,
+                               composite_env_,
                                start_x, start_y, width, height,
                                scan_head, noise_floor, title_start, title_end);
 }
@@ -1597,6 +1815,28 @@ void DroneDisplay::set_sweep2_data(const uint8_t* data, size_t size) noexcept {
     }
     // Data changed → incremental neighbour-aware band repaint (white envelope
     // line is cross-column; see render_composite_partial_band).
+    dirty_flags_ |= DIRTY_SPEC_DATA;
+    set_dirty();
+}
+
+void DroneDisplay::set_sweep2_env(const uint8_t* data, size_t size) noexcept {
+    // Band-2 twin of set_composite_env() — identical contract, see there.
+    if (data == nullptr || size == 0) {
+        if (sweep2_env_ != nullptr) {
+            sweep2_env_ = nullptr;
+            dirty_flags_ |= DIRTY_SPEC_DATA;
+            set_dirty();
+        }
+        return;
+    }
+    const bool was_off = (sweep2_env_ == nullptr);
+    const size_t copy_n = (size < COMPOSITE_SIZE) ? size : COMPOSITE_SIZE;
+    const bool any_changed = overlay_ema_update(
+        s_dd.sweep2_env_persist, data, copy_n, sweep2_env_initialized_);
+    sweep2_env_ = s_dd.sweep2_env_persist;
+    if (!any_changed && !was_off) {
+        return;
+    }
     dirty_flags_ |= DIRTY_SPEC_DATA;
     set_dirty();
 }
@@ -1666,20 +1906,24 @@ void DroneDisplay::render_dual_composite(
 
     if (full) {
         render_composite_full_band(painter, band1_, composite_data_, composite_data_size_,
+                                   composite_env_,
                                    start_x, start_y, width, band_h,
                                    scan_head_position_[0], nf1,
                                    sweep_freq_start_, sweep_freq_end_);
         render_composite_full_band(painter, band2_, sweep2_data_, sweep2_data_size_,
+                                   sweep2_env_,
                                    start_x, start_y + band_h, width, band_h,
                                    scan_head_position_[1], nf2,
                                    sweep2_freq_start_, sweep2_freq_end_);
     } else {
         // Incremental: each band redraws only its changed columns (+ marker).
         render_composite_partial_band(painter, band1_, composite_data_, composite_data_size_,
+                                      composite_env_,
                                       start_x, start_y, width, band_h,
                                       scan_head_position_[0], nf1, data,
                                       sweep_freq_start_, sweep_freq_end_);
         render_composite_partial_band(painter, band2_, sweep2_data_, sweep2_data_size_,
+                                      sweep2_env_,
                                       start_x, start_y + band_h, width, band_h,
                                       scan_head_position_[1], nf2, data,
                                       sweep2_freq_start_, sweep2_freq_end_);
