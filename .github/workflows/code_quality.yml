@@ -268,15 +268,19 @@ jobs:
             INCLUDES_OK=false
           fi
           
-          # Check for ch.h include (for ChibiOS APIs)
-          if grep -q "#include <ch.h>" firmware/application/apps/enhanced_drone_analyzer/*.cpp 2>/dev/null; then
+          # Check for ch.h include (for ChibiOS APIs) — accept quoted OR angle form
+          if grep -qE '#include [<"]ch\.h[>"]' firmware/application/apps/enhanced_drone_analyzer/*.cpp 2>/dev/null; then
             echo "✅ ChibiOS header included"
           else
             echo "::warning title=Missing ChibiOS::<ch.h> include not found directly"
           fi
           
           # Check for RAII wrapper class definition
-          if grep -q "class MutexLock" firmware/application/apps/enhanced_drone_analyzer/ui_enhanced_drone_analyzer.hpp 2>/dev/null; then
+          # NOTE: ui_enhanced_drone_analyzer.hpp was removed (moved to
+          # overengineering_LEGACY_Compilled/); MutexLock now lives in
+          # locking.hpp — grepping a missing file made grep exit 2 and
+          # failed this job on every run.
+          if grep -q "class MutexLock" firmware/application/apps/enhanced_drone_analyzer/locking.hpp 2>/dev/null; then
             echo "✅ MutexLock RAII class defined"
           else
             echo "::error title=Missing RAII Wrapper::MutexLock class not found!"
